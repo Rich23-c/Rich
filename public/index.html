@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#ea580c">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <title>ร้านขนมแม้ว 🐾 (Snack by Maew) - สั่งขนมออนไลน์</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#fff7ed',
+              100: '#ffedd5',
+              200: '#fed7aa',
+              300: '#fdba74',
+              400: '#fb923c',
+              500: '#f97316',
+              600: '#ea580c',
+              700: '#c2410c',
+              800: '#9a3412',
+              900: '#7c2d12',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- SweetAlert2 -->
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <!-- Canvas Confetti -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="bg-amber-50/40 min-h-screen text-slate-800 flex flex-col antialiased">
+
+  <!-- Top Announcement Bar -->
+  <div id="announcementBar" class="bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white text-sm py-2 px-4 text-center font-medium shadow-sm flex items-center justify-center gap-2">
+    <span>🐾</span>
+    <span id="announcementText">ยินดีต้อนรับสู่ร้านขนมแม้ว! ขนมโฮมเมด สดใหม่จากเตาทุกวัน หอม อร่อย วัตถุดิบพรีเมียม</span>
+  </div>
+
+  <!-- Header / Navigation -->
+  <header class="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-amber-100 shadow-sm">
+    <div class="max-w-6xl mx-auto px-4 sm:px-6 py-3.5 flex items-center justify-between">
+      <div class="flex items-center gap-2.5 sm:gap-3 min-w-0">
+        <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-gradient-to-tr from-orange-500 to-amber-400 flex items-center justify-center shadow-md shadow-orange-500/20 text-white text-xl sm:text-2xl shrink-0">
+          🐱
+        </div>
+        <div class="min-w-0">
+          <h1 id="shopNameHeader" class="text-base sm:text-2xl font-extrabold text-slate-900 leading-tight truncate font-heading">
+            ร้านขนมแม้ว 🐾
+          </h1>
+          <p id="shopSubtitleHeader" class="text-[11px] sm:text-xs text-orange-600 font-medium truncate">Snack by Maew &bull; โฮมเมดเบเกอรี่</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-1.5 sm:gap-3 shrink-0">
+        <!-- Order History Button -->
+        <button
+          type="button"
+          onclick="openOrderHistoryModal()"
+          class="flex items-center gap-1 sm:gap-1.5 bg-white hover:bg-orange-50 text-slate-700 hover:text-orange-600 px-2.5 sm:px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold transition border border-slate-200 hover:border-orange-200 cursor-pointer shadow-2xs active:scale-95"
+          title="ดูประวัติการสั่งซื้อและติดตามสถานะ"
+        >
+          <i data-lucide="clock" class="w-4 h-4 text-orange-500"></i>
+          <span class="hidden sm:inline">ประวัติการสั่งซื้อ</span>
+          <span class="sm:hidden text-xs">ประวัติ</span>
+          <span id="headerHistoryCountBadge" class="hidden bg-orange-600 text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold">0</span>
+        </button>
+
+        <!-- Floating Cart Trigger -->
+        <a href="#summarySection" class="relative flex items-center gap-1.5 bg-orange-50 hover:bg-orange-100 text-orange-700 px-2.5 sm:px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition border border-orange-200 active:scale-95">
+          <i data-lucide="shopping-bag" class="w-4 h-4"></i>
+          <span class="hidden sm:inline">ยอดรวม</span>
+          <span id="headerTotalBadge" class="bg-orange-600 text-white text-[11px] sm:text-xs px-2 py-0.5 rounded-full font-bold">0 ฿</span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero Banner -->
+  <section class="bg-gradient-to-b from-orange-100/60 to-transparent py-8 px-4 border-b border-orange-100/50">
+    <div class="max-w-4xl mx-auto text-center space-y-3">
+      <div class="inline-flex items-center gap-2 bg-orange-100 text-orange-800 text-xs sm:text-sm font-semibold px-3 py-1 rounded-full border border-orange-200">
+        ✨ สั่งง่าย &bull; เลือกระบุจำนวน &bull; ตรวจสอบสลิปอัตโนมัติ
+      </div>
+      <h2 class="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight font-heading">
+        เลือกขนมที่ชอบ สั่งสดใหม่ส่งตรงถึงคุณ 🍪
+      </h2>
+      <p class="text-slate-600 text-sm sm:text-base max-w-xl mx-auto">
+        ใส่ชื่อผู้สั่ง ติ๊กเลือกขนมที่ต้องการ ระบุจำนวนชิ้น ระบบจะคำนวณราคาพร้อมตรวจสลิปให้ทันที!
+      </p>
+    </div>
+  </section>
+
+  <!-- Main Order Form Container -->
+  <main class="max-w-6xl mx-auto px-4 sm:px-6 py-8 flex-1 w-full space-y-8">
+    <!-- Store Closed Notice (Shown when store is closed) -->
+    <div id="storeClosedNotice" class="hidden bg-gradient-to-r from-red-50 via-rose-50 to-orange-50 border-2 border-red-300 rounded-3xl p-6 sm:p-8 text-center space-y-4 shadow-sm animate-fade-in">
+      <div class="w-16 h-16 rounded-full bg-red-100 text-red-600 flex items-center justify-center mx-auto text-3xl shadow-inner">
+        🚫
+      </div>
+      <div class="space-y-1.5">
+        <h3 class="text-xl sm:text-2xl font-extrabold text-red-900 font-heading">
+          ขณะนี้ร้านแม้วปิดรับการสั่งซื้อชั่วคราว
+        </h3>
+        <p id="storeClosedNoticeText" class="text-sm sm:text-base text-red-700 max-w-lg mx-auto font-medium">
+          ขณะนี้ร้านปิดรับออเดอร์ชั่วคราว แล้วพบกันใหม่รอบหน้านะจ๊ะ 🐱
+        </p>
+      </div>
+      <div class="text-xs text-slate-500 pt-1">
+        💡 คุณยังสามารถดูรายการขนมและตรวจดูประวัติการสั่งซื้อได้ตามปกติ แต่ระบบจะปิดรับการสั่งซื้อและการชำระเงินชั่วคราวครับ
+      </div>
+    </div>
+
+    <form id="orderForm" onsubmit="event.preventDefault(); submitOrder();">
+
+      <!-- STEP 1: Customer Information -->
+      <section id="step1Section" class="bg-white rounded-3xl p-6 sm:p-8 shadow-sm border border-amber-100/80 space-y-6">
+        <div class="flex items-center gap-3 border-b border-slate-100 pb-4">
+          <div class="w-9 h-9 rounded-xl bg-orange-500 text-white flex items-center justify-center font-bold text-sm shadow">
+            1
+          </div>
+          <div>
+            <h3 class="text-lg sm:text-xl font-bold text-slate-900 font-heading">ข้อมูลผู้สั่งซื้อ (Customer Information)</h3>
+            <p class="text-xs text-slate-500">กรุณาระบุชื่อของคุณเพื่อให้ทางร้านแม้วจัดเตรียมออเดอร์ได้อย่างถูกต้อง</p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <!-- Customer Name (Required) -->
+          <div class="sm:col-span-1 space-y-1.5">
+            <label for="customerName" class="block text-sm font-semibold text-slate-700">
+              ชื่อลูกค้า <span class="text-red-500">*</span>
+            </label>
+            <div class="relative">
+              <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                <i data-lucide="user" class="w-4 h-4"></i>
+              </span>
+              <input
+                type="text"
+                id="customerName"
+                name="customerName"
+                required
+                placeholder="ระบุชื่อของคุณ (เช่น คุณสมชาย หรือ น้องแม็ก)"
+                class="w-full pl-9 pr-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-sm transition"
+              >
+            </div>
+          </div>
+
+          <!-- Customer Phone -->
+          <div class="sm:col-span-1 space-y-1.5">
+            <label for="customerPhone" class="block text-sm font-semibold text-slate-700">
+              เบอร์โทรศัพท์ติดต่อ <span class="text-slate-400 text-xs font-normal">(สำหรับแจ้งสถานะ)</span>
+            </label>
+            <div class="relative">
+              <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                <i data-lucide="phone" class="w-4 h-4"></i>
+              </span>
+              <input
+                type="tel"
+                id="customerPhone"
+                name="customerPhone"
+                placeholder="เช่น 081-234-5678"
+                class="w-full pl-9 pr-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-sm transition"
+              >
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- STEP 2: Snacks Menu & Selection -->
+      <section class="bg-white rounded-3xl p-6 sm:p-8 shadow-sm border border-amber-100/80 space-y-6">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+          <div class="flex items-center gap-3">
+            <div class="w-9 h-9 rounded-xl bg-orange-500 text-white flex items-center justify-center font-bold text-sm shadow">
+              2
+            </div>
+            <div>
+              <h3 class="text-lg sm:text-xl font-bold text-slate-900 font-heading">
+                เลือกเมนูขนมของร้านแม้ว 🍰
+              </h3>
+              <p class="text-xs text-slate-500">
+                <span class="text-orange-600 font-medium">ติ๊กถูก</span> เพื่อเลือกขนม และ <span class="text-orange-600 font-medium">เลือกว่าจะเอากี่อัน</span>
+              </p>
+            </div>
+          </div>
+
+          <div class="text-xs text-slate-500 bg-amber-50 px-3 py-1.5 rounded-xl border border-amber-200 inline-flex items-center gap-1.5 self-start sm:self-auto">
+            <i data-lucide="check-circle" class="w-4 h-4 text-orange-600"></i>
+            <span>เลือกแล้ว <b id="selectedCountBadge" class="text-orange-600">0</b> เมนู</span>
+          </div>
+        </div>
+
+        <!-- Snacks Grid -->
+        <div id="snacksGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          <!-- Loading skeleton -->
+          <div class="col-span-full py-12 text-center text-slate-400 space-y-3">
+            <div class="spinner mx-auto"></div>
+            <p class="text-sm">กำลังโหลดเมนูขนมแสนอร่อยของร้านแม้ว...</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- STEP 3: Order Summary Table -->
+      <section id="summarySection" class="bg-white rounded-3xl p-6 sm:p-8 shadow-sm border border-amber-100/80 space-y-6">
+        <div class="flex items-center gap-3 border-b border-slate-100 pb-4">
+          <div class="w-9 h-9 rounded-xl bg-orange-500 text-white flex items-center justify-center font-bold text-sm shadow">
+            3
+          </div>
+          <div>
+            <h3 class="text-lg sm:text-xl font-bold text-slate-900 font-heading">สรุปรายการสั่งซื้อและราคา 🧾</h3>
+            <p class="text-xs text-slate-500">ตรวจสอบรายการขนม จำนวน และราคารวมทั้งหมด</p>
+          </div>
+        </div>
+
+        <!-- Summary Items List -->
+        <div id="summaryItemsContainer" class="space-y-3">
+          <div class="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-slate-400 space-y-2">
+            <i data-lucide="shopping-cart" class="w-8 h-8 mx-auto text-slate-300"></i>
+            <p class="text-sm">ยังไม่ได้เลือกขนม กรุณาติ๊กถูกเลือกขนมที่ต้องการด้านบน</p>
+          </div>
+        </div>
+
+        <!-- Grand Total Card -->
+        <div class="bg-gradient-to-r from-orange-50 to-amber-50 rounded-2xl p-5 border border-orange-200 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div class="space-y-0.5 text-center sm:text-left">
+            <div class="text-xs text-orange-800 font-medium">ยอดชำระสุทธิ (Total Amount)</div>
+            <div class="text-slate-500 text-xs">รวมค่าขนมทั้งหมดตามจำนวนที่เลือก</div>
+          </div>
+          <div class="flex items-baseline gap-2">
+            <span class="text-sm text-slate-600 font-medium">รวมทั้งสิ้น:</span>
+            <span id="grandTotalDisplay" class="text-3xl font-extrabold text-orange-600 font-heading">0</span>
+            <span class="text-lg font-bold text-slate-700">บาท</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- STEP 4: Payment & Slip Verification -->
+      <section id="paymentSection" class="bg-white rounded-3xl p-6 sm:p-8 shadow-sm border border-amber-100/80 space-y-6">
+        <div class="flex items-center gap-3 border-b border-slate-100 pb-4">
+          <div class="w-9 h-9 rounded-xl bg-orange-500 text-white flex items-center justify-center font-bold text-sm shadow">
+            4
+          </div>
+          <div>
+            <h3 class="text-lg sm:text-xl font-bold text-slate-900 font-heading">
+              ชำระเงินและแนบสลิป (ระบบจะตรวจวันที่ & ราคา แล้วบันทึกทันที) 💳
+            </h3>
+            <p class="text-xs text-orange-600 font-medium">สแกน QR Code แล้วแนบรูปสลิป — ระบบจะตรวจสอบวันที่และราคา หากถูกต้องจะบันทึกออเดอร์ให้ทันทีโดยไม่ต้องกดปุ่มยืนยัน</p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-12 gap-8 items-start">
+
+          <!-- Left Column: PromptPay QR & Bank Info (5 cols) -->
+          <div class="md:col-span-5 bg-gradient-to-b from-amber-50/70 to-orange-50/40 p-5 rounded-2xl border border-amber-200/80 space-y-4 text-center">
+            <div class="inline-flex items-center gap-1.5 bg-blue-700 text-white text-xs font-bold px-3 py-1 rounded-full shadow-sm">
+              <i data-lucide="qr-code" class="w-3.5 h-3.5"></i>
+              <span>Thai QR Payment / พร้อมเพย์</span>
+            </div>
+
+            <!-- QR Code Image Box -->
+            <div class="relative bg-white p-2.5 rounded-2xl shadow-sm border border-orange-100 inline-block mx-auto max-w-full">
+              <img id="promptpayQrImg" src="/images/shop-qr.png" alt="QR Code รับเงินร้านขนมแม้ว" class="w-64 max-w-full h-auto object-contain rounded-xl mx-auto shadow-xs border border-slate-100" />
+              <div id="qrLoadingOverlay" class="hidden absolute inset-0 bg-white/90 rounded-2xl flex flex-col items-center justify-center gap-2">
+                <div class="spinner"></div>
+                <span class="text-xs text-slate-500">กำลังโหลด QR Code...</span>
+              </div>
+            </div>
+
+            <!-- Amount display for QR -->
+            <div class="text-sm font-semibold text-slate-700 bg-white/90 py-2 px-3 rounded-xl border border-amber-200 inline-block w-full">
+              ยอดที่ต้องโอน: <span id="qrAmountDisplay" class="text-orange-600 text-xl font-bold">0.00</span> บาท
+            </div>
+
+            <!-- Mobile Action Buttons for Quick Transfer -->
+            <div class="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onclick="downloadQrCode()"
+                class="bg-white hover:bg-orange-50 text-orange-700 border border-orange-200 hover:border-orange-300 font-bold py-2.5 px-2 rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition cursor-pointer"
+                title="บันทึกรูป QR ลงในอัลบั้มเพื่อเปิดในแอปธนาคาร"
+              >
+                <i data-lucide="download" class="w-4 h-4 text-orange-600 shrink-0"></i>
+                <span>📥 บันทึกรูป QR</span>
+              </button>
+              <button
+                type="button"
+                onclick="copyBankDetails()"
+                class="bg-white hover:bg-orange-50 text-slate-700 hover:text-orange-700 border border-slate-200 hover:border-orange-300 font-bold py-2.5 px-2 rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition cursor-pointer"
+                title="คัดลอกข้อมูลบัญชี/พร้อมเพย์"
+              >
+                <i data-lucide="copy" class="w-4 h-4 text-slate-600 shrink-0"></i>
+                <span>📋 คัดลอกข้อมูล</span>
+              </button>
+            </div>
+
+            <!-- Bank Account Details Card -->
+            <div class="bg-white p-3.5 rounded-xl border border-amber-200 text-left text-xs space-y-2 shadow-xs">
+              <div class="flex justify-between items-center text-slate-500">
+                <span>บัญชีรับเงิน:</span>
+                <span id="bankNameDisplay" class="font-semibold text-slate-800">Thai QR Payment (พร้อมเพย์)</span>
+              </div>
+              <div class="flex justify-between items-center text-slate-500">
+                <span>ชื่อบัญชี:</span>
+                <span id="bankAccNameDisplay" class="font-bold text-slate-900">พัชญ์ชามญชุ์ กฤติณัฐธนชัย</span>
+              </div>
+              <div class="flex justify-between items-center text-slate-500">
+                <span>ประเภท:</span>
+                <span id="bankAccDisplay" class="font-medium text-blue-700 text-xs">สแกนได้ทุกแอปธนาคารไทย</span>
+              </div>
+              <div class="text-[11px] text-amber-900 bg-amber-50/90 p-2 rounded-xl text-center border border-amber-200/60 leading-relaxed font-medium">
+                📱 <b>สั่งบนมือถือ?</b> กด <b>"บันทึกรูป QR"</b> แล้วเปิดแอปธนาคาร เลือก <i>"สแกน QR จากอัลบั้มภาพ"</i> จ่ายได้ทันที!
+              </div>
+            </div>
+          </div>
+
+          <!-- Right Column: Slip Upload & AI Verification Status (7 cols) -->
+          <div class="md:col-span-7 space-y-4">
+            <label class="block text-sm font-semibold text-slate-700">
+              แนบรูปสลิปการโอนเงิน <span class="text-red-500">*</span>
+            </label>
+
+            <!-- Drop Zone File Input -->
+            <div
+              id="slipDropZone"
+              onclick="document.getElementById('slipInput').click();"
+              class="border-2 border-dashed border-amber-300 hover:border-orange-500 bg-amber-50/40 hover:bg-amber-50 rounded-2xl p-6 sm:p-7 text-center cursor-pointer transition flex flex-col items-center justify-center gap-2.5 group touch-manipulation"
+            >
+              <input
+                type="file"
+                id="slipInput"
+                accept="image/*"
+                class="hidden"
+                onchange="handleSlipSelected(this.files[0])"
+              >
+              <div class="w-14 h-14 rounded-full bg-orange-100 group-hover:bg-orange-200 flex items-center justify-center text-orange-600 transition shadow-xs">
+                <i data-lucide="upload-cloud" class="w-7 h-7"></i>
+              </div>
+              <div class="space-y-1">
+                <p class="text-sm sm:text-base font-bold text-slate-800">
+                  แตะที่นี่เพื่อแนบสลิป 📸 จากอัลบั้มภาพมือถือ
+                </p>
+                <p class="text-xs text-slate-500">
+                  หรือคลิกลากไฟล์สลิปมาวาง (รองรับ JPG, PNG, HEIC)
+                </p>
+                <div class="pt-1">
+                  <span class="inline-block bg-orange-100 text-orange-800 text-[11px] font-semibold px-2.5 py-0.5 rounded-full border border-orange-200">
+                    ⚡ ระบบ AI ตรวจวันที่โอนและยอดเงินให้อัตโนมัติ
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Slip Image Preview and Verification Status Box -->
+            <div id="slipVerificationBox" class="hidden space-y-4">
+              <!-- Preview Thumbnail -->
+              <div class="flex items-center gap-4 bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                <img id="slipPreviewImg" src="" alt="Slip Preview" class="w-20 h-24 object-cover rounded-xl border border-slate-300 shadow-sm" />
+                <div class="flex-1 space-y-1">
+                  <div class="flex items-center justify-between">
+                    <span id="slipFileName" class="text-xs font-semibold text-slate-800 truncate max-w-[180px]">slip.jpg</span>
+                    <button
+                      type="button"
+                      onclick="removeSlip()"
+                      class="text-xs text-red-500 hover:text-red-700 flex items-center gap-1 font-medium"
+                    >
+                      <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                      <span>เปลี่ยนรูป</span>
+                    </button>
+                  </div>
+                  <p id="slipFileSize" class="text-xs text-slate-400">1.2 MB</p>
+
+                  <!-- Manual re-verify button if needed -->
+                  <button
+                    type="button"
+                    id="reverifyBtn"
+                    onclick="triggerSlipVerification()"
+                    class="mt-1 text-xs bg-orange-100 hover:bg-orange-200 text-orange-700 font-semibold px-3 py-1 rounded-lg transition inline-flex items-center gap-1"
+                  >
+                    <i data-lucide="refresh-cw" class="w-3 h-3"></i>
+                    <span>ตรวจยอดใหม่อีกครั้ง</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- AI Verification Loading Card -->
+              <div id="verifyingLoadingCard" class="hidden bg-blue-50 border border-blue-200 p-4 rounded-2xl flex items-center gap-3">
+                <div class="spinner"></div>
+                <div>
+                  <h4 class="text-sm font-bold text-blue-900">กำลังตรวจสอบสลิปด้วย AI...</h4>
+                  <p class="text-xs text-blue-700">กำลังอ่านยอดเงิน ชื่อธนาคาร และเลขอ้างอิงจากรูปสลิป</p>
+                </div>
+              </div>
+
+              <!-- Verification Result Card -->
+              <div id="verificationResultCard" class="hidden rounded-2xl p-4 border transition">
+                <!-- Status Header -->
+                <div class="flex items-start gap-3">
+                  <div id="statusIconContainer" class="w-8 h-8 rounded-full flex items-center justify-center text-white shrink-0 mt-0.5">
+                    <!-- Icon injected by JS -->
+                  </div>
+                  <div class="flex-1">
+                    <h4 id="verificationTitle" class="text-sm font-bold leading-snug"></h4>
+                    <p id="verificationSummary" class="text-xs mt-0.5 leading-relaxed"></p>
+                  </div>
+                </div>
+
+                <!-- Extracted Slip Details Grid -->
+                <div id="extractedDetailsGrid" class="mt-3 pt-3 border-t grid grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <span class="text-slate-500">ยอดที่ตรวจพบ:</span>
+                    <span id="detectedAmountText" class="font-bold ml-1 text-slate-800">-</span>
+                  </div>
+                  <div>
+                    <span class="text-slate-500">ยอดที่สั่งซื้อ:</span>
+                    <span id="expectedAmountText" class="font-bold ml-1 text-slate-800">-</span>
+                  </div>
+                  <div>
+                    <span class="text-slate-500">ธนาคาร:</span>
+                    <span id="detectedBankText" class="font-medium ml-1 text-slate-800">-</span>
+                  </div>
+                  <div>
+                    <span class="text-slate-500">เวลาที่โอน:</span>
+                    <span id="detectedTimeText" class="font-medium ml-1 text-slate-800">-</span>
+                  </div>
+                  <div class="col-span-2">
+                    <span class="text-slate-500">รหัสอ้างอิง:</span>
+                    <span id="detectedRefText" class="font-mono text-slate-700 ml-1">-</span>
+                  </div>
+                  <div class="col-span-2 flex items-center justify-between bg-emerald-50/80 px-2.5 py-1.5 rounded-lg border border-emerald-200">
+                    <span class="text-slate-600 font-medium text-[11px]">ผู้รับเงิน:</span>
+                    <span id="detectedReceiverText" class="font-bold text-emerald-800 text-xs">-</span>
+                  </div>
+                  <!-- QR Code detected row -->
+                  <div id="detectedQrBox" class="col-span-2 flex items-center justify-between bg-blue-50/80 px-2.5 py-1.5 rounded-lg border border-blue-200">
+                    <span class="text-blue-800 font-medium text-[11px] flex items-center gap-1">
+                      <i data-lucide="qr-code" class="w-3.5 h-3.5"></i>
+                      <span>ตรวจ QR Code ในสลิป:</span>
+                    </span>
+                    <span id="detectedQrText" class="font-bold text-blue-900 text-[11px]">กำลังตรวจ...</span>
+                  </div>
+                  <!-- Duplicate slip warning box -->
+                  <div id="duplicateSlipWarningBox" class="col-span-2 hidden bg-red-50 p-2.5 rounded-xl border border-red-300 text-red-800 space-y-1">
+                    <div class="font-bold flex items-center gap-1.5 text-xs text-red-700">
+                      <i data-lucide="alert-triangle" class="w-4 h-4 text-red-600 shrink-0"></i>
+                      <span>ตรวจพบสลิปซ้ำในระบบ!</span>
+                    </div>
+                    <p id="duplicateSlipWarningText" class="text-[11px] leading-relaxed text-red-600"></p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Order Confirmation Section -->
+        <div class="pt-4 border-t border-slate-100 space-y-3">
+          <!-- Notification banner before slip is uploaded -->
+          <div id="slipHintBanner" class="bg-amber-50/80 rounded-2xl p-4 border border-amber-200 flex items-center justify-center text-center gap-2 text-xs sm:text-sm text-amber-900 font-medium">
+            <span class="text-xl">✨</span>
+            <span>เมื่อแนบรูปสลิป ระบบจะตรวจสอบ <b>วันที่โอน (ต้องเป็นวันนี้)</b> และ <b>ยอดเงิน</b> ให้อัตโนมัติ จากนั้นให้คุณ<b>กดยืนยันการสั่งซื้อ</b></span>
+          </div>
+
+          <!-- Customer Confirmation Button (Revealed when slip is verified) -->
+          <div id="customerConfirmSection" class="hidden space-y-3">
+            <button
+              type="button"
+              id="confirmOrderBtn"
+              onclick="confirmAndSaveOrder()"
+              class="w-full bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white font-extrabold py-4 px-6 rounded-2xl shadow-lg transition active:scale-98 flex items-center justify-center gap-2 text-base cursor-pointer"
+            >
+              <i data-lucide="check-circle" class="w-5 h-5"></i>
+              <span>✅ กดยืนยันการสั่งซื้อขนม (บันทึกออเดอร์) 🐾</span>
+            </button>
+            <p class="text-xs text-center text-slate-500">
+              💡 ระบบตรวจสอบสลิปผ่านแล้วเรียบร้อย กรุณากดปุ่มด้านบนเพื่อยืนยันคำสั่งซื้อ
+            </p>
+          </div>
+        </div>
+      </section>
+
+    </form>
+  </main>
+
+  <!-- Mobile Sticky Floating Cart Bar (Visible on mobile screens when items are selected) -->
+  <aside
+    id="mobileFloatingBar"
+    class="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-orange-200 shadow-2xl p-3 sm:hidden transform translate-y-full opacity-0 pointer-events-none transition-all duration-300 safe-area-pb"
+    aria-label="สรุปรายการสั่งซื้อด่วน"
+  >
+    <div class="max-w-md mx-auto flex items-center justify-between gap-3 px-1">
+      <div class="flex items-center gap-2.5">
+        <div class="relative w-10 h-10 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center font-bold">
+          <i data-lucide="shopping-bag" class="w-5 h-5"></i>
+          <span id="floatingCartCount" class="absolute -top-1.5 -right-1.5 bg-orange-600 text-white text-[10px] font-extrabold w-5 h-5 rounded-full flex items-center justify-center border-2 border-white">
+            0
+          </span>
+        </div>
+        <div>
+          <div class="text-[11px] text-slate-500 leading-tight">ยอดรวมที่เลือก</div>
+          <div class="flex items-baseline gap-1 leading-tight">
+            <span id="floatingCartTotal" class="text-xl font-extrabold text-orange-600 font-heading">0</span>
+            <span class="text-xs font-bold text-slate-700">บาท</span>
+          </div>
+        </div>
+      </div>
+
+      <button
+        type="button"
+        onclick="scrollToPaymentSection()"
+        class="bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold text-sm px-4 py-2.5 rounded-xl shadow-md flex items-center gap-1.5 active:scale-95 transition cursor-pointer"
+      >
+        <span>ไปชำระเงิน</span>
+        <i data-lucide="arrow-down" class="w-4 h-4"></i>
+      </button>
+    </div>
+  </aside>
+
+  <!-- Footer -->
+  <footer class="bg-white border-t border-amber-100 pt-6 pb-28 sm:pb-8 mt-12 text-center text-xs text-slate-400 space-y-1">
+    <p class="font-semibold text-slate-600">ร้านขนมแม้ว 🐾 (Snack by Maew) &bull; อร่อย สด สะอาด ทำด้วยใจ</p>
+    <p>ระบบสั่งซื้อขนมออนไลน์พร้อมระบบตรวจสอบสลิปอัตโนมัติ</p>
+  </footer>
+
+  <!-- Receipt / Order Tracking Modal -->
+  <div id="receiptModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-3 sm:p-4">
+    <div class="bg-white rounded-3xl max-w-lg w-full p-5 sm:p-7 space-y-5 shadow-2xl max-h-[92vh] overflow-y-auto">
+      <div class="text-center space-y-1.5">
+        <div class="w-14 h-14 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-2xl mx-auto shadow-sm">
+          🎉
+        </div>
+        <h3 class="text-xl sm:text-2xl font-extrabold text-slate-900 font-heading">สั่งซื้อขนมสำเร็จแล้ว!</h3>
+        <p class="text-xs text-slate-500">บันทึกออเดอร์ในประวัติการสั่งซื้อของคุณเรียบร้อยแล้ว 🐾</p>
+      </div>
+
+      <!-- Live Order Status Stepper Card -->
+      <div class="bg-orange-50/70 border border-orange-200/90 rounded-2xl p-4 space-y-3">
+        <div class="flex items-center justify-between text-xs font-bold text-slate-800">
+          <span class="flex items-center gap-1.5 text-orange-800">
+            <i data-lucide="activity" class="w-4 h-4 text-orange-600"></i>
+            <span>สถานะออเดอร์ปัจจุบัน</span>
+          </span>
+          <button
+            type="button"
+            onclick="refreshActiveReceiptStatus()"
+            class="text-[11px] font-semibold text-orange-600 hover:text-orange-800 flex items-center gap-1 bg-white px-2 py-0.5 rounded-lg border border-orange-200 transition cursor-pointer"
+            title="กดเพื่ออัปเดตสถานะล่าสุด"
+          >
+            <i data-lucide="refresh-cw" class="w-3 h-3"></i>
+            <span>รีเฟรชสถานะ</span>
+          </button>
+        </div>
+
+        <!-- 3-Step Visual Progress Bar -->
+        <div class="relative py-2">
+          <!-- Progress Line Background -->
+          <div class="absolute top-1/2 left-4 right-4 -translate-y-1/2 h-1.5 bg-orange-200 rounded-full z-0"></div>
+          <!-- Progress Line Active Fill -->
+          <div id="modalStatusProgressLine" class="absolute top-1/2 left-4 -translate-y-1/2 h-1.5 bg-orange-600 rounded-full z-0 transition-all duration-500" style="width: 15%;"></div>
+
+          <div class="relative z-10 flex justify-between items-center text-center">
+            <!-- Step 1 -->
+            <div class="flex flex-col items-center gap-1">
+              <div id="modalStep1Icon" class="w-8 h-8 rounded-full bg-orange-600 text-white flex items-center justify-center text-xs font-bold shadow-sm transition">
+                ✓
+              </div>
+              <span id="modalStep1Text" class="text-[10px] font-bold text-orange-900">1. ยืนยันยอด</span>
+            </div>
+
+            <!-- Step 2 -->
+            <div class="flex flex-col items-center gap-1">
+              <div id="modalStep2Icon" class="w-8 h-8 rounded-full bg-orange-200 text-orange-700 flex items-center justify-center text-xs font-bold transition">
+                2
+              </div>
+              <span id="modalStep2Text" class="text-[10px] font-semibold text-slate-500">2. กำลังเตรียมขนม</span>
+            </div>
+
+            <!-- Step 3 -->
+            <div class="flex flex-col items-center gap-1">
+              <div id="modalStep3Icon" class="w-8 h-8 rounded-full bg-orange-200 text-orange-700 flex items-center justify-center text-xs font-bold transition">
+                3
+              </div>
+              <span id="modalStep3Text" class="text-[10px] font-semibold text-slate-500">3. ส่งมอบแล้ว</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Status Detail Text Badge -->
+        <div id="modalStatusDetailBox" class="bg-white p-2.5 rounded-xl border border-orange-200/80 text-xs text-center font-medium text-slate-700">
+          🟢 ร้านแม้วได้รับยอดเงินแล้ว กำลังจัดเตรียมคิวทำขนม
+        </div>
+      </div>
+
+      <!-- Receipt Box -->
+      <div class="bg-amber-50/50 p-4 sm:p-5 rounded-2xl border border-amber-200 text-xs space-y-2.5 font-mono">
+        <div class="flex justify-between border-b border-amber-200/80 pb-2 font-sans font-bold text-sm text-slate-800">
+          <span>หมายเลขออเดอร์:</span>
+          <span id="modalOrderId" class="text-orange-600 font-mono select-all">MW-20261004-XXXX</span>
+        </div>
+        <div class="flex justify-between text-slate-600 font-sans">
+          <span>ชื่อลูกค้า:</span>
+          <span id="modalCustomerName" class="font-semibold text-slate-900">-</span>
+        </div>
+        <div class="flex justify-between text-slate-600 font-sans">
+          <span>เวลาที่สั่ง:</span>
+          <span id="modalOrderDate" class="text-slate-800">-</span>
+        </div>
+
+        <!-- Ordered Items -->
+        <div class="pt-2 border-t border-amber-200/60 font-sans space-y-1.5" id="modalItemsList">
+          <!-- Injected items -->
+        </div>
+
+        <div class="pt-2 border-t border-amber-200/80 flex justify-between font-sans text-sm font-bold text-slate-900">
+          <span>ยอดรวมทั้งหมด:</span>
+          <span id="modalTotalPrice" class="text-orange-600 text-base">0 บาท</span>
+        </div>
+
+        <div class="pt-2 border-t border-amber-200/60 font-sans text-xs flex justify-between items-center">
+          <span>สถานะการตรวจสลิป:</span>
+          <span id="modalSlipStatus" class="font-bold px-2 py-0.5 rounded-full">-</span>
+        </div>
+      </div>
+
+      <div class="flex flex-col sm:flex-row gap-2.5">
+        <button
+          type="button"
+          onclick="openOrderHistoryModal(); closeReceiptModal();"
+          class="flex-1 bg-amber-100 hover:bg-amber-200 text-amber-900 py-3 rounded-xl font-bold text-xs sm:text-sm transition flex items-center justify-center gap-1.5 cursor-pointer"
+        >
+          <i data-lucide="clock" class="w-4 h-4"></i>
+          <span>ดูประวัติสั่งซื้อทั้งหมด</span>
+        </button>
+        <button
+          type="button"
+          onclick="window.print()"
+          class="bg-slate-100 hover:bg-slate-200 text-slate-700 py-3 px-4 rounded-xl font-semibold text-xs sm:text-sm transition flex items-center justify-center gap-1.5 cursor-pointer"
+        >
+          <i data-lucide="printer" class="w-4 h-4"></i>
+          <span>พิมพ์</span>
+        </button>
+        <button
+          type="button"
+          onclick="closeReceiptModal()"
+          class="flex-1 bg-orange-600 hover:bg-orange-700 text-white py-3 rounded-xl font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer"
+        >
+          <span>สั่งเพิ่ม / ปิด</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Order History & Status Modal -->
+  <div id="orderHistoryModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-3 sm:p-4">
+    <div class="bg-white rounded-3xl max-w-2xl w-full p-5 sm:p-7 space-y-4 shadow-2xl max-h-[92vh] flex flex-col">
+      <!-- Modal Header -->
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3.5 shrink-0">
+        <div class="flex items-center gap-3">
+          <div class="w-11 h-11 rounded-2xl bg-orange-100 text-orange-600 flex items-center justify-center text-xl shadow-xs">
+            📋
+          </div>
+          <div>
+            <h3 class="text-lg sm:text-xl font-bold text-slate-900 font-heading">ประวัติและสถานะการสั่งซื้อ</h3>
+            <p class="text-xs text-slate-500">ติดตามสถานะขนมของร้านแม้วแบบเรียลไทม์</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onclick="closeOrderHistoryModal()"
+          class="w-9 h-9 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 flex items-center justify-center transition cursor-pointer"
+        >
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Search & Sync Toolbar -->
+      <div class="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-2 shrink-0">
+        <div class="flex gap-2">
+          <div class="relative flex-1">
+            <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+              <i data-lucide="search" class="w-4 h-4"></i>
+            </span>
+            <input
+              type="text"
+              id="historySearchInput"
+              placeholder="ค้นหาด้วยเบอร์โทรศัพท์ หรือ รหัสออเดอร์ (MW-...)"
+              class="w-full pl-9 pr-3 py-2 text-xs sm:text-sm bg-white rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-orange-500"
+              onkeydown="if(event.key==='Enter') searchOrderHistory()"
+            />
+          </div>
+          <button
+            type="button"
+            onclick="searchOrderHistory()"
+            class="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition flex items-center gap-1.5 shrink-0 shadow-xs cursor-pointer"
+          >
+            <span>ค้นหา</span>
+          </button>
+          <button
+            type="button"
+            onclick="loadOrderHistory()"
+            class="bg-white hover:bg-slate-100 text-slate-600 px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold border border-slate-200 transition flex items-center gap-1 shrink-0 cursor-pointer"
+            title="รีเฟรชสถานะล่าสุด"
+          >
+            <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+          </button>
+        </div>
+        <p class="text-[11px] text-slate-500 flex items-center gap-1">
+          <i data-lucide="info" class="w-3.5 h-3.5 text-orange-500 shrink-0"></i>
+          <span>แสดงออเดอร์บนอุปกรณ์นี้อัตโนมัติ หรือพิมพ์เบอร์โทรที่เคยสั่งเพื่อดึงประวัติได้</span>
+        </p>
+      </div>
+
+      <!-- Orders List Container (Scrollable) -->
+      <div id="orderHistoryList" class="flex-1 overflow-y-auto space-y-3 pr-1 min-h-[220px]">
+        <!-- Injected via app.js -->
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 shrink-0">
+        <span id="orderHistoryCountText">มีทั้งหมด 0 รายการ</span>
+        <button
+          type="button"
+          onclick="closeOrderHistoryModal()"
+          class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl transition cursor-pointer"
+        >
+          ปิด
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/app.js"></script>
+</body>
+</html>

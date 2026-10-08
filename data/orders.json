@@ -1,0 +1,135 @@
+[
+  {
+    "id": "MW-20261008-S3OE",
+    "customerName": "ร่นีีรหนผทอ่รน",
+    "customerPhone": "0498764738",
+    "customerEmail": "",
+    "customerAddress": "",
+    "customerNote": "",
+    "items": [
+      {
+        "snackId": "snack-1791432853727-fzqh",
+        "name": "อาลัว",
+        "price": 50,
+        "quantity": 1,
+        "unit": "กล่อง",
+        "subtotal": 50
+      },
+      {
+        "snackId": "snack-1791449904937-3i4m",
+        "name": "น้ำตาลสด",
+        "price": 50,
+        "quantity": 1,
+        "unit": "ขวด",
+        "subtotal": 50
+      }
+    ],
+    "totalPrice": 100,
+    "slipImage": "/uploads/slips/slip-1791468081478-6414.jpg",
+    "slipVerification": {
+      "isValidSlip": true,
+      "detectedAmount": 100,
+      "expectedAmount": 100,
+      "isAmountMatched": true,
+      "amountDifference": 0,
+      "transferDate": "8 ต.ค. 2569",
+      "transferTime": "21:00:04",
+      "isDateToday": true,
+      "receiverName": "นาง พัชญ์ชามญช์ กฤติณัฐธ**** (พัชญ์ชามญชุ์ กฤติณัฐธนชัย)",
+      "isReceiverMatched": true,
+      "expectedReceiver": "พัชญ์ชามญชุ์ กฤติณัฐธนชัย",
+      "isReadyToSave": true,
+      "hasQrCode": true,
+      "qrData": "0046000600000101030250225APF261008210001OIG83PD0QV5102TH91045845",
+      "qrScanMethod": "direct",
+      "isDuplicateSlip": false,
+      "duplicateMatchedBy": null,
+      "duplicateReason": null,
+      "fileHash": "615b195471f22cbbb55dcc3957ec8f184dd66c3f316d8c044dc1c8c4139ac404",
+      "bankName": "TrueMoney",
+      "senderName": "ณัฐพัชร์ กฤติณัฐธ****",
+      "transactionRef": "50059183333100",
+      "status": "VALID_AND_MATCHED",
+      "message": "✅ สลิปถูกต้อง! โอนเข้าบัญชีร้าน \"พัชญ์ชามญชุ์ กฤติณัฐธนชัย\" ยอดเงิน 100.00 บาท โอนวันนี้ถูกต้องสมบูรณ์ (ตรวจสอบ QR Code ในสลิปผ่าน)",
+      "todayReference": {
+        "isoDate": "2026-10-08",
+        "day": 8,
+        "month": 10,
+        "yearCE": 2026,
+        "yearBE": 2569,
+        "thaiFull": "8 ตุลาคม 2569",
+        "thaiShort": "08 ต.ค. 69"
+      }
+    },
+    "orderStatus": "verified",
+    "adminNotes": "",
+    "createdAt": "2026-10-08T14:01:24.247Z"
+  },
+  {
+    "id": "MW-20261008-DFZ3",
+    "customerName": "ต้าหมาน้อยหน้าเกลียด",
+    "customerPhone": "0959014910",
+    "customerEmail": "",
+    "customerAddress": "",
+    "customerNote": "",
+    "items": [
+      {
+        "snackId": "snack-1791432853727-fzqh",
+        "name": "อาลัว",
+        "price": 50,
+        "quantity": 2,
+        "unit": "กล่อง",
+        "subtotal": 100
+      },
+      {
+        "snackId": "snack-1791449904937-3i4m",
+        "name": "น้ำตาลสด",
+        "price": 50,
+        "quantity": 1,
+        "unit": "ขวด",
+        "subtotal": 50
+      }
+    ],
+    "totalPrice": 150,
+    "slipImage": "/uploads/slips/slip-1791467370197-6467.jpg",
+    "slipVerification": {
+      "isValidSlip": true,
+      "detectedAmount": 150,
+      "expectedAmount": 150,
+      "isAmountMatched": true,
+      "amountDifference": 0,
+      "transferDate": "8 ต.ค. 2569",
+      "transferTime": "20:47:42",
+      "isDateToday": true,
+      "receiverName": "นาง พัชญ์ชามญชุ์ กฤติณัฐธ****",
+      "isReceiverMatched": true,
+      "expectedReceiver": "พัชญ์ชามญชุ์ กฤติณัฐธนชัย",
+      "isReadyToSave": true,
+      "hasQrCode": true,
+      "qrData": "0046000600000101030250225APF261008204739OHY4TEV0IF5102TH91041A97",
+      "qrScanMethod": "direct",
+      "isDuplicateSlip": false,
+      "duplicateMatchedBy": null,
+      "duplicateReason": null,
+      "fileHash": "0ea4864cd705cb1a8d694c51e41fa674211d8f7784ce3e10acfef1f845586bfd",
+      "bankName": "TrueMoney",
+      "senderName": "ณัฐพัชร์ กฤติณัฐธ****",
+      "transactionRef": "50059182944562",
+      "status": "VALID_AND_MATCHED",
+      "message": "✅ สลิปถูกต้อง! โอนเข้าบัญชีร้าน \"พัชญ์ชามญชุ์ กฤติณัฐธนชัย\" ยอดเงิน 150.00 บาท โอนวันนี้ถูกต้องสมบูรณ์ (ตรวจสอบ QR Code ในสลิปผ่าน)",
+      "todayReference": {
+        "isoDate": "2026-10-08",
+        "day": 8,
+        "month": 10,
+        "yearCE": 2026,
+        "yearBE": 2569,
+        "thaiFull": "8 ตุลาคม 2569",
+        "thaiShort": "08 ต.ค. 69"
+      }
+    },
+    "orderStatus": "delivered",
+    "adminNotes": "",
+    "createdAt": "2026-10-08T13:49:34.371Z",
+    "updatedAt": "2026-10-08T13:51:06.988Z"
+  }
+]

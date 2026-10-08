@@ -1,0 +1,74 @@
+[
+  {
+    "id": "snack-1791449640880-rg85",
+    "name": "ขนมบ้าบิ่น",
+    "price": 100,
+    "unit": "ถุง",
+    "description": "",
+    "image": "/uploads/snacks/snack-1791449640864-2636.jpg",
+    "isAvailable": true,
+    "createdAt": "2026-10-08T08:54:00.880Z",
+    "updatedAt": "2026-10-08T13:40:03.307Z",
+    "cost": 25
+  },
+  {
+    "id": "snack-1791450140311-o6dt",
+    "name": "ขนมหม้อแกง",
+    "price": 100,
+    "unit": "ถุง",
+    "description": "",
+    "image": "/uploads/snacks/snack-1791450140297-2915.jpg",
+    "isAvailable": true,
+    "createdAt": "2026-10-08T09:02:20.311Z",
+    "cost": 35,
+    "updatedAt": "2026-10-08T13:40:26.520Z"
+  },
+  {
+    "id": "snack-1791432853727-fzqh",
+    "name": "อาลัว",
+    "price": 50,
+    "unit": "กล่อง",
+    "description": "อร่อยแสงออกปาก",
+    "image": "/uploads/snacks/snack-1791449681778-3505.jpg",
+    "isAvailable": true,
+    "createdAt": "2026-10-08T04:14:13.727Z",
+    "updatedAt": "2026-10-08T13:40:46.845Z",
+    "cost": 40
+  },
+  {
+    "id": "snack-1791449834095-fgzt",
+    "name": "ฝอยทอง",
+    "price": 100,
+    "unit": "ครึ่งกิโลกรัม",
+    "description": "",
+    "image": "/uploads/snacks/snack-1791449834079-7338.jpg",
+    "isAvailable": true,
+    "createdAt": "2026-10-08T08:57:14.095Z",
+    "cost": 80,
+    "updatedAt": "2026-10-08T13:41:20.223Z"
+  },
+  {
+    "id": "snack-1791449904937-3i4m",
+    "name": "น้ำตาลสด",
+    "price": 50,
+    "unit": "ขวด",
+    "description": "",
+    "image": "/uploads/snacks/snack-1791449904888-5130.jpg",
+    "isAvailable": true,
+    "createdAt": "2026-10-08T08:58:24.937Z",
+    "updatedAt": "2026-10-08T13:41:37.273Z",
+    "cost": 35
+  },
+  {
+    "id": "snack-1791450042171-jlc6",
+    "name": "น้ำตาลมะพร้าว",
+    "price": 45,
+    "unit": "ถุง",
+    "description": "",
+    "image": "/uploads/snacks/snack-1791450042163-2013.jpg",
+    "isAvailable": true,
+    "createdAt": "2026-10-08T09:00:42.171Z",
+    "cost": 30,
+    "updatedAt": "2026-10-08T13:41:53.690Z"
+  }
+]

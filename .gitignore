@@ -1,0 +1,6 @@
+.env
+node_modules/
+cloudflared.exe
+.env.local
+.DS_Store
+Thumbs.db

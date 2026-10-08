@@ -1,0 +1,174 @@
+@import url('https://fonts.googleapis.com/css2?family=Prompt:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Kanit:wght@400;500;600;700&display=swap');
+
+:root {
+  --primary: #f97316;
+  --primary-hover: #ea580c;
+  --secondary: #fbbf24;
+  --warm-bg: #fffaf5;
+}
+
+body {
+  font-family: 'Prompt', -apple-system, BlinkMacSystemFont, sans-serif;
+  background-color: var(--warm-bg);
+  color: #334155;
+  scroll-behavior: smooth;
+}
+
+h1, h2, h3, h4, .font-heading {
+  font-family: 'Kanit', sans-serif;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Card hover animation */
+.snack-card {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.snack-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px -10px rgba(249, 115, 22, 0.15);
+}
+
+.snack-card.selected {
+  border-color: #f97316;
+  background-color: #fffbeb;
+  box-shadow: 0 0 0 2px #f97316;
+}
+
+/* Pulsing badge */
+@keyframes pulse-subtle {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.85; transform: scale(1.03); }
+}
+.pulse-badge {
+  animation: pulse-subtle 2s infinite ease-in-out;
+}
+
+/* Upload dropzone active state */
+.dropzone-active {
+  border-color: #f97316 !important;
+  background-color: #fff7ed !important;
+}
+
+/* Loading spinner */
+.spinner {
+  border: 3px solid rgba(249, 115, 22, 0.2);
+  border-top: 3px solid #f97316;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* =======================================================
+   MOBILE UX & TOUCH OPTIMIZATIONS
+   ======================================================= */
+
+/* Prevent iOS Safari 300ms double-tap zoom delay */
+button, a, input, select, textarea, .snack-card, .clickable {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Prevent iOS Safari auto-zoom on input focus by ensuring at least 16px font-size */
+@media (max-width: 640px) {
+  input[type="text"],
+  input[type="tel"],
+  input[type="email"],
+  input[type="number"],
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Safe area padding for modern iPhone notch & home indicator */
+.safe-area-pb {
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+}
+
+/* Mobile sticky floating bar show state */
+#mobileFloatingBar.show {
+  transform: translateY(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Responsive card touch feedback */
+.touch-active:active {
+  transform: scale(0.97);
+}
+
+/* Mobile quantity buttons minimum comfortable touch target */
+.qty-btn {
+  min-width: 36px;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  user-select: none;
+}
+
+/* Numeric keypad for PIN login on mobile */
+.pin-key {
+  height: 48px;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #1e293b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  user-select: none;
+  touch-action: manipulation;
+}
+.pin-key:hover {
+  background-color: #f1f5f9;
+  border-color: #cbd5e1;
+}
+.pin-key:active {
+  background-color: #fed7aa;
+  border-color: #f97316;
+  transform: scale(0.95);
+}
+
+.pin-key-action {
+  height: 48px;
+  background-color: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  user-select: none;
+  touch-action: manipulation;
+}
+.pin-key-action:active {
+  transform: scale(0.95);
+  background-color: #e2e8f0;
+}
+
