@@ -434,7 +434,17 @@ app.get('/api/orders-history', (req, res) => {
       idList = typeof ids === 'string' ? ids.split(',').map(s => s.trim()).filter(Boolean) : ids;
     }
     const orders = db.findOrders({ query, phone, name, ids: idList, deviceId });
-    res.json({ success: true, data: orders });
+
+    // Sanitize cost and profit fields for customer privacy
+    const sanitizedOrders = (orders || []).map(({ totalCost, totalProfit, profitMargin, ...order }) => {
+      const sanitizedItems = (order.items || []).map(({ cost, totalCost, profit, ...item }) => item);
+      return {
+        ...order,
+        items: sanitizedItems
+      };
+    });
+
+    res.json({ success: true, data: sanitizedOrders });
   } catch (err) {
     console.error('Error fetching order history:', err);
     res.status(500).json({ success: false, error: err.message });

@@ -11,6 +11,24 @@ let qrDebounceTimeout = null;
 document.addEventListener('DOMContentLoaded', async () => {
   if (window.lucide) lucide.createIcons();
 
+  // Restore customer contact info from persistent storage
+  const nameInput = document.getElementById('customerName');
+  const phoneInput = document.getElementById('customerPhone');
+  if (nameInput) {
+    const savedName = localStorage.getItem('snack_maew_customer_name');
+    if (savedName && !nameInput.value) nameInput.value = savedName;
+    nameInput.addEventListener('input', e => {
+      localStorage.setItem('snack_maew_customer_name', e.target.value.trim());
+    });
+  }
+  if (phoneInput) {
+    const savedPhone = localStorage.getItem('snack_maew_customer_phone');
+    if (savedPhone && !phoneInput.value) phoneInput.value = savedPhone;
+    phoneInput.addEventListener('input', e => {
+      localStorage.setItem('snack_maew_customer_phone', e.target.value.trim());
+    });
+  }
+
   await loadShopSettings();
   await loadSnacks();
 
@@ -813,6 +831,10 @@ async function confirmAndSaveOrder() {
         });
       }
 
+      // Save customer contact info to persistent storage
+      if (customerName) localStorage.setItem('snack_maew_customer_name', customerName);
+      if (customerPhone) localStorage.setItem('snack_maew_customer_phone', customerPhone);
+
       // Save to local storage history
       saveOrderToLocalHistory(data.order.id);
       updateHistoryBadge();
@@ -1125,10 +1147,16 @@ async function syncDeviceOrdersFromCloud() {
   try {
     const deviceId = getDeviceId();
     const localIds = getLocalOrderIds();
+    const phoneInput = document.getElementById('customerPhone');
+    const nameInput = document.getElementById('customerName');
+    const savedPhone = (phoneInput && phoneInput.value.trim()) || localStorage.getItem('snack_maew_customer_phone') || '';
+    const savedName = (nameInput && nameInput.value.trim()) || localStorage.getItem('snack_maew_customer_name') || '';
 
     const params = new URLSearchParams();
     if (deviceId) params.append('deviceId', deviceId);
     if (localIds.length > 0) params.append('ids', localIds.join(','));
+    if (savedPhone) params.append('phone', savedPhone);
+    if (savedName) params.append('name', savedName);
 
     const res = await fetch(`/api/orders-history?${params.toString()}`);
     const data = await res.json();
@@ -1143,15 +1171,15 @@ async function syncDeviceOrdersFromCloud() {
       updateHistoryBadge();
 
       // 2. Pre-fill customer name & phone from most recent order if empty
-      const nameInput = document.getElementById('customerName');
-      const phoneInput = document.getElementById('customerPhone');
       const latestOrder = orders[0];
       if (latestOrder) {
         if (nameInput && !nameInput.value.trim() && latestOrder.customerName) {
           nameInput.value = latestOrder.customerName;
+          localStorage.setItem('snack_maew_customer_name', latestOrder.customerName);
         }
         if (phoneInput && !phoneInput.value.trim() && latestOrder.customerPhone) {
           phoneInput.value = latestOrder.customerPhone;
+          localStorage.setItem('snack_maew_customer_phone', latestOrder.customerPhone);
         }
       }
 
@@ -1164,11 +1192,20 @@ async function syncDeviceOrdersFromCloud() {
       if (banner) {
         if (activeOrders.length > 0) {
           latestActiveDeviceOrder = activeOrders[0];
+          const badgeStatus = document.getElementById('activeOrderBadgeStatus');
+          const idText = document.getElementById('activeOrderIdText');
           const countBadge = document.getElementById('deviceActiveOrdersCount');
           const previewText = document.getElementById('deviceActiveOrderPreview');
           const mainText = document.getElementById('deviceActiveOrdersText');
           const statusInfo = getOrderStatusInfo(latestActiveDeviceOrder.orderStatus);
 
+          if (badgeStatus) {
+            badgeStatus.className = `text-[10px] sm:text-xs font-medium px-2 py-0.5 rounded-full border ${statusInfo.badgeClass}`;
+            badgeStatus.innerText = statusInfo.label;
+          }
+          if (idText) {
+            idText.innerText = `${latestActiveDeviceOrder.id} • ${latestActiveDeviceOrder.customerName} (${latestActiveDeviceOrder.totalPrice.toLocaleString()} ฿)`;
+          }
           if (countBadge) countBadge.innerText = `${activeOrders.length} รายการ`;
           if (mainText) mainText.innerText = `คุณมี ${activeOrders.length} ออเดอร์กำลังดำเนินการ: ${statusInfo.label}`;
           if (previewText) {
@@ -1444,8 +1481,8 @@ async function loadOrderHistory(searchQuery = '') {
   const container = document.getElementById('orderHistoryList');
   const countText = document.getElementById('orderHistoryCountText');
   container.innerHTML = `
-    <div class="py-12 text-center text-slate-400 space-y-2">
-      <div class="spinner mx-auto border-3 w-8 h-8 border-orange-200 border-t-orange-600"></div>
+    <div class="py-12 text-center text-stone-400 space-y-2">
+      <div class="spinner mx-auto"></div>
       <p class="text-xs">กำลังโหลดประวัติคำสั่งซื้อ...</p>
     </div>
   `;
@@ -1453,22 +1490,31 @@ async function loadOrderHistory(searchQuery = '') {
   try {
     const localIds = getLocalOrderIds();
     const deviceId = getDeviceId();
+    const phoneInput = document.getElementById('customerPhone');
+    const nameInput = document.getElementById('customerName');
+    const savedPhone = (phoneInput && phoneInput.value.trim()) || localStorage.getItem('snack_maew_customer_phone') || '';
+    const savedName = (nameInput && nameInput.value.trim()) || localStorage.getItem('snack_maew_customer_name') || '';
+
     let url = '/api/orders-history';
-    if (searchQuery) {
-      url += `?query=${encodeURIComponent(searchQuery)}`;
+    const params = new URLSearchParams();
+
+    if (searchQuery && searchQuery.trim()) {
+      params.append('query', searchQuery.trim());
     } else {
-      const params = new URLSearchParams();
       if (deviceId) params.append('deviceId', deviceId);
       if (localIds.length > 0) params.append('ids', localIds.join(','));
-      url += `?${params.toString()}`;
+      if (savedPhone) params.append('phone', savedPhone);
+      if (savedName) params.append('name', savedName);
     }
+    url += `?${params.toString()}`;
 
     const res = await fetch(url);
     const data = await res.json();
 
     if (data.success && data.data && data.data.length > 0) {
-      // If search returned orders, also merge their IDs into local storage so the customer keeps them!
+      // Merge all returned order IDs into local storage so they remain permanently recalled
       data.data.forEach(o => saveOrderToLocalHistory(o.id));
+      updateHistoryBadge();
 
       renderOrderHistoryList(data.data);
       if (countText) countText.innerText = `พบทั้งหมด ${data.data.length} รายการ`;
@@ -1489,15 +1535,25 @@ async function loadOrderHistory(searchQuery = '') {
 function renderEmptyOrderHistory(customMsg = null) {
   const container = document.getElementById('orderHistoryList');
   container.innerHTML = `
-    <div class="py-12 px-4 text-center text-slate-400 space-y-3 bg-slate-50/60 rounded-2xl border border-dashed border-slate-200">
-      <div class="w-14 h-14 rounded-full bg-orange-100 text-orange-600 text-2xl flex items-center justify-center mx-auto">
+    <div class="py-10 px-4 text-center text-stone-400 space-y-3 bg-stone-50/70 rounded-2xl border border-dashed border-stone-200">
+      <div class="w-12 h-12 rounded-full bg-stone-100 text-stone-700 text-xl flex items-center justify-center mx-auto border border-stone-200">
         🐾
       </div>
-      <div>
-        <p class="font-bold text-slate-700 text-sm">${customMsg || 'ยังไม่มีประวัติการสั่งซื้อบนอุปกรณ์นี้'}</p>
-        <p class="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-          หากเคยสั่งซื้อไว้ สามารถพิมพ์เบอร์โทรศัพท์ที่ใช้สั่ง หรือรหัสออเดอร์ (MW-...) ในช่องค้นหาด้านบนเพื่อดึงข้อมูลได้ทันทีครับ
+      <div class="space-y-1">
+        <p class="font-medium text-stone-800 text-sm">${customMsg || 'ยังไม่มีประวัติการสั่งซื้อบนอุปกรณ์นี้'}</p>
+        <p class="text-xs text-stone-400 max-w-sm mx-auto">
+          หากเคยสั่งซื้อไว้ สามารถพิมพ์เบอร์โทรศัพท์ที่เคยใช้ หรือกดปุ่มด้านล่างเพื่อดึงออเดอร์ทั้งหมดได้ครับ
         </p>
+      </div>
+      <div class="pt-1">
+        <button
+          type="button"
+          onclick="loadOrderHistory('all')"
+          class="bg-stone-900 hover:bg-stone-800 text-white text-xs font-medium px-4 py-2 rounded-xl transition shadow-2xs cursor-pointer inline-flex items-center gap-1.5"
+        >
+          <i data-lucide="list" class="w-3.5 h-3.5"></i>
+          <span>ดูรายการสั่งซื้อล่าสุดทั้งหมดของร้าน</span>
+        </button>
       </div>
     </div>
   `;
