@@ -30,6 +30,11 @@ if (!fs.existsSync(slipsUploadDir)) {
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(uploadDir));
 
+// Health check endpoint for Uptime monitoring & Keep-Alive
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok', uptime: process.uptime(), timestamp: new Date().toISOString() });
+});
+
 // Route to Admin Dashboard (allows accessing admin from the main public tunnel URL /admin)
 app.get('/admin', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
@@ -329,4 +334,18 @@ app.listen(PORT, '0.0.0.0', () => {
     });
   });
   console.log(`====================================================`);
+
+  // Keep-Alive Self-Ping on Render Cloud (prevents 15-minute inactivity spin-down)
+  const renderUrl = process.env.RENDER_EXTERNAL_URL || 'https://rich-2syu.onrender.com';
+  if (process.env.PORT) {
+    console.log(`[Keep-Alive] Initializing auto-ping for ${renderUrl} every 10 minutes...`);
+    setInterval(async () => {
+      try {
+        const pingRes = await fetch(`${renderUrl}/health`);
+        console.log(`[Keep-Alive] Pinged ${renderUrl}/health - Status: ${pingRes.status}`);
+      } catch (err) {
+        console.warn(`[Keep-Alive] Ping failed:`, err.message);
+      }
+    }, 10 * 60 * 1000); // every 10 minutes
+  }
 });
