@@ -251,6 +251,21 @@ app.post('/api/orders', uploadSlip.single('slip'), async (req, res) => {
       } catch (e) {}
     }
 
+    // RULE: "ตรวจสอบสลิปจาก QR code เท่านั้น"
+    if (slipVerification && (!slipVerification.hasQrCode || slipVerification.status === 'NO_QR_CODE')) {
+      return res.status(400).json({
+        success: false,
+        error: 'สลิปนี้ไม่มี QR Code หรือสแกน QR ไม่พบ (ระบบกำหนดให้ต้องตรวจสอบจาก QR Code บนสลิปเท่านั้น กรุณาแนบรูปสลิปที่มี Mini QR Code ธนาคาร)'
+      });
+    }
+
+    if (slipVerification && slipVerification.isDuplicateSlip) {
+      return res.status(400).json({
+        success: false,
+        error: '🚨 ตรวจพบ QR Code ซ้ำในระบบ! สลิปนี้เคยถูกใช้งานสั่งซื้อไปแล้ว ไม่สามารถใช้ซ้ำได้'
+      });
+    }
+
     // Device ID from client (enables persistent cloud tracking across browser restarts)
     const deviceId = (body.deviceId || req.headers['x-device-id'] || '').trim() || null;
 

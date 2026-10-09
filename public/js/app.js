@@ -734,6 +734,28 @@ async function confirmAndSaveOrder() {
     return;
   }
 
+  // Enforce QR Code only requirement: Must have a valid QR Code
+  if (currentSlipVerification) {
+    if (!currentSlipVerification.hasQrCode || currentSlipVerification.status === 'NO_QR_CODE') {
+      Swal.fire({
+        icon: 'error',
+        title: 'ไม่พบ QR Code ในสลิป',
+        text: 'ระบบกำหนดให้ต้องตรวจสอบสลิปจาก QR Code เท่านั้น กรุณาแนบรูปสลิปที่มี Mini QR Code ธนาคารครับ',
+        confirmButtonColor: '#f97316'
+      });
+      return;
+    }
+    if (currentSlipVerification.isDuplicateSlip || currentSlipVerification.status === 'DUPLICATE_SLIP') {
+      Swal.fire({
+        icon: 'error',
+        title: 'ตรวจพบสลิปซ้ำ',
+        text: 'QR Code ในสลิปนี้เคยถูกใช้งานสั่งซื้อไปแล้วในระบบ กรุณาใช้สลิปการโอนเงินใหม่ครับ',
+        confirmButtonColor: '#f97316'
+      });
+      return;
+    }
+  }
+
   // Show saving progress
   Swal.fire({
     title: 'กำลังส่งคำสั่งซื้อ...',
@@ -831,6 +853,13 @@ function removeSlip() {
   if (confirmSection) confirmSection.classList.add('hidden');
   const hintBanner = document.getElementById('slipHintBanner');
   if (hintBanner) hintBanner.classList.remove('hidden');
+
+  const confirmBtn = document.getElementById('confirmOrderBtn');
+  if (confirmBtn) {
+    confirmBtn.disabled = false;
+    confirmBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+    confirmBtn.innerHTML = '<i data-lucide="check-circle" class="w-5 h-5"></i><span>✅ กดยืนยันการสั่งซื้อขนม (ส่งออเดอร์) 🐾</span>';
+  }
 }
 
 // Display verification result card with badges and details
@@ -839,6 +868,7 @@ function displayVerificationResult(v, expectedAmount) {
   const iconContainer = document.getElementById('statusIconContainer');
   const title = document.getElementById('verificationTitle');
   const summary = document.getElementById('verificationSummary');
+  const confirmBtn = document.getElementById('confirmOrderBtn');
 
   const detectedAmountText = document.getElementById('detectedAmountText');
   const expectedAmountText = document.getElementById('expectedAmountText');
@@ -867,9 +897,9 @@ function displayVerificationResult(v, expectedAmount) {
       const bankLabel = v.bankName ? ` (${v.bankName})` : '';
       detectedQrText.innerHTML = `<span class="inline-flex items-center gap-1.5 font-bold text-emerald-800 text-xs"><i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-600"></i> ${v.qrStatusText || 'ตรวจพบ Mini QR Code ธนาคาร'}${bankLabel}</span>`;
     } else {
-      detectedQrBox.className = 'col-span-2 flex items-center justify-between bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200';
-      detectedQrText.innerText = 'ไม่พบ QR Code ในรูป (ใช้การอ่านข้อความจาก AI)';
-      detectedQrText.className = 'font-medium text-slate-500 text-xs';
+      detectedQrBox.className = 'col-span-2 flex items-center justify-between bg-red-50 px-3 py-1.5 rounded-xl border border-red-200';
+      detectedQrText.innerText = '❌ ไม่พบ QR Code ในสลิป (ระบบกำหนดให้ต้องมี QR Code)';
+      detectedQrText.className = 'font-bold text-red-600 text-xs';
     }
   }
 
@@ -892,24 +922,51 @@ function displayVerificationResult(v, expectedAmount) {
     }
   }
 
-  if (v.isDuplicateSlip || v.status === 'DUPLICATE_SLIP') {
+  if (!v.hasQrCode || v.status === 'NO_QR_CODE') {
+    // Missing QR Code!
+    card.classList.add('bg-red-50', 'border-red-300');
+    iconContainer.className = 'w-8 h-8 rounded-full bg-red-600 text-white flex items-center justify-center shrink-0 shadow-sm';
+    iconContainer.innerHTML = '<i data-lucide="qr-code" class="w-5 h-5"></i>';
+    title.className = 'text-sm font-bold text-red-900';
+    title.innerText = '❌ ตรวจไม่พบ QR Code ในรูปภาพสลิป';
+    summary.className = 'text-xs text-red-700 font-bold';
+    summary.innerText = v.message || 'ระบบกำหนดให้ต้องตรวจสอบสลิปจาก QR Code เท่านั้น กรุณาแนบรูปสลิปการโอนเงินที่มี Mini QR Code ของธนาคารที่ชัดเจนครับ';
+
+    if (confirmBtn) {
+      confirmBtn.disabled = true;
+      confirmBtn.classList.add('opacity-50', 'cursor-not-allowed');
+      confirmBtn.innerHTML = '<i data-lucide="alert-triangle" class="w-5 h-5"></i><span>⚠️ สลิปไม่มี QR Code (ไม่สามารถส่งออเดอร์ได้)</span>';
+    }
+  } else if (v.isDuplicateSlip || v.status === 'DUPLICATE_SLIP') {
     // Duplicate slip detected!
     card.classList.add('bg-red-50', 'border-red-300');
     iconContainer.className = 'w-8 h-8 rounded-full bg-red-600 text-white flex items-center justify-center shrink-0 shadow-sm';
     iconContainer.innerHTML = '<i data-lucide="shield-alert" class="w-5 h-5"></i>';
     title.className = 'text-sm font-bold text-red-900';
-    title.innerText = '🚫 สลิปนี้ซ้ำ! เคยถูกใช้งานในระบบแล้ว';
+    title.innerText = '🚫 สลิปนี้ซ้ำ! QR Code นี้เคยถูกใช้งานในระบบแล้ว';
     summary.className = 'text-xs text-red-700 font-medium';
-    summary.innerText = v.message || 'ตรวจพบว่าสลิปนี้เคยถูกใช้สั่งซื้อไปแล้ว กรุณาใช้สลิปการโอนเงินใหม่';
+    summary.innerText = v.message || 'ตรวจพบว่า QR Code นี้เคยถูกใช้สั่งซื้อไปแล้ว กรุณาใช้สลิปการโอนเงินใหม่';
+
+    if (confirmBtn) {
+      confirmBtn.disabled = true;
+      confirmBtn.classList.add('opacity-50', 'cursor-not-allowed');
+      confirmBtn.innerHTML = '<i data-lucide="alert-triangle" class="w-5 h-5"></i><span>⚠️ QR Code นี้ถูกใช้ไปแล้ว</span>';
+    }
   } else if (v.status === 'VALID_AND_MATCHED' || v.isReadyToSave) {
     // Exact Match, Valid Date & Valid Shop Receiver!
     card.classList.add('bg-emerald-50', 'border-emerald-200');
     iconContainer.className = 'w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-sm';
     iconContainer.innerHTML = '<i data-lucide="check-circle" class="w-5 h-5"></i>';
     title.className = 'text-sm font-bold text-emerald-900';
-    title.innerText = '✅ สลิปถูกต้อง! โอนเข้าบัญชีร้านและยอดเงินตรงกัน';
-    summary.className = 'text-xs text-emerald-700';
-    summary.innerText = `โอนเข้า: ${v.receiverName} | ยอดเงิน: ${v.detectedAmount?.toFixed(2)} บาท | โอนวันนี้ถูกต้อง${v.hasQrCode ? ' (ตรวจ QR ผ่าน)' : ''}`;
+    title.innerText = '✅ ตรวจสอบ QR Code ในสลิปถูกต้อง!';
+    summary.className = 'text-xs text-emerald-700 font-medium';
+    summary.innerText = `ตรวจพบ Mini QR ธนาคาร (${v.bankName || 'ธนาคารไทย'}) | เลขอ้างอิง: ${v.transactionRef || '-'} | ยอดเงินตรง ${expectedAmount.toFixed(2)} บาท`;
+
+    if (confirmBtn) {
+      confirmBtn.disabled = false;
+      confirmBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+      confirmBtn.innerHTML = '<i data-lucide="check-circle" class="w-5 h-5"></i><span>✅ กดยืนยันการสั่งซื้อขนม (ส่งออเดอร์) 🐾</span>';
+    }
   } else if (v.status === 'RECEIVER_MISMATCHED' || !v.isReceiverMatched) {
     // Receiver Mismatch (Not the shop's account!)
     card.classList.add('bg-red-50', 'border-red-200');
@@ -919,6 +976,12 @@ function displayVerificationResult(v, expectedAmount) {
     title.innerText = '❌ สลิปนี้ไม่ได้โอนเข้าบัญชีของทางร้าน';
     summary.className = 'text-xs text-red-700';
     summary.innerText = v.message || `ชื่อผู้รับในสลิป (${v.receiverName || 'ไม่ระบุ'}) ไม่ตรงกับบัญชีของร้าน`;
+
+    if (confirmBtn) {
+      confirmBtn.disabled = false;
+      confirmBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+      confirmBtn.innerHTML = '<i data-lucide="check-circle" class="w-5 h-5"></i><span>✅ กดยืนยันการสั่งซื้อขนม (ส่งออเดอร์) 🐾</span>';
+    }
   } else if (v.status === 'AMOUNT_MISMATCHED' || (!v.isAmountMatched && v.detectedAmount !== null)) {
     // Amount Mismatch
     card.classList.add('bg-amber-50', 'border-amber-200');
@@ -929,6 +992,12 @@ function displayVerificationResult(v, expectedAmount) {
     summary.className = 'text-xs text-amber-800';
     const diff = v.amountDifference || 0;
     summary.innerText = `ยอดในสลิปคือ ${v.detectedAmount?.toFixed(2) || 0} บาท แต่มียอดสั่งซื้อ ${expectedAmount.toFixed(2)} บาท (${diff < 0 ? 'ขาด ' + Math.abs(diff).toFixed(2) : 'เกิน +' + diff.toFixed(2)} บาท)`;
+
+    if (confirmBtn) {
+      confirmBtn.disabled = false;
+      confirmBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+      confirmBtn.innerHTML = '<i data-lucide="check-circle" class="w-5 h-5"></i><span>✅ กดยืนยันการสั่งซื้อขนม (ส่งออเดอร์) 🐾</span>';
+    }
   } else if (v.status === 'DATE_MISMATCHED' || !v.isDateToday) {
     // Date Mismatch (Old slip)
     card.classList.add('bg-amber-50', 'border-amber-200');

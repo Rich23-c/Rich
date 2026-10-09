@@ -88,13 +88,17 @@ async function scanSlipQrCode(filePath) {
     // place their Mini QR in specific regions of the transfer receipt:
     const regions = [
       // 1. Bottom-Right Quadrant (KBank, SCB, Krungthai, TrueMoney)
-      { name: 'bottom-right', x: Math.round(w * 0.35), y: Math.round(h * 0.42), w: Math.round(w * 0.65), h: Math.round(h * 0.58) },
+      { name: 'bottom-right', x: Math.round(w * 0.35), y: Math.round(h * 0.38), w: Math.round(w * 0.65), h: Math.round(h * 0.62) },
       // 2. Bottom-Left Quadrant (Bangkok Bank BBL, GSB, TTB)
-      { name: 'bottom-left', x: 0, y: Math.round(h * 0.42), w: Math.round(w * 0.65), h: Math.round(h * 0.58) },
+      { name: 'bottom-left', x: 0, y: Math.round(h * 0.38), w: Math.round(w * 0.65), h: Math.round(h * 0.62) },
       // 3. Bottom-Half Full Width
-      { name: 'bottom-half', x: 0, y: Math.round(h * 0.40), w: w, h: Math.round(h * 0.60) },
+      { name: 'bottom-half', x: 0, y: Math.round(h * 0.35), w: w, h: Math.round(h * 0.65) },
       // 4. Center-Bottom
-      { name: 'center-bottom', x: Math.round(w * 0.20), y: Math.round(h * 0.45), w: Math.round(w * 0.60), h: Math.round(h * 0.55) }
+      { name: 'center-bottom', x: Math.round(w * 0.15), y: Math.round(h * 0.40), w: Math.round(w * 0.70), h: Math.round(h * 0.60) },
+      // 5. Middle-Right
+      { name: 'middle-right', x: Math.round(w * 0.35), y: Math.round(h * 0.25), w: Math.round(w * 0.65), h: Math.round(h * 0.55) },
+      // 6. Center Full (Square slips)
+      { name: 'center-full', x: Math.round(w * 0.10), y: Math.round(h * 0.15), w: Math.round(w * 0.80), h: Math.round(h * 0.75) }
     ];
 
     for (const reg of regions) {
@@ -115,7 +119,7 @@ async function scanSlipQrCode(filePath) {
           return { found: true, data: qrData, method: `crop-${reg.name}-contrast`, info: parseSlipQrInfo(qrData) };
         }
 
-        // Try adaptive binarization thresholds (120, 150)
+        // Try adaptive binarization thresholds (128, 105, 155)
         for (const thresh of [128, 105, 155]) {
           const binarized = applyBinarize(cropped, thresh);
           qrData = tryScanJimp(binarized);
@@ -124,7 +128,7 @@ async function scanSlipQrCode(filePath) {
           }
         }
 
-        // If the cropped area is small (< 400px), try upscaling 1.75x
+        // If the cropped area is small (< 500px), try upscaling 1.75x
         if (reg.w < 500) {
           const scaled = cropped.clone();
           scaled.resize({ w: Math.round(reg.w * 1.75) });
@@ -259,6 +263,14 @@ function parseSlipQrInfo(qrData) {
     }
 
     if (outer['51']) info.country = outer['51'];
+
+    // Tag 54: Amount if embedded in QR code
+    if (outer['54']) {
+      const amt = parseFloat(outer['54']);
+      if (!isNaN(amt)) {
+        info.amount = amt;
+      }
+    }
   }
 
   // 2. Check for TrueMoney / APF standalone format

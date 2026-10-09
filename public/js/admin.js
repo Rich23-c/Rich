@@ -1048,7 +1048,7 @@ function renderOrdersTable() {
       `;
     }
 
-    // AI Verification badge
+    // QR Verification badge
     let verifyBadge = '';
     const v = order.slipVerification;
     if (v) {
@@ -1056,18 +1056,29 @@ function renderOrdersTable() {
         verifyBadge = `
           <div class="inline-flex flex-col items-center">
             <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-red-100 text-red-800 border border-red-200">
-              🚨 สลิปซ้ำ
+              🚨 สลิปซ้ำ (QR ซ้ำ)
             </span>
             <span class="text-[10px] text-red-600 mt-0.5 font-medium">เคยถูกใช้แล้ว</span>
           </div>
         `;
-      } else if (v.isReadyToSave || v.status === 'VALID_AND_MATCHED' || v.isAmountMatched) {
+      } else if (!v.hasQrCode || v.status === 'NO_QR_CODE') {
+        verifyBadge = `
+          <div class="inline-flex flex-col items-center">
+            <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-red-100 text-red-800 border border-red-300">
+              ❌ ไม่มี QR Code
+            </span>
+            <span class="text-[10px] text-red-600 mt-0.5 font-medium">ไม่พบ QR ในสลิป</span>
+          </div>
+        `;
+      } else if (v.isReadyToSave || v.status === 'VALID_AND_MATCHED' || v.hasQrCode) {
+        const bankName = order.bankName || v.bankName || 'ธนาคารไทย';
+        const refSnippet = v.transactionRef ? (v.transactionRef.length > 8 ? v.transactionRef.slice(-6) : v.transactionRef) : '';
         verifyBadge = `
           <div class="inline-flex flex-col items-center">
             <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-              ✓ ยอดตรง ${order.totalPrice}฿
+              ✓ QR ผ่าน (${bankName})
             </span>
-            <span class="text-[10px] text-emerald-600 mt-0.5 font-medium">${v.transferDate || 'วันนี้'} &bull; ${v.bankName || 'สลิปถูกต้อง'}</span>
+            <span class="text-[10px] text-emerald-600 mt-0.5 font-medium">${refSnippet ? 'Ref: ' + refSnippet + ' &bull; ' : ''}${order.totalPrice}฿</span>
           </div>
         `;
       } else {

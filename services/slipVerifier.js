@@ -144,30 +144,119 @@ async function verifySlip(filePath, mimeType, expectedAmount, expectedReceiver =
   const qrTransferDate = qrInfo?.transferDate || null;
   const qrTransferTime = qrInfo?.transferTime || null;
 
-  // Read image buffer and convert to base64
+  // RULE: "ตรวจสอบสลิปจาก QR code เท่านั้น"
+  // If NO QR Code is found on the slip, REJECT IMMEDIATELY!
+  if (!hasQr) {
+    return {
+      isValidSlip: false,
+      isAmountMatched: false,
+      isDateToday: false,
+      isReceiverMatched: false,
+      isReadyToSave: false,
+      isDuplicateSlip: false,
+      hasQrCode: false,
+      isRealBankSlipQr: false,
+      qrData: null,
+      qrInfo: null,
+      qrScanMethod: null,
+      qrStatusText: '❌ ไม่พบ QR Code ในภาพสลิป',
+      fileHash,
+      detectedAmount: null,
+      expectedAmount: targetAmount,
+      receiverName: null,
+      bankName: null,
+      transactionRef: null,
+      status: 'NO_QR_CODE',
+      message: '❌ ไม่พบ QR Code ในสลิป (ระบบกำหนดให้ต้องตรวจสอบสลิปจาก QR Code เท่านั้น กรุณาแนบรูปสลิปการโอนเงินที่มี Mini QR Code ของธนาคาร)'
+    };
+  }
+
+  // Check duplicate QR Code in database
+  const initialRef = qrTransactionRef || qrData;
+  const dupCheck = checkDuplicateSlip({ fileHash, qrData, transactionRef: initialRef, excludeOrderId });
+  if (dupCheck.isDuplicate) {
+    return {
+      isValidSlip: true,
+      hasQrCode: true,
+      isRealBankSlipQr: isRealBankQr,
+      qrData,
+      qrInfo,
+      qrScanMethod: qrScanResult?.method || null,
+      qrStatusText: `✓ ตรวจพบ QR Code ธนาคาร (${qrBankName || 'ธนาคารไทย'})`,
+      fileHash,
+      isAmountMatched: false,
+      isDateToday: false,
+      isReceiverMatched: false,
+      isReadyToSave: false,
+      isDuplicateSlip: true,
+      duplicateMatchedBy: dupCheck.matchedBy || 'QR_CODE',
+      duplicateReason: dupCheck.message,
+      detectedAmount: null,
+      expectedAmount: targetAmount,
+      receiverName: expectedReceiver,
+      bankName: qrBankName || 'ธนาคารไทย',
+      transactionRef: initialRef,
+      transferDate: qrTransferDate || today.thaiShort,
+      transferTime: qrTransferTime || '',
+      status: 'DUPLICATE_SLIP',
+      message: '🚨 ตรวจพบ QR Code ซ้ำในระบบ! สลิปนี้เคยถูกใช้งานสั่งซื้อไปแล้ว ไม่สามารถใช้ซ้ำได้'
+    };
+  }
+
+  // If amount is directly embedded in QR Code (Tag 54)
+  if (qrInfo && qrInfo.amount !== undefined && qrInfo.amount !== null) {
+    const isAmtMatched = Math.abs(qrInfo.amount - targetAmount) <= 0.05;
+    const isDateMatch = qrTransferDate ? (qrTransferDate === today.isoDate || qrTransferDate === today.yesterdayIso) : true;
+    return {
+      isValidSlip: true,
+      hasQrCode: true,
+      isRealBankSlipQr: isRealBankQr,
+      qrData,
+      qrInfo,
+      qrScanMethod: qrScanResult?.method || null,
+      qrStatusText: `✓ ตรวจพบ QR Code ธนาคาร (${qrBankName || 'ธนาคารไทย'})`,
+      fileHash,
+      isAmountMatched: isAmtMatched,
+      amountDifference: Math.round((qrInfo.amount - targetAmount) * 100) / 100,
+      isDateToday: isDateMatch,
+      isReceiverMatched: true,
+      isReadyToSave: isAmtMatched && isDateMatch,
+      isDuplicateSlip: false,
+      detectedAmount: qrInfo.amount,
+      expectedAmount: targetAmount,
+      receiverName: expectedReceiver,
+      bankName: qrBankName || 'ธนาคารไทย',
+      transactionRef: initialRef,
+      transferDate: qrTransferDate || today.thaiShort,
+      transferTime: qrTransferTime || new Date().toLocaleTimeString('th-TH'),
+      status: isAmtMatched ? (isDateMatch ? 'VALID_AND_MATCHED' : 'DATE_MISMATCHED') : 'AMOUNT_MISMATCHED',
+      message: isAmtMatched
+        ? (isDateMatch ? `✅ ตรวจสอบ QR Code สำเร็จ! พบ QR ธนาคาร ${qrBankName || ''} ยอดเงินตรง ${targetAmount.toFixed(2)} บาท` : '⚠️ วันที่ในสลิปไม่ใช่วันที่ปัจจุบัน')
+        : `⚠️ ตรวจพบ QR Code ธนาคารแล้ว แต่ยอดเงินใน QR (${qrInfo.amount.toFixed(2)} บาท) ไม่ตรงกับยอดสั่งซื้อ (${targetAmount.toFixed(2)} บาท)`
+    };
+  }
+
+  // Read image buffer and convert to base64 for amount & recipient confirmation
   const imageBuffer = fs.readFileSync(filePath);
   const base64Data = imageBuffer.toString('base64');
   const normalizedMimeType = mimeType || 'image/jpeg';
 
-  // If Gemini API Key is missing, perform high-grade QR-based verification
+  // If Gemini API Key is missing, validate using decoded QR code metadata
   if (!GEMINI_API_KEY) {
-    console.warn('GEMINI_API_KEY not found. Performing QR-based verification.');
-    const initialRef = qrTransactionRef || 'REF-' + Date.now();
-    const dupCheck = checkDuplicateSlip({ fileHash, qrData, transactionRef: initialRef, excludeOrderId });
-
     const isDateMatch = qrTransferDate ? (qrTransferDate === today.isoDate || qrTransferDate === today.yesterdayIso) : true;
-
     return {
       isValidSlip: true,
-      isAmountMatched: !dupCheck.isDuplicate,
+      isAmountMatched: true,
       isDateToday: isDateMatch,
       isReceiverMatched: true,
-      isReadyToSave: !dupCheck.isDuplicate && isDateMatch,
-      isDuplicateSlip: dupCheck.isDuplicate,
-      hasQrCode: hasQr,
+      isReadyToSave: isDateMatch,
+      isDuplicateSlip: false,
+      hasQrCode: true,
       isRealBankSlipQr: isRealBankQr,
       qrData,
       qrInfo,
+      qrScanMethod: qrScanResult?.method || null,
+      qrStatusText: `✓ ตรวจพบ Mini QR Code ธนาคาร (${qrBankName || 'ธนาคารไทย'})`,
       fileHash,
       detectedAmount: targetAmount,
       expectedAmount: targetAmount,
@@ -176,21 +265,20 @@ async function verifySlip(filePath, mimeType, expectedAmount, expectedReceiver =
       transactionRef: initialRef,
       transferDate: qrTransferDate || today.thaiShort,
       transferTime: qrTransferTime || new Date().toLocaleTimeString('th-TH'),
-      status: dupCheck.isDuplicate ? 'DUPLICATE_SLIP' : (isDateMatch ? 'VALID_AND_MATCHED' : 'DATE_MISMATCHED'),
-      message: dupCheck.isDuplicate ? dupCheck.message : (isDateMatch ? '✓ ตรวจสอบผ่าน (ถอดรหัส Mini QR Code สำเร็จ)' : '⚠️ วันที่ในสลิปไม่ใช่วันที่ปัจจุบัน')
+      status: isDateMatch ? 'VALID_AND_MATCHED' : 'DATE_MISMATCHED',
+      message: isDateMatch ? `✅ ตรวจสอบ QR Code ธนาคารสำเร็จ (${qrBankName || 'ธนาคารไทย'}) รหัสอ้างอิง: ${initialRef}` : '⚠️ วันที่ในสลิปไม่ใช่วันที่ปัจจุบัน'
     };
   }
 
   // ====================================================
   // 2. ULTRA-ACCURATE GEMINI AI VISION OCR & CROSS-CHECK
+  // (Anchored on the decoded QR code)
   // ====================================================
-  const qrContextStr = hasQr
-    ? `[ข้อมูลระบบตรวจพบ QR Code ธนาคารในสลิป: ธนาคาร=${qrBankName || 'ธนาคารไทย'}, เลขอ้างอิงธุรกรรม=${qrTransactionRef || 'ตรวจพบ'}, วันที่ระบุใน QR=${qrTransferDate || 'วันนี้'}]`
-    : `[ระบบตรวจหา Mini QR ในภาพเบื้องต้นไม่พบ หรือสลิปอาจไม่มี QR Code]`;
+  const qrContextStr = `[ระบบตรวจพบและถอดรหัส QR Code ธนาคารแล้ว: ธนาคาร=${qrBankName || 'ธนาคารไทย'}, เลขอ้างอิงธุรกรรม=${qrTransactionRef || 'ตรวจพบใน QR'}, วันที่ระบุใน QR=${qrTransferDate || 'วันนี้'}]`;
 
   const prompt = `
-คุณคือระบบ AI ผู้เชี่ยวชาญระดับสูงในการตรวจสอบสลิปการโอนเงินธนาคารไทย (Thai Bank Transfer Slip OCR & Intelligent Verification)
-ที่ต้องตรวจสอบความถูกต้องและแม่นยำ 100% ป้องกันการปลอมแปลงและสลิปเก่า
+คุณคือระบบ AI ผู้เชี่ยวชาญระดับสูงในการตรวจสอบสลิปการโอนเงินธนาคารไทย โดยระบบนี้ "ตรวจสอบจาก QR Code ในสลิปเท่านั้น"
+สลิปนี้ได้รับการตรวจพบและถอดรหัส QR Code ธนาคารสำเร็จแล้ว: ${qrContextStr}
 
 ข้อมูลอ้างอิงของร้านค้าที่ต้องตรวจสอบให้ตรงกัน:
 1. ยอดเงินโอนจริง (Transfer Amount): ต้องตรงกับ ${targetAmount} บาท (คลาดเคลื่อนไม่เกิน 0.05 บาท)
