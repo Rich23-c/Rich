@@ -180,12 +180,12 @@ function renderSnacksGrid() {
 
     const card = document.createElement('div');
     card.id = `snack-card-${snack.id}`;
-    card.className = `snack-card bg-white rounded-3xl p-4 sm:p-5 border ${
+    card.className = `snack-card bg-white rounded-2xl p-4 sm:p-5 border ${
       !isStoreOpen
-        ? 'border-slate-200 bg-slate-50/70 shadow-2xs opacity-80'
+        ? 'border-stone-200 bg-stone-50/70 shadow-2xs opacity-75'
         : (!isSnackAvailable
-          ? 'border-slate-200 bg-slate-50/70 shadow-2xs opacity-80'
-          : (isSelected ? 'border-orange-500 bg-amber-50/50 shadow-md ring-2 ring-orange-500/20' : 'border-slate-200 shadow-xs')
+          ? 'border-stone-200 bg-stone-50/70 shadow-2xs opacity-75'
+          : (isSelected ? 'border-stone-900 bg-stone-50/20 shadow-sm ring-1 ring-stone-900' : 'border-stone-200/90 shadow-[0_1px_3px_rgba(0,0,0,0.02)]')
         )
     } flex flex-col justify-between transition-all`;
 
@@ -195,17 +195,17 @@ function renderSnacksGrid() {
     let overlayBadge = '';
     if (!isStoreOpen) {
       overlayBadge = `
-        <div class="absolute inset-0 bg-black/40 backdrop-blur-[1px] flex items-center justify-center rounded-2xl">
-          <span class="bg-red-600 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-md flex items-center gap-1">
-            <i data-lucide="lock" class="w-3.5 h-3.5"></i> ปิดรับการสั่งซื้อ
+        <div class="absolute inset-0 bg-black/40 backdrop-blur-[1px] flex items-center justify-center rounded-xl">
+          <span class="bg-stone-900 text-white text-xs font-medium px-3 py-1 rounded-full shadow-sm flex items-center gap-1">
+            <i data-lucide="lock" class="w-3 h-3"></i> ปิดรับการสั่งซื้อ
           </span>
         </div>
       `;
     } else if (snack.isAvailable === false) {
       overlayBadge = `
-        <div class="absolute inset-0 bg-black/40 backdrop-blur-[1px] flex items-center justify-center rounded-2xl">
-          <span class="bg-amber-600 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-md flex items-center gap-1">
-            <i data-lucide="pause-circle" class="w-3.5 h-3.5"></i> สินค้าหมดชั่วคราว
+        <div class="absolute inset-0 bg-black/40 backdrop-blur-[1px] flex items-center justify-center rounded-xl">
+          <span class="bg-stone-800 text-white text-xs font-medium px-3 py-1 rounded-full shadow-sm flex items-center gap-1">
+            <i data-lucide="pause-circle" class="w-3 h-3"></i> สินค้าหมดชั่วคราว
           </span>
         </div>
       `;
@@ -214,47 +214,47 @@ function renderSnacksGrid() {
     let actionAreaHtml = '';
     if (!isStoreOpen) {
       actionAreaHtml = `
-        <div class="pt-3 border-t border-slate-100">
-          <div class="flex items-center justify-center gap-2 text-slate-500 bg-slate-100 py-2.5 px-3 rounded-2xl text-xs font-semibold select-none border border-slate-200">
-            <span class="w-2 h-2 rounded-full bg-red-500"></span>
+        <div class="pt-3 border-t border-stone-100">
+          <div class="flex items-center justify-center gap-2 text-stone-500 bg-stone-50 py-2 px-3 rounded-xl text-xs font-normal select-none border border-stone-200">
+            <span class="w-1.5 h-1.5 rounded-full bg-stone-400"></span>
             <span>ขณะนี้ร้านปิดรับการสั่งซื้อ</span>
           </div>
         </div>
       `;
     } else if (snack.isAvailable === false) {
       actionAreaHtml = `
-        <div class="pt-3 border-t border-slate-100">
-          <div class="flex items-center justify-center gap-2 text-amber-700 bg-amber-50 py-2.5 px-3 rounded-2xl text-xs font-semibold select-none border border-amber-200">
-            <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+        <div class="pt-3 border-t border-stone-100">
+          <div class="flex items-center justify-center gap-2 text-stone-600 bg-stone-50 py-2 px-3 rounded-xl text-xs font-normal select-none border border-stone-200">
+            <span class="w-1.5 h-1.5 rounded-full bg-stone-400"></span>
             <span>เมนูนี้หมดชั่วคราว</span>
           </div>
         </div>
       `;
     } else {
       actionAreaHtml = `
-        <div class="pt-3 border-t border-slate-100 space-y-3">
-          <!-- Checkbox Selection (ติ๊กถูกว่าจะเลือกอันไหน) -->
+        <div class="pt-3 border-t border-stone-100 space-y-2.5">
+          <!-- Checkbox Selection -->
           <label class="flex items-center gap-2.5 cursor-pointer select-none">
             <input
               type="checkbox"
               id="checkbox-${snack.id}"
-              class="w-5 h-5 text-orange-600 rounded-lg border-slate-300 focus:ring-orange-500 cursor-pointer accent-orange-600"
+              class="w-4 h-4 text-stone-900 rounded border-stone-300 focus:ring-stone-900 cursor-pointer accent-stone-900"
               ${isSelected ? 'checked' : ''}
               onchange="toggleSnackSelection('${snack.id}', this.checked)"
             />
-            <span class="text-sm font-semibold ${isSelected ? 'text-orange-700' : 'text-slate-700'}">
-              ${isSelected ? '✓ เลือกขนมนี้แล้ว' : 'ติ๊กถูกเพื่อเลือกขนมนี้'}
+            <span class="text-xs font-medium ${isSelected ? 'text-stone-900' : 'text-stone-600'}">
+              ${isSelected ? '✓ เลือกเมนูนี้แล้ว' : 'ติ๊กเลือกเมนูนี้'}
             </span>
           </label>
 
-          <!-- Quantity Controls (เลือกว่าจะเอากี่อัน) -->
-          <div id="qty-container-${snack.id}" class="${isSelected ? 'flex' : 'hidden'} items-center justify-between bg-white p-2.5 rounded-2xl border border-orange-200 shadow-xs">
-            <span class="text-xs font-semibold text-slate-700 pl-1">จำนวน (${snack.unit || 'ชิ้น'}):</span>
-            <div class="flex items-center gap-2">
+          <!-- Quantity Controls -->
+          <div id="qty-container-${snack.id}" class="${isSelected ? 'flex' : 'hidden'} items-center justify-between bg-stone-50 p-2 rounded-xl border border-stone-200">
+            <span class="text-xs font-normal text-stone-600 pl-1">จำนวน (${snack.unit || 'ชิ้น'}):</span>
+            <div class="flex items-center gap-1.5">
               <button
                 type="button"
                 onclick="updateSnackQty('${snack.id}', -1)"
-                class="qty-btn w-9 h-9 sm:w-8 sm:h-8 rounded-xl bg-orange-100 hover:bg-orange-200 active:bg-orange-300 text-orange-800 font-extrabold text-base flex items-center justify-center transition active:scale-95 touch-manipulation cursor-pointer shadow-2xs"
+                class="qty-btn w-7 h-7 rounded-lg bg-white hover:bg-stone-200 active:bg-stone-300 text-stone-800 font-semibold text-sm flex items-center justify-center transition border border-stone-200 active:scale-95 touch-manipulation cursor-pointer"
                 aria-label="ลดจำนวน"
               >-</button>
               <input
@@ -264,21 +264,21 @@ function renderSnacksGrid() {
                 value="${qty}"
                 id="qty-input-${snack.id}"
                 onchange="setSnackQty('${snack.id}', this.value)"
-                class="w-14 text-center text-base sm:text-sm font-bold text-slate-800 focus:outline-none bg-slate-50 rounded-xl py-1.5 border border-slate-200 focus:border-orange-400"
+                class="w-12 text-center text-sm font-semibold text-stone-900 focus:outline-none bg-transparent py-0.5"
               />
               <button
                 type="button"
                 onclick="updateSnackQty('${snack.id}', 1)"
-                class="qty-btn w-9 h-9 sm:w-8 sm:h-8 rounded-xl bg-orange-100 hover:bg-orange-200 active:bg-orange-300 text-orange-800 font-extrabold text-base flex items-center justify-center transition active:scale-95 touch-manipulation cursor-pointer shadow-2xs"
+                class="qty-btn w-7 h-7 rounded-lg bg-white hover:bg-stone-200 active:bg-stone-300 text-stone-800 font-semibold text-sm flex items-center justify-center transition border border-stone-200 active:scale-95 touch-manipulation cursor-pointer"
                 aria-label="เพิ่มจำนวน"
               >+</button>
             </div>
           </div>
 
           <!-- Card Subtotal -->
-          <div id="subtotal-${snack.id}" class="${isSelected ? 'flex' : 'hidden'} justify-between items-center text-xs font-semibold text-orange-600 px-1">
+          <div id="subtotal-${snack.id}" class="${isSelected ? 'flex' : 'hidden'} justify-between items-center text-xs text-stone-600 px-1">
             <span>ราคารวมเมนูนี้:</span>
-            <span>${subtotal} บาท</span>
+            <span class="font-semibold text-stone-900">${subtotal.toLocaleString()} บาท</span>
           </div>
         </div>
       `;
@@ -287,24 +287,24 @@ function renderSnacksGrid() {
     card.innerHTML = `
       <div>
         <!-- Snack Image -->
-        <div class="relative w-full h-44 rounded-2xl overflow-hidden mb-3.5 bg-slate-100 group">
+        <div class="relative w-full h-44 rounded-xl overflow-hidden mb-3 bg-stone-100 group">
           <img
             src="${imgSrc}"
             alt="${snack.name}"
-            class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+            class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-102"
             onerror="this.src='https://images.unsplash.com/photo-1558961363-fa8fdf82db35?w=500&auto=format&fit=crop&q=80'"
           />
-          <div class="absolute top-2.5 right-2.5 bg-white/95 backdrop-blur-md px-3 py-1 rounded-full text-xs font-bold text-orange-600 shadow-sm border border-orange-100">
+          <div class="absolute top-2.5 right-2.5 bg-stone-900/85 text-white backdrop-blur-md px-2.5 py-0.5 rounded-full text-xs font-medium">
             ${snack.price} ฿ / ${snack.unit || 'ชิ้น'}
           </div>
           ${overlayBadge}
         </div>
 
         <!-- Title & Description -->
-        <h4 class="font-bold text-slate-900 text-base sm:text-lg leading-snug font-heading mb-1">
+        <h4 class="font-medium text-stone-900 text-base leading-snug font-heading mb-1">
           ${snack.name}
         </h4>
-        <p class="text-xs text-slate-500 line-clamp-2 mb-3">
+        <p class="text-xs text-stone-500 line-clamp-2 mb-3 font-normal">
           ${snack.description || 'ขนมโฮมเมดแสนอร่อย ปรุงสดใหม่จากเตา'}
         </p>
       </div>
@@ -392,18 +392,18 @@ function updateCardUI(snackId) {
     const item = selectedItems[snackId];
     const subtotal = item.price * item.quantity;
     if (card) {
-      card.className = card.className.replace(/border-slate-200|shadow-xs/g, '').trim();
-      card.classList.add('border-orange-500', 'bg-amber-50/50', 'shadow-md', 'ring-2', 'ring-orange-500/20');
+      card.className = card.className.replace(/border-stone-200\/90|shadow-\[0_1px_3px_rgba\(0,0,0,0\.02\)\]|border-slate-200|shadow-xs/g, '').trim();
+      card.classList.add('border-stone-900', 'bg-stone-50/20', 'shadow-sm', 'ring-1', 'ring-stone-900');
     }
     if (qtyContainer) qtyContainer.classList.remove('hidden');
     if (subtotalEl) {
       subtotalEl.classList.remove('hidden');
-      subtotalEl.innerHTML = `<span>ราคารวมเมนูนี้:</span> <span>${subtotal} บาท</span>`;
+      subtotalEl.innerHTML = `<span>ราคารวมเมนูนี้:</span> <span class="font-semibold text-stone-900">${subtotal.toLocaleString()} บาท</span>`;
     }
   } else {
     if (card) {
-      card.classList.remove('border-orange-500', 'bg-amber-50/50', 'shadow-md', 'ring-2', 'ring-orange-500/20');
-      card.classList.add('border-slate-200', 'shadow-xs');
+      card.classList.remove('border-stone-900', 'bg-stone-50/20', 'shadow-sm', 'ring-1', 'ring-stone-900', 'border-orange-500', 'bg-amber-50/50', 'ring-2', 'ring-orange-500/20');
+      card.classList.add('border-stone-200/90', 'shadow-[0_1px_3px_rgba(0,0,0,0.02)]');
     }
     if (qtyContainer) qtyContainer.classList.add('hidden');
     if (subtotalEl) subtotalEl.classList.add('hidden');
@@ -447,23 +447,23 @@ function updateOrderSummary() {
   // Render summary items breakdown
   if (items.length === 0) {
     summaryContainer.innerHTML = `
-      <div class="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-slate-400 space-y-2">
-        <i data-lucide="shopping-cart" class="w-8 h-8 mx-auto text-slate-300"></i>
-        <p class="text-sm">ยังไม่ได้เลือกขนม กรุณาติ๊กถูกเลือกขนมที่ต้องการด้านบน</p>
+      <div class="p-8 text-center bg-stone-50/50 rounded-2xl border border-dashed border-stone-200 text-stone-400 space-y-2">
+        <i data-lucide="shopping-cart" class="w-7 h-7 mx-auto text-stone-300"></i>
+        <p class="text-xs sm:text-sm">ยังไม่ได้เลือกขนม กรุณาติ๊กเลือกขนมที่ต้องการด้านบน</p>
       </div>
     `;
   } else {
     let rowsHtml = items.map(item => `
-      <div class="flex items-center justify-between p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200/80 hover:bg-slate-50 transition">
+      <div class="flex items-center justify-between p-3 bg-stone-50/80 rounded-xl border border-stone-200/80 hover:bg-stone-50 transition">
         <div class="flex items-center gap-3">
-          <img src="${item.image || 'https://images.unsplash.com/photo-1558961363-fa8fdf82db35?w=200'}" class="w-10 h-10 rounded-xl object-cover border border-slate-200" />
+          <img src="${item.image || 'https://images.unsplash.com/photo-1558961363-fa8fdf82db35?w=200'}" class="w-10 h-10 rounded-lg object-cover border border-stone-200" />
           <div>
-            <h5 class="font-bold text-slate-800 text-sm">${item.name}</h5>
-            <span class="text-xs text-slate-500">${item.price} บาท × ${item.quantity} ${item.unit}</span>
+            <h5 class="font-medium text-stone-900 text-xs sm:text-sm">${item.name}</h5>
+            <span class="text-[11px] text-stone-500">${item.price} บาท × ${item.quantity} ${item.unit}</span>
           </div>
         </div>
         <div class="text-right">
-          <span class="font-bold text-orange-600 text-sm">${(item.price * item.quantity).toLocaleString()} บาท</span>
+          <span class="font-semibold text-stone-900 text-xs sm:text-sm">${(item.price * item.quantity).toLocaleString()} บาท</span>
         </div>
       </div>
     `).join('');
@@ -1318,50 +1318,50 @@ function renderReceiptStatus(order) {
   // Step 1: ยืนยันสลิป
   if (step1Icon) {
     step1Icon.className = statusInfo.step1Active
-      ? 'w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-orange-600 text-white flex items-center justify-center text-xs font-bold shadow-sm transition'
-      : 'w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-orange-200 text-orange-700 flex items-center justify-center text-xs font-bold';
+      ? 'w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-stone-900 text-white flex items-center justify-center text-xs font-medium shadow-2xs transition'
+      : 'w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-stone-200 text-stone-600 flex items-center justify-center text-xs font-medium';
     step1Icon.innerHTML = statusInfo.step1Active ? '✓' : '1';
   }
   if (step1Text) {
-    step1Text.className = statusInfo.step1Active ? 'text-[9px] sm:text-[10px] font-bold text-orange-900' : 'text-[9px] sm:text-[10px] font-semibold text-slate-500';
+    step1Text.className = statusInfo.step1Active ? 'text-[9px] sm:text-[10px] font-medium text-stone-900' : 'text-[9px] sm:text-[10px] font-normal text-stone-500';
   }
 
   // Step 2: กำลังทำ
   if (step2Icon) {
     step2Icon.className = statusInfo.step2Active
-      ? 'w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-orange-600 text-white flex items-center justify-center text-xs font-bold shadow-sm transition'
-      : 'w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-orange-200 text-orange-700 flex items-center justify-center text-xs font-bold';
+      ? 'w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-stone-900 text-white flex items-center justify-center text-xs font-medium shadow-2xs transition'
+      : 'w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-stone-200 text-stone-600 flex items-center justify-center text-xs font-medium';
     step2Icon.innerHTML = statusInfo.step2Active ? (statusInfo.step3Active ? '✓' : '👨‍🍳') : '2';
   }
   if (step2Text) {
-    step2Text.className = statusInfo.step2Active ? 'text-[9px] sm:text-[10px] font-bold text-orange-900' : 'text-[9px] sm:text-[10px] font-semibold text-slate-500';
+    step2Text.className = statusInfo.step2Active ? 'text-[9px] sm:text-[10px] font-medium text-stone-900' : 'text-[9px] sm:text-[10px] font-normal text-stone-500';
   }
 
   // Step 3: ขนมเสร็จแล้ว 🍰
   if (step3Icon) {
     step3Icon.className = statusInfo.step3Active
-      ? 'w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-amber-500 text-white flex items-center justify-center text-xs font-bold shadow-sm transition'
-      : 'w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-orange-200 text-orange-700 flex items-center justify-center text-xs font-bold';
+      ? 'w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-stone-900 text-white flex items-center justify-center text-xs font-medium shadow-2xs transition'
+      : 'w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-stone-200 text-stone-600 flex items-center justify-center text-xs font-medium';
     step3Icon.innerHTML = statusInfo.step3Active ? (statusInfo.step4Active ? '✓' : '🍰') : '3';
   }
   if (step3Text) {
-    step3Text.className = statusInfo.step3Active ? 'text-[9px] sm:text-[10px] font-bold text-amber-900' : 'text-[9px] sm:text-[10px] font-semibold text-slate-500';
+    step3Text.className = statusInfo.step3Active ? 'text-[9px] sm:text-[10px] font-medium text-stone-900' : 'text-[9px] sm:text-[10px] font-normal text-stone-500';
   }
 
   // Step 4: ส่งมอบแล้ว 🚚
   if (step4Icon) {
     step4Icon.className = statusInfo.step4Active
-      ? 'w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs font-bold shadow-sm transition'
-      : 'w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-orange-200 text-orange-700 flex items-center justify-center text-xs font-bold';
+      ? 'w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-stone-900 text-white flex items-center justify-center text-xs font-medium shadow-2xs transition'
+      : 'w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-stone-200 text-stone-600 flex items-center justify-center text-xs font-medium';
     step4Icon.innerHTML = statusInfo.step4Active ? '✓' : '4';
   }
   if (step4Text) {
-    step4Text.className = statusInfo.step4Active ? 'text-[9px] sm:text-[10px] font-bold text-emerald-800' : 'text-[9px] sm:text-[10px] font-semibold text-slate-500';
+    step4Text.className = statusInfo.step4Active ? 'text-[9px] sm:text-[10px] font-medium text-stone-900' : 'text-[9px] sm:text-[10px] font-normal text-stone-500';
   }
 
   // Detail box
   if (detailBox) {
-    detailBox.className = 'bg-white p-2.5 rounded-xl border border-orange-200 text-xs text-center font-semibold text-slate-800 shadow-2xs';
+    detailBox.className = 'bg-white p-2.5 rounded-xl border border-stone-200 text-xs text-center font-normal text-stone-700 shadow-2xs';
     detailBox.innerText = statusInfo.detail;
   }
 }
@@ -1521,42 +1521,42 @@ function renderOrderHistoryList(orders) {
     const itemsSummary = (order.items || []).map(i => `${i.name} × ${i.quantity}`).join(', ');
 
     const card = document.createElement('div');
-    card.className = 'bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs hover:border-orange-300 transition space-y-3';
+    card.className = 'bg-white p-4 rounded-xl border border-stone-200 shadow-2xs hover:border-stone-300 transition space-y-3';
     card.innerHTML = `
-      <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+      <div class="flex flex-wrap items-center justify-between gap-2 border-b border-stone-100 pb-2.5">
         <div>
-          <div class="font-mono font-bold text-orange-600 text-xs flex items-center gap-1.5">
+          <div class="font-mono font-semibold text-stone-900 text-xs flex items-center gap-1.5">
             <span>${order.id}</span>
           </div>
-          <div class="text-[11px] text-slate-400">${dateFormatted}</div>
+          <div class="text-[11px] text-stone-400">${dateFormatted}</div>
         </div>
-        <span class="px-2.5 py-1 rounded-full text-xs font-bold border ${statusInfo.badgeClass}">
+        <span class="px-2.5 py-0.5 rounded-full text-xs font-medium border ${statusInfo.badgeClass}">
           ${statusInfo.label}
         </span>
       </div>
 
       <!-- Items & Price -->
-      <div class="flex items-center justify-between text-xs text-slate-700">
-        <div class="font-medium text-slate-800 line-clamp-1 pr-2" title="${itemsSummary}">
+      <div class="flex items-center justify-between text-xs text-stone-700">
+        <div class="font-normal text-stone-700 line-clamp-1 pr-2" title="${itemsSummary}">
           🍪 ${itemsSummary || 'รายการขนม'}
         </div>
-        <div class="font-bold text-orange-600 text-sm shrink-0">
+        <div class="font-semibold text-stone-900 text-sm shrink-0">
           ${order.totalPrice.toLocaleString()} ฿
         </div>
       </div>
 
       <!-- Mini Stepper Indicator -->
-      <div class="bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-[11px] space-y-1.5">
-        <div class="flex justify-between items-center text-slate-500 font-semibold text-[10px]">
-          <span class="${statusInfo.step1Active ? 'text-orange-600 font-bold' : ''}">1. ยืนยันสลิป</span>
-          <span class="${statusInfo.step2Active ? 'text-orange-600 font-bold' : ''}">2. กำลังทำ</span>
-          <span class="${statusInfo.step3Active ? 'text-amber-600 font-bold' : ''}">3. เสร็จแล้ว 🍰</span>
-          <span class="${statusInfo.step4Active ? 'text-emerald-600 font-bold' : ''}">4. ส่งมอบ 🚚</span>
+      <div class="bg-stone-50 p-2.5 rounded-xl border border-stone-200/80 text-[11px] space-y-1.5">
+        <div class="flex justify-between items-center text-stone-500 font-medium text-[10px]">
+          <span class="${statusInfo.step1Active ? 'text-stone-900 font-semibold' : ''}">1. ยืนยันสลิป</span>
+          <span class="${statusInfo.step2Active ? 'text-stone-900 font-semibold' : ''}">2. กำลังทำ</span>
+          <span class="${statusInfo.step3Active ? 'text-stone-900 font-semibold' : ''}">3. เสร็จแล้ว 🍰</span>
+          <span class="${statusInfo.step4Active ? 'text-stone-900 font-semibold' : ''}">4. ส่งมอบ 🚚</span>
         </div>
-        <div class="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
-          <div class="bg-orange-500 h-full rounded-full transition-all" style="width: ${statusInfo.progressPercent}"></div>
+        <div class="w-full bg-stone-200 h-1 rounded-full overflow-hidden">
+          <div class="bg-stone-900 h-full rounded-full transition-all" style="width: ${statusInfo.progressPercent}"></div>
         </div>
-        <p class="text-slate-600 text-[11px] font-medium pt-0.5">
+        <p class="text-stone-600 text-[11px] font-normal pt-0.5">
           ${statusInfo.detail}
         </p>
       </div>
@@ -1566,9 +1566,9 @@ function renderOrderHistoryList(orders) {
         <button
           type="button"
           onclick="viewOrderDetailFromHistory('${order.id}')"
-          class="bg-orange-50 hover:bg-orange-100 text-orange-700 px-3.5 py-1.5 rounded-xl text-xs font-bold transition border border-orange-200 flex items-center gap-1 cursor-pointer"
+          class="bg-stone-50 hover:bg-stone-100 text-stone-700 px-3 py-1.5 rounded-lg text-xs font-medium transition border border-stone-200 flex items-center gap-1 cursor-pointer"
         >
-          <i data-lucide="receipt" class="w-3.5 h-3.5"></i>
+          <i data-lucide="receipt" class="w-3.5 h-3.5 text-stone-500"></i>
           <span>ดูใบเสร็จ & ติดตาม</span>
         </button>
       </div>

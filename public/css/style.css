@@ -1,58 +1,63 @@
 @import url('https://fonts.googleapis.com/css2?family=Prompt:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Kanit:wght@400;500;600;700&display=swap');
 
 :root {
-  --primary: #f97316;
-  --primary-hover: #ea580c;
-  --secondary: #fbbf24;
-  --warm-bg: #fffaf5;
+  --primary: #18181b;
+  --primary-hover: #27272a;
+  --accent: #ea580c;
+  --warm-bg: #fafaf9;
+  --card-bg: #ffffff;
+  --border-subtle: #e7e5e4;
 }
 
 body {
   font-family: 'Prompt', -apple-system, BlinkMacSystemFont, sans-serif;
   background-color: var(--warm-bg);
-  color: #334155;
+  color: #292524;
   scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 h1, h2, h3, h4, .font-heading {
   font-family: 'Kanit', sans-serif;
+  letter-spacing: -0.015em;
 }
 
-/* Custom scrollbar */
+/* Minimal unobtrusive scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #f1f5f9;
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 4px;
+  background: #d6d3d1;
+  border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: #a8a29e;
 }
 
-/* Card hover animation */
+/* Minimal card hover animation */
 .snack-card {
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease;
 }
 .snack-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 12px 24px -10px rgba(249, 115, 22, 0.15);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px -6px rgba(0, 0, 0, 0.06);
 }
 
 .snack-card.selected {
-  border-color: #f97316;
-  background-color: #fffbeb;
-  box-shadow: 0 0 0 2px #f97316;
+  border-color: #18181b;
+  background-color: #ffffff;
+  box-shadow: 0 0 0 1px #18181b;
 }
 
 /* Pulsing badge */
 @keyframes pulse-subtle {
   0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.85; transform: scale(1.03); }
+  50% { opacity: 0.85; transform: scale(1.02); }
 }
 .pulse-badge {
   animation: pulse-subtle 2s infinite ease-in-out;
@@ -60,18 +65,18 @@ h1, h2, h3, h4, .font-heading {
 
 /* Upload dropzone active state */
 .dropzone-active {
-  border-color: #f97316 !important;
-  background-color: #fff7ed !important;
+  border-color: #18181b !important;
+  background-color: #f5f5f4 !important;
 }
 
 /* Loading spinner */
 .spinner {
-  border: 3px solid rgba(249, 115, 22, 0.2);
-  border-top: 3px solid #f97316;
+  border: 2.5px solid rgba(0, 0, 0, 0.08);
+  border-top: 2.5px solid #18181b;
   border-radius: 50%;
-  width: 24px;
-  height: 24px;
-  animation: spin 0.8s linear infinite;
+  width: 22px;
+  height: 22px;
+  animation: spin 0.75s linear infinite;
 }
 
 @keyframes spin {
