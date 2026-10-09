@@ -12,6 +12,7 @@ const compression = require('compression');
 
 const db = require('./services/database');
 const { verifySlip } = require('./services/slipVerifier');
+const { compressSlipImage, resolveSlipImage } = require('./services/slipImageService');
 
 const app = express();
 const PORT = process.env.PORT || process.env.CUSTOMER_PORT || 3000;
@@ -50,6 +51,26 @@ app.use(express.static(path.join(__dirname, 'public'), {
     }
   }
 }));
+
+// Smart Self-Healing Slip Image Resolver (Preserves slip images across Cloud restarts)
+app.get('/uploads/slips/:filename', (req, res, next) => {
+  const filename = path.basename(req.params.filename);
+  const resolved = resolveSlipImage(filename, db.getOrders());
+  if (resolved) {
+    if (resolved.type === 'file') {
+      return res.sendFile(resolved.filePath);
+    } else if (resolved.type === 'buffer') {
+      res.setHeader('Content-Type', resolved.contentType);
+      res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+      return res.send(resolved.buffer);
+    } else if (resolved.type === 'svg') {
+      res.setHeader('Content-Type', resolved.contentType);
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      return res.send(resolved.svg);
+    }
+  }
+  next();
+});
 
 app.use('/uploads', express.static(uploadDir, {
   maxAge: '7d',
@@ -194,12 +215,24 @@ app.post('/api/verify-slip', uploadSlip.single('slip'), async (req, res) => {
 
     const expectedReceiver = settings.promptpayName || 'พัชญ์ชามญชุ์ กฤติณัฐธนชัย';
     const verificationResult = await verifySlip(filePath, mimeType, expectedAmount, expectedReceiver);
-    const slipUrl = `/uploads/slips/${req.file.filename}`;
+    const slipFilename = req.file.filename;
+    const slipUrl = `/uploads/slips/${slipFilename}`;
+
+    // Compress image to Base64 for permanent cloud persistence across container restarts
+    const compressed = await compressSlipImage(filePath, mimeType);
+    const slipBase64 = compressed?.dataUrl || null;
+
+    const enrichedVerification = {
+      ...(verificationResult || {}),
+      slipBase64,
+      slipFilename
+    };
 
     res.json({
       success: true,
       slipUrl,
-      verification: verificationResult
+      slipBase64,
+      verification: enrichedVerification
     });
   } catch (err) {
     console.error('Error in /api/verify-slip:', err);
@@ -342,6 +375,23 @@ app.post('/api/orders', uploadSlip.single('slip'), async (req, res) => {
     // Device ID from client (enables persistent cloud tracking across browser restarts)
     const deviceId = (body.deviceId || req.headers['x-device-id'] || '').trim() || null;
 
+    let slipBase64 = body.slipBase64 || null;
+    let slipFilename = req.file ? req.file.filename : (body.existingSlipUrl ? path.basename(body.existingSlipUrl) : null);
+
+    if (!slipBase64 && req.file) {
+      try {
+        const compressed = await compressSlipImage(req.file.path, req.file.mimetype);
+        slipBase64 = compressed?.dataUrl || null;
+      } catch (e) {}
+    } else if (!slipBase64 && slipVerification?.slipBase64) {
+      slipBase64 = slipVerification.slipBase64;
+    }
+
+    if (slipVerification) {
+      slipVerification.slipBase64 = slipBase64 || slipVerification.slipBase64 || null;
+      slipVerification.slipFilename = slipFilename || slipVerification.slipFilename || null;
+    }
+
     // Save order with permanently locked cost, profit, and pending review status
     const orderData = {
       deviceId,                       // Cloud memory for mobile phone device
@@ -354,6 +404,7 @@ app.post('/api/orders', uploadSlip.single('slip'), async (req, res) => {
       totalProfit: totalOrderProfit,  // Permanently locked profit
       profitMargin: profitMargin,     // Permanently locked margin %
       slipImage,
+      slipBase64,                     // Permanent Cloud Base64 string (survives restarts)
       slipVerification: slipVerification || null,
       qrData: qrMetadata?.qrData || slipVerification?.qrData || null,
       transactionRef: qrMetadata?.transactionRef || slipVerification?.transactionRef || null,

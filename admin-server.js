@@ -27,6 +27,27 @@ app.get('/index.html', (req, res) => {
 
 // Serve static assets (CSS, JS, images) without defaulting to index.html
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
+const { resolveSlipImage } = require('./services/slipImageService');
+const db = require('./services/database');
+
+// Smart Self-Healing Slip Image Endpoint (Survives Cloud Container Restarts)
+app.get('/uploads/slips/:filename', (req, res, next) => {
+  const filename = path.basename(req.params.filename);
+  const resolved = resolveSlipImage(filename, db.getOrders());
+  if (resolved) {
+    if (resolved.type === 'file') {
+      return res.sendFile(resolved.filePath);
+    } else if (resolved.type === 'buffer') {
+      res.setHeader('Content-Type', resolved.contentType);
+      return res.send(resolved.buffer);
+    } else if (resolved.type === 'svg') {
+      res.setHeader('Content-Type', resolved.contentType);
+      return res.send(resolved.svg);
+    }
+  }
+  next();
+});
+
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Mount Admin APIs

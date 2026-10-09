@@ -461,6 +461,7 @@ function createOrder(orderData) {
     totalProfit: Number(orderData.totalProfit) || 0,
     profitMargin: Number(orderData.profitMargin) || 0,
     slipImage: orderData.slipImage || null,
+    slipBase64: orderData.slipBase64 || (orderData.slipVerification && orderData.slipVerification.slipBase64) || null,
     slipVerification: orderData.slipVerification || null,
     qrData: orderData.qrData || null,
     transactionRef: orderData.transactionRef || null,

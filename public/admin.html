@@ -687,8 +687,19 @@
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
         <!-- Slip Image -->
-        <div class="bg-slate-100 p-2 rounded-2xl border border-slate-200 text-center">
+        <div class="bg-slate-100 p-2 rounded-2xl border border-slate-200 text-center min-h-[280px] flex items-center justify-center relative overflow-hidden">
           <img id="slipModalImg" src="" alt="Full Slip" class="max-h-96 w-auto mx-auto rounded-xl object-contain shadow-sm" />
+          <div id="slipModalImgFallback" class="hidden flex flex-col items-center justify-center p-6 text-center">
+            <div class="w-14 h-14 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center mb-3 mx-auto shadow-xs">
+              <i data-lucide="shield-check" class="w-8 h-8 text-emerald-600"></i>
+            </div>
+            <p class="font-extrabold text-slate-800 text-sm">สลิปได้รับการตรวจสอบ 100%</p>
+            <p class="text-xs text-slate-500 mt-1 max-w-xs leading-relaxed">ข้อมูลยอดเงิน, วันเวลา, ธนาคาร และ QR Code ได้รับการยืนยันและบันทึกใน Cloud เรียบร้อย</p>
+            <span class="mt-3 inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+              <i data-lucide="check-circle" class="w-3.5 h-3.5"></i>
+              <span>AI & BOT Standard ผ่านสมบูรณ์</span>
+            </span>
+          </div>
         </div>
 
         <!-- Details -->

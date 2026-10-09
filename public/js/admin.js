@@ -1037,10 +1037,11 @@ function renderOrdersTable() {
 
     // Slip preview button / thumbnail
     let slipHtml = '<span class="text-slate-400 text-[11px]">ไม่มีสลิป</span>';
-    if (order.slipImage) {
+    const thumbImg = order.slipBase64 || (order.slipVerification && order.slipVerification.slipBase64) || order.slipImage || '';
+    if (thumbImg) {
       slipHtml = `
         <div class="relative group inline-block cursor-pointer" onclick="openSlipDetailModal('${order.id}')" title="กดดูสลิปขนาดใหญ่">
-          <img src="${order.slipImage}" class="w-12 h-14 object-cover rounded-xl border border-slate-300 shadow-xs hover:scale-105 transition" />
+          <img src="${thumbImg}" class="w-12 h-14 object-cover rounded-xl border border-slate-300 shadow-xs hover:scale-105 transition" onerror="this.onerror=null; this.src='/images/shop-qr.png';" />
           <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 rounded-xl flex items-center justify-center text-white transition">
             <i data-lucide="zoom-in" class="w-4 h-4"></i>
           </div>
@@ -1224,10 +1225,11 @@ function renderOrdersTable() {
 
         // Slip thumbnail button
         let slipThumbHtml = '<span class="text-xs text-slate-400">ไม่มีสลิป</span>';
-        if (order.slipImage) {
+        const mobileThumbImg = order.slipBase64 || (order.slipVerification && order.slipVerification.slipBase64) || order.slipImage || '';
+        if (mobileThumbImg) {
           slipThumbHtml = `
             <button type="button" onclick="openSlipDetailModal('${order.id}')" class="flex items-center gap-2 bg-slate-50 hover:bg-slate-100 p-1.5 pr-3 rounded-xl border border-slate-200 transition text-left cursor-pointer active:scale-98">
-              <img src="${order.slipImage}" class="w-10 h-12 object-cover rounded-lg border border-slate-300" />
+              <img src="${mobileThumbImg}" class="w-10 h-12 object-cover rounded-lg border border-slate-300" onerror="this.onerror=null; this.src='/images/shop-qr.png';" />
               <div>
                 <div class="text-[11px] font-bold text-slate-800 flex items-center gap-1">
                   <i data-lucide="zoom-in" class="w-3 h-3 text-orange-600"></i>
@@ -1354,9 +1356,41 @@ function openSlipDetailModal(orderId) {
   if (!order) return;
 
   currentActiveOrderId = orderId;
+  const v = order.slipVerification || {};
   document.getElementById('slipModalOrderSub').innerText = `ออเดอร์: ${order.id} | ลูกค้า: ${order.customerName} (${order.customerPhone || 'ไม่มีเบอร์'})`;
-  document.getElementById('slipModalImg').src = order.slipImage || '';
   document.getElementById('slipModalExpected').innerText = `${order.totalPrice.toFixed(2)} บาท`;
+
+  const slipImgEl = document.getElementById('slipModalImg');
+  const slipFallbackEl = document.getElementById('slipModalImgFallback');
+  const candidateSrc = order.slipBase64 || v.slipBase64 || order.slipImage || '';
+
+  if (slipImgEl) {
+    if (candidateSrc) {
+      slipImgEl.classList.remove('hidden');
+      if (slipFallbackEl) slipFallbackEl.classList.add('hidden');
+
+      slipImgEl.onerror = () => {
+        // If image failed to load, try Base64 if not tried yet
+        if ((order.slipBase64 || v.slipBase64) && slipImgEl.src !== (order.slipBase64 || v.slipBase64)) {
+          slipImgEl.src = order.slipBase64 || v.slipBase64;
+        } else {
+          slipImgEl.classList.add('hidden');
+          if (slipFallbackEl) {
+            slipFallbackEl.classList.remove('hidden');
+            if (window.lucide) lucide.createIcons();
+          }
+        }
+      };
+
+      slipImgEl.src = candidateSrc;
+    } else {
+      slipImgEl.classList.add('hidden');
+      if (slipFallbackEl) {
+        slipFallbackEl.classList.remove('hidden');
+        if (window.lucide) lucide.createIcons();
+      }
+    }
+  }
 
   const { cost: orderCost, profit: orderProfit, marginPercent: orderMargin } = getOrderCostAndProfit(order);
   const costEl = document.getElementById('slipModalCost');
@@ -1366,7 +1400,6 @@ function openSlipDetailModal(orderId) {
     profitEl.innerHTML = `<span class="${orderProfit >= 0 ? 'text-emerald-700' : 'text-rose-600'}">${orderProfit >= 0 ? '+' : ''}${orderProfit.toFixed(2)} บาท (${orderMargin}%)</span>`;
   }
 
-  const v = order.slipVerification || {};
   const detected = v.detectedAmount !== null && v.detectedAmount !== undefined ? v.detectedAmount : null;
   document.getElementById('slipModalDetected').innerText = detected !== null ? `${detected.toFixed(2)} บาท` : 'ตรวจไม่พบ';
   document.getElementById('slipModalDate').innerText = `${v.transferDate || '-'} ${v.transferTime || ''}`;

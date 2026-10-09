@@ -785,6 +785,9 @@ async function confirmAndSaveOrder() {
   }
   if (currentSlipVerification) {
     formData.append('existingVerification', JSON.stringify(currentSlipVerification));
+    if (currentSlipVerification.slipBase64) {
+      formData.append('slipBase64', currentSlipVerification.slipBase64);
+    }
   }
   formData.append('deviceId', getDeviceId());
   formData.append('customerName', customerName);
