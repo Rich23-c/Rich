@@ -5,6 +5,7 @@ const DATA_DIR = path.join(__dirname, '..', 'data');
 const SNACKS_FILE = path.join(DATA_DIR, 'snacks.json');
 const ORDERS_FILE = path.join(DATA_DIR, 'orders.json');
 const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
+const USED_SLIPS_FILE = path.join(DATA_DIR, 'used_slips.json');
 
 // Ensure data directory exists
 if (!fs.existsSync(DATA_DIR)) {
@@ -16,6 +17,7 @@ let memoryCache = {
   snacks: null,
   orders: null,
   settings: null,
+  usedSlips: null, // Permanent slip memory registry (never wiped on order reset)
   isSupabaseActive: false,
   lastSyncTime: null,
   syncError: null
@@ -60,6 +62,38 @@ function initLocalCache() {
   }
   if (!memoryCache.settings) {
     memoryCache.settings = readJson(SETTINGS_FILE, getDefaultSettings());
+  }
+  if (!memoryCache.usedSlips) {
+    memoryCache.usedSlips = readJson(USED_SLIPS_FILE, []);
+    // Auto-migrate any historical slips from orders into usedSlips registry
+    const existingOrders = memoryCache.orders || [];
+    let migrated = false;
+    existingOrders.forEach(order => {
+      const v = order.slipVerification || {};
+      const qrData = (order.qrData || v.qrData || v.rawQrData || '').trim();
+      const transactionRef = (order.transactionRef || v.transactionRef || '').trim();
+      const fileHash = (order.fileHash || v.fileHash || '').trim();
+      if (qrData || transactionRef || fileHash) {
+        const alreadyInRegistry = memoryCache.usedSlips.some(s =>
+          (qrData && s.qrData === qrData) ||
+          (transactionRef && s.transactionRef === transactionRef) ||
+          (fileHash && s.fileHash === fileHash)
+        );
+        if (!alreadyInRegistry) {
+          memoryCache.usedSlips.push({
+            qrData,
+            transactionRef,
+            fileHash,
+            orderId: order.id,
+            usedAt: order.createdAt || new Date().toISOString()
+          });
+          migrated = true;
+        }
+      }
+    });
+    if (migrated) {
+      writeJson(USED_SLIPS_FILE, memoryCache.usedSlips);
+    }
   }
 }
 
@@ -169,6 +203,31 @@ async function initSupabaseSync() {
       // Seed local orders to Supabase cloud
       await supabase.from('orders').upsert(memoryCache.orders);
     }
+
+    // 4. Sync Permanent Used Slips Memory Registry (Retained forever across order resets)
+    try {
+      const { data: usedSlipsRow, error: usedSlipsErr } = await supabase
+        .from('settings')
+        .select('*')
+        .eq('id', 'used_slips_registry')
+        .single();
+
+      if (!usedSlipsErr && usedSlipsRow && Array.isArray(usedSlipsRow.data)) {
+        const mergedMap = new Map();
+        (usedSlipsRow.data || []).forEach(s => {
+          const key = s.qrData || s.transactionRef || s.fileHash;
+          if (key) mergedMap.set(key, s);
+        });
+        (memoryCache.usedSlips || []).forEach(s => {
+          const key = s.qrData || s.transactionRef || s.fileHash;
+          if (key && !mergedMap.has(key)) mergedMap.set(key, s);
+        });
+        memoryCache.usedSlips = Array.from(mergedMap.values());
+        writeJson(USED_SLIPS_FILE, memoryCache.usedSlips);
+      } else {
+        await supabase.from('settings').upsert({ id: 'used_slips_registry', data: memoryCache.usedSlips || [] });
+      }
+    } catch (e) {}
 
     memoryCache.isSupabaseActive = true;
     memoryCache.lastSyncTime = new Date().toISOString();
@@ -391,6 +450,15 @@ function createOrder(orderData) {
   memoryCache.orders.unshift(newOrder);
   writeJson(ORDERS_FILE, memoryCache.orders);
 
+  // Register slip into permanent memory registry
+  const slipV = orderData.slipVerification || {};
+  registerUsedSlip({
+    qrData: orderData.qrData || slipV.qrData || slipV.rawQrData,
+    transactionRef: orderData.transactionRef || slipV.transactionRef,
+    fileHash: orderData.fileHash || slipV.fileHash,
+    orderId
+  });
+
   if (supabase) {
     supabase.from('orders')
       .insert([newOrder])
@@ -475,9 +543,67 @@ function findOrders({ query, phone, name, ids, deviceId } = {}) {
   return [];
 }
 
-// Reset Mock/Test Orders
+// Permanent Used Slips Memory API
+function getUsedSlips() {
+  initLocalCache();
+  return memoryCache.usedSlips || [];
+}
+
+function registerUsedSlip({ qrData, transactionRef, fileHash, orderId = null }) {
+  initLocalCache();
+  const cleanQr = (qrData || '').trim();
+  const cleanRef = (transactionRef || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const cleanHash = (fileHash || '').trim();
+
+  if (!cleanQr && !cleanRef && !cleanHash) return;
+
+  if (!Array.isArray(memoryCache.usedSlips)) {
+    memoryCache.usedSlips = [];
+  }
+
+  const existing = memoryCache.usedSlips.some(s =>
+    (cleanQr && s.qrData === cleanQr) ||
+    (cleanRef && s.transactionRef && s.transactionRef === cleanRef) ||
+    (cleanHash && s.fileHash === cleanHash)
+  );
+
+  if (!existing) {
+    const entry = {
+      qrData: cleanQr,
+      transactionRef: cleanRef,
+      fileHash: cleanHash,
+      orderId,
+      usedAt: new Date().toISOString()
+    };
+    memoryCache.usedSlips.push(entry);
+    writeJson(USED_SLIPS_FILE, memoryCache.usedSlips);
+
+    if (supabase) {
+      supabase.from('settings')
+        .upsert({ id: 'used_slips_registry', data: memoryCache.usedSlips, updatedAt: new Date().toISOString() })
+        .catch(err => console.error('[Supabase Error] Update used_slips_registry:', err.message));
+    }
+  }
+}
+
+// Reset Mock/Test Orders (Clears orders & customer info, but PERMANENTLY PRESERVES SLIP MEMORY)
 function resetOrders() {
   initLocalCache();
+
+  // 1. Ensure all slips in existing orders are permanently archived before deleting orders
+  if (Array.isArray(memoryCache.orders)) {
+    memoryCache.orders.forEach(order => {
+      const v = order.slipVerification || {};
+      registerUsedSlip({
+        qrData: order.qrData || v.qrData || v.rawQrData,
+        transactionRef: order.transactionRef || v.transactionRef,
+        fileHash: order.fileHash || v.fileHash,
+        orderId: order.id
+      });
+    });
+  }
+
+  // 2. Clear orders data (Order history, customer names, phones, notes, items ordered)
   memoryCache.orders = [];
   writeJson(ORDERS_FILE, []);
 
@@ -488,6 +614,7 @@ function resetOrders() {
       .catch(err => console.error('[Supabase Error] Reset orders:', err.message));
   }
 
+  // 3. Clear physical slip image files from disk to reclaim disk storage
   const slipsDir = path.join(__dirname, '..', 'uploads', 'slips');
   if (fs.existsSync(slipsDir)) {
     try {
@@ -499,6 +626,9 @@ function resetOrders() {
       console.warn('Error clearing slips folder:', e.message);
     }
   }
+
+  // NOTE: memoryCache.usedSlips is INTENTIONALLY NOT WIPED!
+  // It permanently remembers all slip QR codes, transaction refs, and hashes so old slips can NEVER be reused.
   return true;
 }
 
@@ -540,6 +670,7 @@ function getDatabaseStatus() {
     supabaseConfigured: !!(supabaseUrl && supabaseKey),
     totalSnacks: memoryCache.snacks ? memoryCache.snacks.length : 0,
     totalOrders: memoryCache.orders ? memoryCache.orders.length : 0,
+    totalUsedSlipsRemembered: memoryCache.usedSlips ? memoryCache.usedSlips.length : 0,
     lastSyncTime: memoryCache.lastSyncTime,
     syncError: memoryCache.syncError
   };
@@ -558,6 +689,8 @@ module.exports = {
   createOrder,
   updateOrderStatus,
   resetOrders,
+  getUsedSlips,
+  registerUsedSlip,
   getSettings,
   updateSettings,
   verifyAdminPin,

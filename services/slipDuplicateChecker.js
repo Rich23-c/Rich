@@ -77,6 +77,54 @@ function checkDuplicateSlip({ fileHash, qrData, transactionRef, excludeOrderId =
     }
   }
 
+  // Layer 2: Check Permanent Used Slips Memory Registry (Preserved forever across order resets)
+  const usedSlips = db.getUsedSlips ? db.getUsedSlips() : [];
+  for (const used of usedSlips) {
+    if (excludeOrderId && used.orderId === excludeOrderId) continue;
+
+    const usedQr = (used.qrData || '').trim();
+    const usedRef = cleanRef(used.transactionRef);
+    const usedHash = used.fileHash;
+
+    const thaiUsedDate = used.usedAt ? new Date(used.usedAt).toLocaleString('th-TH', {
+      day: 'numeric',
+      month: 'short',
+      year: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    }) : 'ในอดีต';
+
+    // Check QR in permanent memory registry
+    if (targetQr && usedQr && targetQr === usedQr) {
+      return {
+        isDuplicate: true,
+        matchedBy: 'PERMANENT_QR_REGISTRY',
+        matchedOrderId: used.orderId,
+        message: `🚫 สลิปนี้เคยถูกใช้งานแล้ว! ตรวจพบ QR Code ในสลิปตรงกับประวัติสลิปที่เคยสั่งซื้อเมื่อ ${thaiUsedDate} (แม้จะล้างรายการออเดอร์แล้ว ระบบก็ยังจดจำสลิปไว้) ห้ามนำสลิปเก่ามาใช้ซ้ำเด็ดขาด`
+      };
+    }
+
+    // Check Transaction Ref in permanent memory registry
+    if (targetRef && usedRef && targetRef.length >= 6 && targetRef === usedRef) {
+      return {
+        isDuplicate: true,
+        matchedBy: 'PERMANENT_TRANSACTION_REF',
+        matchedOrderId: used.orderId,
+        message: `🚫 สลิปนี้เคยถูกใช้งานแล้ว! เลขอ้างอิงธุรกรรม "${transactionRef}" ตรงกับประวัติสลิปที่เคยสั่งซื้อเมื่อ ${thaiUsedDate} ห้ามนำสลิปเก่ามาใช้ซ้ำเด็ดขาด`
+      };
+    }
+
+    // Check File Hash in permanent memory registry
+    if (fileHash && usedHash && fileHash === usedHash) {
+      return {
+        isDuplicate: true,
+        matchedBy: 'PERMANENT_FILE_HASH',
+        matchedOrderId: used.orderId,
+        message: `🚫 สลิปนี้เคยถูกส่งมาแล้ว! รูปสลิปนี้ตรงกับประวัติสลิปที่เคยสั่งซื้อในระบบ กรุณาใช้สลิปการโอนเงินจริงรอบนี้ครับ`
+      };
+    }
+  }
+
   return { isDuplicate: false };
 }
 
