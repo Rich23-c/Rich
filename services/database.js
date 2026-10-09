@@ -282,6 +282,20 @@ async function backgroundSyncFromSupabase() {
   }
 }
 
+// Safe Supabase query executor that safely handles Postgrest Thenables (which do not have a native .catch method)
+function safeSupabaseExec(promiseOrBuilder, errorPrefix = 'Supabase operation') {
+  if (!promiseOrBuilder) return;
+  Promise.resolve(promiseOrBuilder)
+    .then(({ data, error } = {}) => {
+      if (error) {
+        console.error(`[Supabase Error] ${errorPrefix}:`, error.message || error);
+      }
+    })
+    .catch(err => {
+      console.error(`[Supabase Exception] ${errorPrefix}:`, err.message || err);
+    });
+}
+
 // ==========================================
 // SNACKS API
 // ==========================================
@@ -316,10 +330,13 @@ function saveSnack(snackData) {
   writeJson(SNACKS_FILE, memoryCache.snacks);
 
   if (supabase) {
-    supabase.from('snacks').insert([{
-      ...newSnack,
-      sortOrder: memoryCache.snacks.length - 1
-    }]).catch(err => console.error('[Supabase Error] Insert snack:', err.message));
+    safeSupabaseExec(
+      supabase.from('snacks').insert([{
+        ...newSnack,
+        sortOrder: memoryCache.snacks.length - 1
+      }]),
+      'Insert snack'
+    );
   }
 
   return newSnack;
@@ -341,10 +358,12 @@ function updateSnack(id, updates) {
   writeJson(SNACKS_FILE, memoryCache.snacks);
 
   if (supabase) {
-    supabase.from('snacks')
-      .update(memoryCache.snacks[index])
-      .eq('id', id)
-      .catch(err => console.error('[Supabase Error] Update snack:', err.message));
+    safeSupabaseExec(
+      supabase.from('snacks')
+        .update(memoryCache.snacks[index])
+        .eq('id', id),
+      'Update snack'
+    );
   }
 
   return memoryCache.snacks[index];
@@ -359,10 +378,12 @@ function deleteSnack(id) {
   writeJson(SNACKS_FILE, memoryCache.snacks);
 
   if (supabase) {
-    supabase.from('snacks')
-      .delete()
-      .eq('id', id)
-      .catch(err => console.error('[Supabase Error] Delete snack:', err.message));
+    safeSupabaseExec(
+      supabase.from('snacks')
+        .delete()
+        .eq('id', id),
+      'Delete snack'
+    );
   }
 
   return true;
@@ -395,8 +416,10 @@ function reorderSnacks(orderedIds) {
       id: s.id,
       sortOrder: idx
     }));
-    Promise.all(updates.map(u => supabase.from('snacks').update({ sortOrder: u.sortOrder }).eq('id', u.id)))
-      .catch(err => console.error('[Supabase Error] Reorder snacks:', err.message));
+    safeSupabaseExec(
+      Promise.all(updates.map(u => supabase.from('snacks').update({ sortOrder: u.sortOrder }).eq('id', u.id))),
+      'Reorder snacks'
+    );
   }
 
   return reordered;
@@ -460,9 +483,10 @@ function createOrder(orderData) {
   });
 
   if (supabase) {
-    supabase.from('orders')
-      .insert([newOrder])
-      .catch(err => console.error('[Supabase Error] Insert order:', err.message));
+    safeSupabaseExec(
+      supabase.from('orders').insert([newOrder]),
+      'Insert order'
+    );
   }
 
   return newOrder;
@@ -489,10 +513,12 @@ function updateOrderStatus(id, status, adminNotes = null) {
     if (adminNotes !== null) {
       updatePayload.adminNotes = adminNotes;
     }
-    supabase.from('orders')
-      .update(updatePayload)
-      .eq('id', id)
-      .catch(err => console.error('[Supabase Error] Update order status:', err.message));
+    safeSupabaseExec(
+      supabase.from('orders')
+        .update(updatePayload)
+        .eq('id', id),
+      'Update order status'
+    );
   }
 
   return memoryCache.orders[index];
@@ -579,9 +605,11 @@ function registerUsedSlip({ qrData, transactionRef, fileHash, orderId = null }) 
     writeJson(USED_SLIPS_FILE, memoryCache.usedSlips);
 
     if (supabase) {
-      supabase.from('settings')
-        .upsert({ id: 'used_slips_registry', data: memoryCache.usedSlips, updatedAt: new Date().toISOString() })
-        .catch(err => console.error('[Supabase Error] Update used_slips_registry:', err.message));
+      safeSupabaseExec(
+        supabase.from('settings')
+          .upsert({ id: 'used_slips_registry', data: memoryCache.usedSlips, updatedAt: new Date().toISOString() }),
+        'Update used_slips_registry'
+      );
     }
   }
 }
@@ -608,10 +636,12 @@ function resetOrders() {
   writeJson(ORDERS_FILE, []);
 
   if (supabase) {
-    supabase.from('orders')
-      .delete()
-      .neq('id', 'DO_NOT_DELETE_NON_EXISTENT')
-      .catch(err => console.error('[Supabase Error] Reset orders:', err.message));
+    safeSupabaseExec(
+      supabase.from('orders')
+        .delete()
+        .neq('id', 'DO_NOT_DELETE_NON_EXISTENT'),
+      'Reset orders'
+    );
   }
 
   // 3. Clear physical slip image files from disk to reclaim disk storage
@@ -648,9 +678,11 @@ function updateSettings(updates) {
   writeJson(SETTINGS_FILE, updated);
 
   if (supabase) {
-    supabase.from('settings')
-      .upsert({ id: 'current', data: updated, updatedAt: new Date().toISOString() })
-      .catch(err => console.error('[Supabase Error] Update settings:', err.message));
+    safeSupabaseExec(
+      supabase.from('settings')
+        .upsert({ id: 'current', data: updated, updatedAt: new Date().toISOString() }),
+      'Update settings'
+    );
   }
 
   return updated;
