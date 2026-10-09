@@ -8,8 +8,8 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 // High-speed, high-accuracy vision models (tested and active)
 const VISION_MODELS = [
   'gemini-flash-lite-latest',
-  'gemini-3.1-flash-lite',
-  'gemini-flash-latest'
+  'gemini-flash-latest',
+  'gemini-3.8-flash'
 ];
 
 /**
@@ -241,15 +241,15 @@ async function verifySlip(filePath, mimeType, expectedAmount, expectedReceiver =
   const base64Data = imageBuffer.toString('base64');
   const normalizedMimeType = mimeType || 'image/jpeg';
 
-  // If Gemini API Key is missing, validate using decoded QR code metadata
+  // If Gemini API Key is missing, do NOT fake the amount! Report unverified amount
   if (!GEMINI_API_KEY) {
     const isDateMatch = qrTransferDate ? (qrTransferDate === today.isoDate || qrTransferDate === today.yesterdayIso) : true;
     return {
       isValidSlip: true,
-      isAmountMatched: true,
+      isAmountMatched: false,
       isDateToday: isDateMatch,
       isReceiverMatched: true,
-      isReadyToSave: isDateMatch,
+      isReadyToSave: false,
       isDuplicateSlip: false,
       hasQrCode: true,
       isRealBankSlipQr: isRealBankQr,
@@ -258,15 +258,15 @@ async function verifySlip(filePath, mimeType, expectedAmount, expectedReceiver =
       qrScanMethod: qrScanResult?.method || null,
       qrStatusText: `✓ ตรวจพบ Mini QR Code ธนาคาร (${qrBankName || 'ธนาคารไทย'})`,
       fileHash,
-      detectedAmount: targetAmount,
+      detectedAmount: null,
       expectedAmount: targetAmount,
       receiverName: expectedReceiver,
       bankName: qrBankName || 'ธนาคารไทย',
       transactionRef: initialRef,
       transferDate: qrTransferDate || today.thaiShort,
       transferTime: qrTransferTime || new Date().toLocaleTimeString('th-TH'),
-      status: isDateMatch ? 'VALID_AND_MATCHED' : 'DATE_MISMATCHED',
-      message: isDateMatch ? `✅ ตรวจสอบ QR Code ธนาคารสำเร็จ (${qrBankName || 'ธนาคารไทย'}) รหัสอ้างอิง: ${initialRef}` : '⚠️ วันที่ในสลิปไม่ใช่วันที่ปัจจุบัน'
+      status: 'AMOUNT_UNVERIFIED',
+      message: '⚠️ ตรวจพบ QR Code ธนาคารแล้ว แต่ระบบไม่สามารถยืนยันยอดเงินอัตโนมัติได้ ยอดเงินต้องให้ทางร้านตรวจสอบ'
     };
   }
 
@@ -281,8 +281,10 @@ async function verifySlip(filePath, mimeType, expectedAmount, expectedReceiver =
 สลิปนี้ได้รับการตรวจพบและถอดรหัส QR Code ธนาคารสำเร็จแล้ว: ${qrContextStr}
 
 ข้อมูลอ้างอิงของร้านค้าที่ต้องตรวจสอบให้ตรงกัน:
-1. ยอดเงินโอนจริง (Transfer Amount): ต้องตรงกับ ${targetAmount} บาท (คลาดเคลื่อนไม่เกิน 0.05 บาท)
-   - ระวัง: ให้อ่านเฉพาะยอดเงินที่ "โอนสำเร็จ" (Amount / ยอดโอน / จำนวนเงิน) เท่านั้น
+1. ยอดเงินโอนจริง (Transfer Amount): จงอ่านตัวเลขยอดเงินที่โอนสำเร็จ (Amount / ยอดโอน / จำนวนเงิน / ยอดเงิน) ในสลิปอย่างแม่นยำ 100%
+   - ตัวอย่าง: หากในสลิปพิมพ์ว่า "50.00 บาท" หรือ "50.00" หรือ "50" จงตอบ "detectedAmount": 50.00
+   - ห้ามเดาหรือปรับตัวเลข detectedAmount ให้ตรงกับยอดสั่งซื้อ ${targetAmount} บาท เด็ดขาด! จงรายงานยอดเงินจริงที่พิมพ์อยู่บนสลิปเท่านั้น
+   - กฎการตรวจสอบยอดเงิน: "isAmountMatched" จะเป็น true ก็ต่อเมื่อ detectedAmount ตรงกับยอดสั่งซื้อ ${targetAmount} (ผลต่างไม่เกิน 0.05 บาท) เท่านั้น! หากสลิปโอน 50 บาท แต่ยอดสั่งซื้อคือ 150 บาท "isAmountMatched" ต้องเป็น false และ status ต้องเป็น "AMOUNT_MISMATCHED" ทันที!
    - ห้ามสับสนกับยอดเงินคงเหลือ (Balance), เลขที่บัญชี หรือค่าธรรมเนียม (Fee 0.00)
 2. ผู้รับเงิน (Receiver Name): ต้องโอนเข้าบัญชีร้านค้าจริง ชื่อบัญชีร้านคือ "${expectedReceiver}"
    - ธนาคารมักจะซ่อนนามสกุลด้วยดอกจัน เช่น "นาง พัชญ์ชามญช์ กฤติณัฐธ****" หรือ "พัชญ์ชามญชุ์ ก." หรือภาษาอังกฤษ "PATCHAMON KRITTINATTHANACHAI" ให้ถือว่าตรง
@@ -298,8 +300,8 @@ async function verifySlip(filePath, mimeType, expectedAmount, expectedReceiver =
 ตอบกลับเป็นรูปแบบ JSON เดียวเท่านั้น (ห้ามมี Markdown หรือข้อความอื่น):
 {
   "isValidSlip": true หรือ false,
-  "detectedAmount": ตัวเลขยอดเงินที่โอนจริง (เช่น 35.00) หรือ null,
-  "isAmountMatched": true หรือ false,
+  "detectedAmount": ตัวเลขยอดเงินที่โอนจริงตามที่พิมพ์บนสลิป (เช่น 50.00 หรือ 150.00) หรือ null,
+  "isAmountMatched": true หรือ false (ตรงกับ ${targetAmount} หรือไม่),
   "amountDifference": ผลต่างยอดเงิน (detectedAmount - ${targetAmount}),
   "transferDate": "วันที่โอนที่อ่านได้จากสลิป",
   "transferTime": "เวลาที่โอน เช่น 20:47:42",

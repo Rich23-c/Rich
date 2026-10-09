@@ -754,6 +754,16 @@ async function confirmAndSaveOrder() {
       });
       return;
     }
+    if (currentSlipVerification.detectedAmount !== null && currentSlipVerification.isAmountMatched === false) {
+      const diff = currentSlipVerification.amountDifference || (currentSlipVerification.detectedAmount - total);
+      Swal.fire({
+        icon: 'error',
+        title: 'ยอดเงินในสลิปไม่ตรงกับยอดสั่งซื้อ',
+        html: `ยอดเงินในสลิปของคุณคือ <b>${currentSlipVerification.detectedAmount.toFixed(2)} บาท</b><br>แต่มียอดสั่งซื้อรวม <b>${total.toFixed(2)} บาท</b><br><span class="text-red-500 font-bold">${diff < 0 ? 'ขาดอีก ' + Math.abs(diff).toFixed(2) + ' บาท' : 'ยอดเกิน ' + diff.toFixed(2) + ' บาท'}</span><br><br>กรุณาโอนเงินให้ถูกต้องครบถ้วน หรือเปลี่ยนรูปสลิปใหม่ครับ 🐾`,
+        confirmButtonColor: '#ef4444'
+      });
+      return;
+    }
   }
 
   // Show saving progress
@@ -983,20 +993,20 @@ function displayVerificationResult(v, expectedAmount) {
       confirmBtn.innerHTML = '<i data-lucide="check-circle" class="w-5 h-5"></i><span>✅ กดยืนยันการสั่งซื้อขนม (ส่งออเดอร์) 🐾</span>';
     }
   } else if (v.status === 'AMOUNT_MISMATCHED' || (!v.isAmountMatched && v.detectedAmount !== null)) {
-    // Amount Mismatch
-    card.classList.add('bg-amber-50', 'border-amber-200');
-    iconContainer.className = 'w-8 h-8 rounded-full bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm';
-    iconContainer.innerHTML = '<i data-lucide="alert-triangle" class="w-5 h-5"></i>';
-    title.className = 'text-sm font-bold text-amber-900';
-    title.innerText = '⚠️ ยอดเงินในสลิปไม่ตรงกับยอดที่สั่งซื้อ';
-    summary.className = 'text-xs text-amber-800';
-    const diff = v.amountDifference || 0;
-    summary.innerText = `ยอดในสลิปคือ ${v.detectedAmount?.toFixed(2) || 0} บาท แต่มียอดสั่งซื้อ ${expectedAmount.toFixed(2)} บาท (${diff < 0 ? 'ขาด ' + Math.abs(diff).toFixed(2) : 'เกิน +' + diff.toFixed(2)} บาท)`;
+    // Amount Mismatch - Strict Block!
+    card.classList.add('bg-red-50', 'border-red-300');
+    iconContainer.className = 'w-8 h-8 rounded-full bg-red-600 text-white flex items-center justify-center shrink-0 shadow-sm';
+    iconContainer.innerHTML = '<i data-lucide="x-circle" class="w-5 h-5"></i>';
+    title.className = 'text-sm font-bold text-red-900';
+    title.innerText = '❌ ยอดเงินในสลิปไม่ตรงกับยอดที่สั่งซื้อ!';
+    summary.className = 'text-xs text-red-700 font-bold';
+    const diff = v.amountDifference || (v.detectedAmount - expectedAmount);
+    summary.innerText = `ยอดในสลิปโอนมา ${v.detectedAmount?.toFixed(2) || 0} บาท แต่มียอดสั่งซื้อ ${expectedAmount.toFixed(2)} บาท (${diff < 0 ? 'ขาดอีก ' + Math.abs(diff).toFixed(2) : 'ยอดเกิน ' + diff.toFixed(2)} บาท) กรุณาโอนเงินให้ครบหรือแนบสลิปที่ถูกต้องครับ`;
 
     if (confirmBtn) {
-      confirmBtn.disabled = false;
-      confirmBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-      confirmBtn.innerHTML = '<i data-lucide="check-circle" class="w-5 h-5"></i><span>✅ กดยืนยันการสั่งซื้อขนม (ส่งออเดอร์) 🐾</span>';
+      confirmBtn.disabled = true;
+      confirmBtn.classList.add('opacity-50', 'cursor-not-allowed');
+      confirmBtn.innerHTML = '<i data-lucide="alert-triangle" class="w-5 h-5"></i><span>⚠️ ยอดเงินไม่ตรง (ขาดอีก ' + (diff < 0 ? Math.abs(diff).toFixed(2) : '0.00') + ' บาท)</span>';
     }
   } else if (v.status === 'DATE_MISMATCHED' || !v.isDateToday) {
     // Date Mismatch (Old slip)

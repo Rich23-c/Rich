@@ -328,6 +328,17 @@ app.post('/api/orders', uploadSlip.single('slip'), async (req, res) => {
       });
     }
 
+    // RULE: Enforce amount matching if amount is detected on slip
+    if (slipVerification && slipVerification.detectedAmount !== null && slipVerification.isAmountMatched === false) {
+      const detectedAmt = Number(slipVerification.detectedAmount).toFixed(2);
+      const targetAmt = Number(calculatedTotal).toFixed(2);
+      const diff = Math.round((slipVerification.detectedAmount - calculatedTotal) * 100) / 100;
+      return res.status(400).json({
+        success: false,
+        error: `⚠️ ยอดเงินในสลิป (${detectedAmt} บาท) ไม่ตรงกับยอดสั่งซื้อ (${targetAmt} บาท) ${diff < 0 ? 'ขาดอีก ' + Math.abs(diff).toFixed(2) : 'เกิน ' + diff.toFixed(2)} บาท กรุณาโอนเงินให้ครบหรือแนบสลิปที่ถูกต้องครับ`
+      });
+    }
+
     // Device ID from client (enables persistent cloud tracking across browser restarts)
     const deviceId = (body.deviceId || req.headers['x-device-id'] || '').trim() || null;
 
