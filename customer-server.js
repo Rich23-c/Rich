@@ -217,7 +217,17 @@ app.post('/api/orders', uploadSlip.single('slip'), async (req, res) => {
       });
     }
 
-    // Optional background QR code scanner for admin reference (never blocks order submission)
+    // Extract AI slip verification if sent or run in background
+    let slipVerification = null;
+    if (body.existingVerification) {
+      try {
+        slipVerification = typeof body.existingVerification === 'string'
+          ? JSON.parse(body.existingVerification)
+          : body.existingVerification;
+      } catch (e) {}
+    }
+
+    // Optional background QR code scanner for admin reference
     let qrMetadata = null;
     if (req.file) {
       try {
@@ -228,8 +238,20 @@ app.post('/api/orders', uploadSlip.single('slip'), async (req, res) => {
       }
     }
 
+    // If client didn't pre-verify via AI, run verifySlip on uploaded file
+    if (!slipVerification && req.file) {
+      try {
+        const expectedReceiver = settings.promptpayName || 'พัชญ์ชามญชุ์ กฤติณัฐธนชัย';
+        slipVerification = await verifySlip(req.file.path, req.file.mimetype, calculatedTotal, expectedReceiver).catch(() => null);
+      } catch (e) {}
+    }
+
+    // Device ID from client (enables persistent cloud tracking across browser restarts)
+    const deviceId = (body.deviceId || req.headers['x-device-id'] || '').trim() || null;
+
     // Save order with permanently locked cost, profit, and pending review status
     const orderData = {
+      deviceId,                       // Cloud memory for mobile phone device
       customerName: body.customerName,
       customerPhone: body.customerPhone || '',
       customerNote: body.customerNote || '',
@@ -239,9 +261,10 @@ app.post('/api/orders', uploadSlip.single('slip'), async (req, res) => {
       totalProfit: totalOrderProfit,  // Permanently locked profit
       profitMargin: profitMargin,     // Permanently locked margin %
       slipImage,
-      qrData: qrMetadata?.qrData || null,
-      transactionRef: qrMetadata?.transactionRef || null,
-      bankName: qrMetadata?.bankName || null,
+      slipVerification: slipVerification || null,
+      qrData: qrMetadata?.qrData || slipVerification?.qrData || null,
+      transactionRef: qrMetadata?.transactionRef || slipVerification?.transactionRef || null,
+      bankName: qrMetadata?.bankName || slipVerification?.bankName || null,
       orderStatus: 'pending'          // เริ่มต้นเป็น "รอตรวจสอบสลิป" (แอดมินตรวจเองและกดยืนยัน)
     };
 
@@ -258,15 +281,15 @@ app.post('/api/orders', uploadSlip.single('slip'), async (req, res) => {
   }
 });
 
-// Customer order history & search
+// Customer order history & search (Supports cloud recall by deviceId, phone, query, or IDs)
 app.get('/api/orders-history', (req, res) => {
   try {
-    const { query, phone, name, ids } = req.query;
+    const { query, phone, name, ids, deviceId } = req.query;
     let idList = [];
     if (ids) {
       idList = typeof ids === 'string' ? ids.split(',').map(s => s.trim()).filter(Boolean) : ids;
     }
-    const orders = db.findOrders({ query, phone, name, ids: idList });
+    const orders = db.findOrders({ query, phone, name, ids: idList, deviceId });
     res.json({ success: true, data: orders });
   } catch (err) {
     console.error('Error fetching order history:', err);

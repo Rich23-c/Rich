@@ -16,6 +16,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   setupDropZone();
   updateHistoryBadge();
+  syncDeviceOrdersFromCloud();
 });
 
 // Load public shop settings
@@ -611,8 +612,79 @@ function handleSlipSelected(file) {
     if (hintBanner) hintBanner.classList.add('hidden');
 
     if (window.lucide) lucide.createIcons();
+
+    // Trigger AI Slip Pre-Verification automatically!
+    autoVerifySlip(file);
   };
   reader.readAsDataURL(file);
+}
+
+// Automatically pre-verify slip with AI and QR Code recognition
+async function autoVerifySlip(file) {
+  if (!file) return;
+
+  const items = Object.values(selectedItems);
+  const total = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+  const loadingCard = document.getElementById('verifyingLoadingCard');
+  const resultCard = document.getElementById('verificationResultCard');
+  const reverifyBtn = document.getElementById('reverifyBtn');
+
+  if (loadingCard) loadingCard.classList.remove('hidden');
+  if (resultCard) resultCard.classList.add('hidden');
+  if (reverifyBtn) reverifyBtn.disabled = true;
+
+  try {
+    const formData = new FormData();
+    formData.append('slip', file);
+    formData.append('expectedAmount', total);
+
+    const res = await fetch('/api/verify-slip', {
+      method: 'POST',
+      body: formData
+    });
+    const data = await res.json();
+
+    if (data.success && data.verification) {
+      currentSlipVerification = data.verification;
+      uploadedSlipUrl = data.slipUrl;
+      displayVerificationResult(data.verification, total);
+    } else {
+      currentSlipVerification = null;
+      if (resultCard) {
+        resultCard.classList.remove('hidden');
+        const title = document.getElementById('verificationTitle');
+        const summary = document.getElementById('verificationSummary');
+        const iconContainer = document.getElementById('statusIconContainer');
+        if (title) title.innerText = '⚠️ การตรวจสอบเบื้องต้นไม่สำเร็จ';
+        if (summary) summary.innerText = data.error || 'ไม่สามารถวิเคราะห์ข้อมูลจากภาพสลิปได้ แต่คุณยังสามารถกดยืนยันออเดอร์เพื่อให้เจ้าของร้านตรวจเช็คได้';
+        if (iconContainer) {
+          iconContainer.className = 'w-8 h-8 rounded-full bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm';
+          iconContainer.innerHTML = '<i data-lucide="alert-circle" class="w-5 h-5"></i>';
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Slip verification error:', err);
+    if (resultCard) {
+      resultCard.classList.remove('hidden');
+      const title = document.getElementById('verificationTitle');
+      const summary = document.getElementById('verificationSummary');
+      if (title) title.innerText = '⚠️ ระบบตรวจสลิปขัดข้องชั่วคราว';
+      if (summary) summary.innerText = 'คุณยังสามารถกดปุ่ม "ยืนยันการสั่งซื้อ" ได้ตามปกติ เจ้าของร้านจะทำการตรวจสลิปด้วยตนเองครับ';
+    }
+  } finally {
+    if (loadingCard) loadingCard.classList.add('hidden');
+    if (reverifyBtn) reverifyBtn.disabled = false;
+    if (window.lucide) lucide.createIcons();
+  }
+}
+
+// Manual re-verify button handler
+function triggerSlipVerification() {
+  if (currentSlipFile) {
+    autoVerifySlip(currentSlipFile);
+  }
 }
 
 // Customer confirms the order -> Save to database
@@ -671,12 +743,18 @@ async function confirmAndSaveOrder() {
   });
 
   const formData = new FormData();
-  if (currentSlipFile) {
+  if (currentSlipFile && !uploadedSlipUrl) {
     formData.append('slip', currentSlipFile);
   }
   if (uploadedSlipUrl) {
     formData.append('existingSlipUrl', uploadedSlipUrl);
+  } else if (currentSlipFile) {
+    formData.append('slip', currentSlipFile);
   }
+  if (currentSlipVerification) {
+    formData.append('existingVerification', JSON.stringify(currentSlipVerification));
+  }
+  formData.append('deviceId', getDeviceId());
   formData.append('customerName', customerName);
   formData.append('customerPhone', customerPhone);
   formData.append('items', JSON.stringify(items));
@@ -703,6 +781,9 @@ async function confirmAndSaveOrder() {
       // Save to local storage history
       saveOrderToLocalHistory(data.order.id);
       updateHistoryBadge();
+
+      // Refresh cloud sync & active order notice
+      syncDeviceOrdersFromCloud();
 
       // Show success modal receipt & live status tracker
       showReceiptModal(data.order);
@@ -735,10 +816,16 @@ function submitOrder() {
 function removeSlip() {
   currentSlipFile = null;
   uploadedSlipUrl = null;
+  currentSlipVerification = null;
   const slipInput = document.getElementById('slipInput');
   if (slipInput) slipInput.value = '';
   document.getElementById('slipDropZone').classList.remove('hidden');
   document.getElementById('slipVerificationBox').classList.add('hidden');
+
+  const loadingCard = document.getElementById('verifyingLoadingCard');
+  if (loadingCard) loadingCard.classList.add('hidden');
+  const resultCard = document.getElementById('verificationResultCard');
+  if (resultCard) resultCard.classList.add('hidden');
 
   const confirmSection = document.getElementById('customerConfirmSection');
   if (confirmSection) confirmSection.classList.add('hidden');
@@ -910,6 +997,121 @@ function updateHistoryBadge() {
     badge.classList.remove('hidden');
   } else {
     badge.classList.add('hidden');
+  }
+}
+
+// Persistent Device ID across reloads, browser closing, iOS Safari / LINE in-app webview
+function getDeviceId() {
+  const DEVICE_COOKIE_NAME = 'snack_maew_device_id';
+  let deviceId = null;
+
+  // 1. Try reading from localStorage
+  try {
+    deviceId = localStorage.getItem('snack_maew_device_id');
+  } catch (e) {}
+
+  // 2. Try reading from cookie if localStorage was empty or cleared
+  if (!deviceId) {
+    const match = document.cookie.match(new RegExp('(?:^|;\\s*)' + DEVICE_COOKIE_NAME + '=([^;]*)'));
+    if (match && match[1]) {
+      deviceId = decodeURIComponent(match[1]);
+    }
+  }
+
+  // 3. If still no deviceId, generate a persistent device ID
+  if (!deviceId) {
+    deviceId = 'dev_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 10);
+  }
+
+  // 4. Save to both localStorage and cookie (10 years)
+  try {
+    localStorage.setItem('snack_maew_device_id', deviceId);
+  } catch (e) {}
+
+  try {
+    const expires = new Date(Date.now() + 10 * 365 * 24 * 60 * 60 * 1000).toUTCString();
+    document.cookie = `${DEVICE_COOKIE_NAME}=${encodeURIComponent(deviceId)}; expires=${expires}; path=/; SameSite=Lax`;
+  } catch (e) {}
+
+  return deviceId;
+}
+
+let latestActiveDeviceOrder = null;
+
+// Synchronize device orders from cloud (Mobile memory across browser close)
+async function syncDeviceOrdersFromCloud() {
+  try {
+    const deviceId = getDeviceId();
+    const localIds = getLocalOrderIds();
+
+    const params = new URLSearchParams();
+    if (deviceId) params.append('deviceId', deviceId);
+    if (localIds.length > 0) params.append('ids', localIds.join(','));
+
+    const res = await fetch(`/api/orders-history?${params.toString()}`);
+    const data = await res.json();
+
+    if (data.success && Array.isArray(data.data) && data.data.length > 0) {
+      const orders = data.data;
+
+      // 1. Merge recovered order IDs back into local history
+      orders.forEach(o => {
+        if (o && o.id) saveOrderToLocalHistory(o.id);
+      });
+      updateHistoryBadge();
+
+      // 2. Pre-fill customer name & phone from most recent order if empty
+      const nameInput = document.getElementById('customerName');
+      const phoneInput = document.getElementById('customerPhone');
+      const latestOrder = orders[0];
+      if (latestOrder) {
+        if (nameInput && !nameInput.value.trim() && latestOrder.customerName) {
+          nameInput.value = latestOrder.customerName;
+        }
+        if (phoneInput && !phoneInput.value.trim() && latestOrder.customerPhone) {
+          phoneInput.value = latestOrder.customerPhone;
+        }
+      }
+
+      // 3. Check for active (in-progress) orders: pending, verified, preparing, prepared
+      const activeOrders = orders.filter(o =>
+        ['pending', 'verified', 'preparing', 'prepared'].includes(o.orderStatus)
+      );
+
+      const banner = document.getElementById('deviceActiveOrdersBanner');
+      if (banner) {
+        if (activeOrders.length > 0) {
+          latestActiveDeviceOrder = activeOrders[0];
+          const countBadge = document.getElementById('deviceActiveOrdersCount');
+          const previewText = document.getElementById('deviceActiveOrderPreview');
+          const mainText = document.getElementById('deviceActiveOrdersText');
+          const statusInfo = getOrderStatusInfo(latestActiveDeviceOrder.orderStatus);
+
+          if (countBadge) countBadge.innerText = `${activeOrders.length} รายการ`;
+          if (mainText) mainText.innerText = `คุณมี ${activeOrders.length} ออเดอร์กำลังดำเนินการ: ${statusInfo.label}`;
+          if (previewText) {
+            const itemsSummary = (latestActiveDeviceOrder.items || []).map(i => `${i.name} × ${i.quantity}`).join(', ');
+            previewText.innerText = `รหัส: ${latestActiveDeviceOrder.id} • ${latestActiveDeviceOrder.customerName} (${latestActiveDeviceOrder.totalPrice.toLocaleString()} ฿) - ${itemsSummary}`;
+          }
+
+          banner.classList.remove('hidden');
+          if (window.lucide) lucide.createIcons();
+        } else {
+          banner.classList.add('hidden');
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Could not sync device orders from cloud:', err);
+  }
+}
+
+// Open active order from banner
+function openActiveOrderFromBanner() {
+  if (latestActiveDeviceOrder) {
+    showReceiptModal(latestActiveDeviceOrder);
+  } else {
+    openOrderHistoryModal();
   }
 }
 
@@ -1168,15 +1370,15 @@ async function loadOrderHistory(searchQuery = '') {
 
   try {
     const localIds = getLocalOrderIds();
+    const deviceId = getDeviceId();
     let url = '/api/orders-history';
     if (searchQuery) {
       url += `?query=${encodeURIComponent(searchQuery)}`;
-    } else if (localIds.length > 0) {
-      url += `?ids=${localIds.join(',')}`;
     } else {
-      // Nothing locally yet
-      renderEmptyOrderHistory();
-      return;
+      const params = new URLSearchParams();
+      if (deviceId) params.append('deviceId', deviceId);
+      if (localIds.length > 0) params.append('ids', localIds.join(','));
+      url += `?${params.toString()}`;
     }
 
     const res = await fetch(url);

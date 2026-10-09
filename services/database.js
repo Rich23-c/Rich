@@ -128,6 +128,7 @@ function createOrder(orderData) {
 
   const newOrder = {
     id: orderId,
+    deviceId: orderData.deviceId?.trim() || null, // Mobile device unique identifier
     customerName: orderData.customerName?.trim() || 'ไม่ระบุชื่อ',
     customerPhone: orderData.customerPhone?.trim() || '',
     customerEmail: orderData.customerEmail?.trim() || '',
@@ -165,13 +166,9 @@ function updateOrderStatus(id, status, adminNotes = null) {
   return orders[index];
 }
 
-// Find orders by query, phone, name, or IDs
-function findOrders({ query, phone, name, ids } = {}) {
+// Find orders by query, phone, name, deviceId, or IDs
+function findOrders({ query, phone, name, ids, deviceId } = {}) {
   const allOrders = getOrders();
-  if (ids && Array.isArray(ids) && ids.length > 0) {
-    const idSet = new Set(ids);
-    return allOrders.filter(o => idSet.has(o.id));
-  }
 
   if (query) {
     const q = query.trim().toLowerCase();
@@ -187,17 +184,28 @@ function findOrders({ query, phone, name, ids } = {}) {
     });
   }
 
-  if (phone) {
-    const cleanPhone = phone.replace(/[\s\-]/g, '');
-    return allOrders.filter(o => {
-      const orderPhone = (o.customerPhone || '').replace(/[\s\-]/g, '');
-      return orderPhone.length >= 3 && orderPhone.includes(cleanPhone);
-    });
-  }
+  // Combined matching set for deviceId and/or ids and/or phone and/or name
+  if (deviceId || (ids && ids.length > 0) || phone || name) {
+    const idSet = (ids && Array.isArray(ids)) ? new Set(ids) : new Set();
+    const cleanPhone = phone ? phone.replace(/[\s\-]/g, '') : '';
+    const cleanName = name ? name.trim().toLowerCase() : '';
+    const cleanDeviceId = (deviceId || '').trim();
 
-  if (name) {
-    const cleanName = name.trim().toLowerCase();
-    return allOrders.filter(o => (o.customerName || '').toLowerCase().includes(cleanName));
+    return allOrders.filter(o => {
+      // 1. Matched by deviceId from cloud
+      if (cleanDeviceId && o.deviceId && o.deviceId === cleanDeviceId) return true;
+      // 2. Matched by order ID list
+      if (idSet.has(o.id)) return true;
+      // 3. Matched by phone
+      if (cleanPhone.length >= 3) {
+        const orderPhone = (o.customerPhone || '').replace(/[\s\-]/g, '');
+        if (orderPhone.includes(cleanPhone)) return true;
+      }
+      // 4. Matched by name
+      if (cleanName && o.customerName && o.customerName.toLowerCase().includes(cleanName)) return true;
+
+      return false;
+    });
   }
 
   return [];
