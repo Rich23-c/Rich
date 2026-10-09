@@ -30,9 +30,36 @@ if (!fs.existsSync(slipsUploadDir)) {
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(uploadDir));
 
-// Health check endpoint for Uptime monitoring & Keep-Alive
+// Health check endpoint for Uptime monitoring & Memory usage stats
 app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok', uptime: process.uptime(), timestamp: new Date().toISOString() });
+  const mem = process.memoryUsage();
+  const usedRamMB = Math.round((mem.rss / 1024 / 1024) * 10) / 10;
+  const limitRamMB = 512;
+  const ramPercent = Math.round((usedRamMB / limitRamMB) * 100);
+
+  res.status(200).json({
+    status: 'ok',
+    uptimeSeconds: Math.floor(process.uptime()),
+    uptimeFormatted: `${Math.floor(process.uptime() / 60)} นาที`,
+    memoryRAM: {
+      used: `${usedRamMB} MB`,
+      limit: `${limitRamMB} MB (แผนฟรี Render)`,
+      usagePercent: `${ramPercent}%`,
+      availableRemaining: `${Math.round((limitRamMB - usedRamMB) * 10) / 10} MB`
+    },
+    diskStorage: {
+      usedEstimate: 'ประมาณ 70 - 90 MB (รวมโค้ดและไลบรารี)',
+      limit: '1 GB (1,024 MB)',
+      usagePercent: 'ประมาณ 8%'
+    },
+    bandwidthMonthly: {
+      limit: '100 GB / เดือน (ใช้ไปยังไม่ถึง 1%)'
+    },
+    freeHoursMonthly: {
+      limit: '750 ชม. / เดือน (เปิด 24 ชม. ทั้งเดือนใช้ 744 ชม. = พอดี 100%)'
+    },
+    timestamp: new Date().toISOString()
+  });
 });
 
 // Route to Admin Dashboard (allows accessing admin from the main public tunnel URL /admin)
