@@ -11,21 +11,22 @@ let qrDebounceTimeout = null;
 document.addEventListener('DOMContentLoaded', async () => {
   if (window.lucide) lucide.createIcons();
 
-  // One-time self-healing cleanup for iPad/tablets that never placed an order
-  const isIPad = /iPad/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-  if (isIPad && !localStorage.getItem('snack_maew_device_purged_v2')) {
+  // One-time self-healing cleanup to guarantee strict device isolation
+  const PURGE_FLAG = 'snack_maew_isolation_clean_v9';
+  if (!localStorage.getItem(PURGE_FLAG)) {
     localStorage.removeItem('snack_maew_customer_name');
     localStorage.removeItem('snack_maew_customer_phone');
     localStorage.removeItem(LOCAL_STORAGE_ORDERS_KEY);
-    localStorage.setItem('snack_maew_device_purged_v2', '1');
+    localStorage.removeItem('snack_maew_orders_history');
+    localStorage.removeItem('snack_maew_device_purged_v2');
+    localStorage.setItem(PURGE_FLAG, '1');
   }
 
   // Restore customer contact info from persistent storage ONLY if typed on this device
   const nameInput = document.getElementById('customerName');
   const phoneInput = document.getElementById('customerPhone');
   if (nameInput) {
-    const savedName = localStorage.getItem('snack_maew_customer_name');
-    if (savedName && !nameInput.value) nameInput.value = savedName;
+    nameInput.value = localStorage.getItem('snack_maew_customer_name') || '';
     nameInput.addEventListener('input', e => {
       const v = e.target.value.trim();
       if (v) localStorage.setItem('snack_maew_customer_name', v);
@@ -33,8 +34,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
   if (phoneInput) {
-    const savedPhone = localStorage.getItem('snack_maew_customer_phone');
-    if (savedPhone && !phoneInput.value) phoneInput.value = savedPhone;
+    phoneInput.value = localStorage.getItem('snack_maew_customer_phone') || '';
     phoneInput.addEventListener('input', e => {
       const v = e.target.value.trim();
       if (v) localStorage.setItem('snack_maew_customer_phone', v);

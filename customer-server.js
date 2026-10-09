@@ -38,16 +38,17 @@ if (!fs.existsSync(slipsUploadDir)) {
   fs.mkdirSync(slipsUploadDir, { recursive: true });
 }
 
-// Serve static assets for Customer Storefront with CDN-optimized Cache-Control
+// Serve static assets for Customer Storefront with instant revalidation for HTML, JS & CSS
 app.use(express.static(path.join(__dirname, 'public'), {
-  maxAge: '1d',
   setHeaders: (res, filePath) => {
-    if (filePath.endsWith('.html')) {
-      // HTML documents revalidate to ensure immediate updates upon release
-      res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+    if (filePath.endsWith('.html') || filePath.endsWith('.js') || filePath.endsWith('.css')) {
+      // HTML, JS, and CSS must revalidate immediately to prevent stale cached client code
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
     } else {
-      // CSS, JS, images, icons cached in browser for 1 day, and Cloudflare Edge CDN for 7 days
-      res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400');
+      // Images and media assets can be cached
+      res.setHeader('Cache-Control', 'public, max-age=86400');
     }
   }
 }));
@@ -428,6 +429,10 @@ app.post('/api/orders', uploadSlip.single('slip'), async (req, res) => {
 // Customer order history & search (Supports cloud recall by deviceId, phone, query, or IDs)
 app.get('/api/orders-history', (req, res) => {
   try {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+
     const { query, phone, name, ids, deviceId } = req.query;
     let idList = [];
     if (ids) {

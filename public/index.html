@@ -32,12 +32,31 @@
     }
   </script>
   <!-- Lucide Icons -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <script src="https://unpkg.com/lucide@latest"></script>
   <!-- SweetAlert2 -->
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   <!-- Canvas Confetti -->
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
-  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/style.css?v=20261009_v9">
+  <!-- Immediate Device-Isolation Storage Self-Healing Script -->
+  <script>
+    (function() {
+      try {
+        const PURGE_FLAG = 'snack_maew_isolation_clean_v9';
+        if (!localStorage.getItem(PURGE_FLAG)) {
+          localStorage.removeItem('snack_maew_customer_name');
+          localStorage.removeItem('snack_maew_customer_phone');
+          localStorage.removeItem('snack_maew_my_orders');
+          localStorage.removeItem('snack_maew_orders_history');
+          localStorage.removeItem('snack_maew_device_purged_v2');
+          localStorage.setItem(PURGE_FLAG, '1');
+        }
+      } catch(e) {}
+    })();
+  </script>
 </head>
 <body class="bg-[#fafaf9] min-h-screen text-stone-800 flex flex-col antialiased selection:bg-stone-200 selection:text-stone-900">
 
@@ -787,6 +806,6 @@
     </div>
   </div>
 
-  <script src="/js/app.js"></script>
+  <script src="/js/app.js?v=20261009_v9"></script>
 </body>
 </html>
