@@ -201,7 +201,8 @@ async function initSupabaseSync() {
       writeJson(ORDERS_FILE, memoryCache.orders);
     } else if (!ordersErr && (!ordersData || ordersData.length === 0) && memoryCache.orders.length > 0) {
       // Seed local orders to Supabase cloud
-      await supabase.from('orders').upsert(memoryCache.orders);
+      const sanitizedSeeds = memoryCache.orders.map(({ slipBase64, ...rest }) => rest);
+      await supabase.from('orders').upsert(sanitizedSeeds);
     }
 
     // 4. Sync Permanent Used Slips Memory Registry (Retained forever across order resets)
@@ -484,8 +485,9 @@ function createOrder(orderData) {
   });
 
   if (supabase) {
+    const { slipBase64, ...supabasePayload } = newOrder;
     safeSupabaseExec(
-      supabase.from('orders').insert([newOrder]),
+      supabase.from('orders').insert([supabasePayload]),
       'Insert order'
     );
   }
