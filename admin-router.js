@@ -29,8 +29,9 @@ const uploadSnackImage = multer({
   limits: { fileSize: 10 * 1024 * 1024 }
 });
 
-// Middleware for Admin PIN Verification
+// Middleware for Admin PIN Verification (strictly no caching on admin data)
 function requireAdmin(req, res, next) {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   const pin = req.headers['x-admin-pin'] || req.query.pin;
   if (!pin || !db.verifyAdminPin(pin)) {
     return res.status(401).json({ success: false, error: 'รหัสผ่าน Admin ไม่ถูกต้อง กรุณาเข้าสู่ระบบใหม่' });
@@ -234,6 +235,16 @@ router.post('/api/admin/toggle-open', requireAdmin, (req, res) => {
       : !current.isOpen;
     const updated = db.updateSettings({ isOpen: newStatus });
     res.json({ success: true, isOpen: updated.isOpen, data: updated });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Admin get database status & sync info
+router.get('/api/admin/database-status', requireAdmin, (req, res) => {
+  try {
+    const status = db.getDatabaseStatus();
+    res.json({ success: true, data: status });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

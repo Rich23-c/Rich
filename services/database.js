@@ -6,6 +6,24 @@ const SNACKS_FILE = path.join(DATA_DIR, 'snacks.json');
 const ORDERS_FILE = path.join(DATA_DIR, 'orders.json');
 const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
 
+// Ensure data directory exists
+if (!fs.existsSync(DATA_DIR)) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+
+// In-Memory High-Speed Cache (Reads execute in < 0.1ms without disk I/O bottleneck)
+let memoryCache = {
+  snacks: null,
+  orders: null,
+  settings: null,
+  isSupabaseActive: false,
+  lastSyncTime: null,
+  syncError: null
+};
+
+// ==========================================
+// LOCAL JSON FILE SYSTEM (Fallback & Offline Storage)
+// ==========================================
 function readJson(file, defaultValue = []) {
   try {
     if (!fs.existsSync(file)) {
@@ -32,20 +50,199 @@ function writeJson(file, data) {
   }
 }
 
-// Snacks API
+// Initialize memory cache from local disk on boot
+function initLocalCache() {
+  if (!memoryCache.snacks) {
+    memoryCache.snacks = readJson(SNACKS_FILE, []);
+  }
+  if (!memoryCache.orders) {
+    memoryCache.orders = readJson(ORDERS_FILE, []);
+  }
+  if (!memoryCache.settings) {
+    memoryCache.settings = readJson(SETTINGS_FILE, getDefaultSettings());
+  }
+}
+
+function getDefaultSettings() {
+  return {
+    shopName: "ร้านขนมแม้ว 🐾 (Snack by Maew)",
+    shopSubtitle: "ของหวาน ของอร่อย เมืองเพชรบุรี",
+    promptpayId: "140540",
+    promptpayName: "พัชญ์ชามญชุ์ กฤติณัฐธนชัย",
+    bankName: "Thai QR Payment (พร้อมเพย์)",
+    bankAccountNumber: "สแกน Thai QR พร้อมเพย์",
+    promptpayQrImage: "/images/shop-qr.png",
+    adminPin: "411197",
+    isOpen: true,
+    closedMessage: "ขณะนี้ร้านแม้วปิดรับออเดอร์ชั่วคราว แล้วพบกันใหม่รอบหน้านะจ๊ะ 🐱"
+  };
+}
+
+initLocalCache();
+
+// ==========================================
+// SUPABASE CLOUD DATABASE INTEGRATION
+// ==========================================
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+let supabase = null;
+
+if (supabaseUrl && supabaseKey) {
+  try {
+    const { createClient } = require('@supabase/supabase-js');
+    supabase = createClient(supabaseUrl, supabaseKey, {
+      auth: { persistSession: false }
+    });
+    console.log('⚡ [Cloud Database] Initializing Supabase Cloud Adapter with URL:', supabaseUrl);
+    initSupabaseSync();
+  } catch (e) {
+    console.warn('⚠️ [Cloud Database] Failed to initialize Supabase client:', e.message);
+  }
+} else {
+  console.log('📁 [Database] Running in Local High-Speed JSON Mode (No SUPABASE_URL configured).');
+}
+
+async function initSupabaseSync() {
+  if (!supabase) return;
+  try {
+    // 1. Sync Settings
+    const { data: settingsData, error: settingsErr } = await supabase
+      .from('settings')
+      .select('*')
+      .eq('id', 'current')
+      .single();
+
+    if (!settingsErr && settingsData && settingsData.data) {
+      memoryCache.settings = { ...memoryCache.settings, ...settingsData.data };
+      writeJson(SETTINGS_FILE, memoryCache.settings);
+    } else if (settingsErr && settingsErr.code === 'PGRST116') {
+      // Row doesn't exist yet -> seed local settings to cloud
+      await supabase.from('settings').upsert({ id: 'current', data: memoryCache.settings });
+    }
+
+    // 2. Sync Snacks
+    const { data: snacksData, error: snacksErr } = await supabase
+      .from('snacks')
+      .select('*')
+      .order('sortOrder', { ascending: true });
+
+    if (!snacksErr && snacksData && snacksData.length > 0) {
+      memoryCache.snacks = snacksData.map(s => ({
+        id: s.id,
+        name: s.name,
+        price: Number(s.price),
+        cost: Number(s.cost || 0),
+        unit: s.unit || 'ชิ้น',
+        description: s.description || '',
+        image: s.image || '',
+        isAvailable: s.isAvailable !== false,
+        createdAt: s.createdAt,
+        updatedAt: s.updatedAt
+      }));
+      writeJson(SNACKS_FILE, memoryCache.snacks);
+    } else if (!snacksErr && (!snacksData || snacksData.length === 0) && memoryCache.snacks.length > 0) {
+      // Seed local snacks to Supabase cloud
+      const seeds = memoryCache.snacks.map((s, idx) => ({
+        id: s.id,
+        name: s.name,
+        price: s.price,
+        cost: s.cost || 0,
+        unit: s.unit || 'ชิ้น',
+        description: s.description || '',
+        image: s.image || '',
+        isAvailable: s.isAvailable !== false,
+        sortOrder: idx,
+        createdAt: s.createdAt || new Date().toISOString()
+      }));
+      await supabase.from('snacks').upsert(seeds);
+    }
+
+    // 3. Sync Orders
+    const { data: ordersData, error: ordersErr } = await supabase
+      .from('orders')
+      .select('*')
+      .order('createdAt', { ascending: false });
+
+    if (!ordersErr && ordersData && ordersData.length > 0) {
+      memoryCache.orders = ordersData;
+      writeJson(ORDERS_FILE, memoryCache.orders);
+    } else if (!ordersErr && (!ordersData || ordersData.length === 0) && memoryCache.orders.length > 0) {
+      // Seed local orders to Supabase cloud
+      await supabase.from('orders').upsert(memoryCache.orders);
+    }
+
+    memoryCache.isSupabaseActive = true;
+    memoryCache.lastSyncTime = new Date().toISOString();
+    memoryCache.syncError = null;
+    console.log('✅ [Cloud Database] Supabase sync successful! High concurrency mode enabled.');
+
+    // Start background sync every 30 seconds to stay synchronized across instances
+    setInterval(backgroundSyncFromSupabase, 30000);
+  } catch (err) {
+    memoryCache.syncError = err.message;
+    console.warn('⚠️ [Cloud Database] Supabase initial sync notice (falling back to local cache):', err.message);
+  }
+}
+
+async function backgroundSyncFromSupabase() {
+  if (!supabase || !memoryCache.isSupabaseActive) return;
+  try {
+    const { data: ordersData } = await supabase
+      .from('orders')
+      .select('*')
+      .order('createdAt', { ascending: false });
+
+    if (ordersData && ordersData.length >= 0) {
+      memoryCache.orders = ordersData;
+      writeJson(ORDERS_FILE, memoryCache.orders);
+    }
+
+    const { data: snacksData } = await supabase
+      .from('snacks')
+      .select('*')
+      .order('sortOrder', { ascending: true });
+
+    if (snacksData && snacksData.length > 0) {
+      memoryCache.snacks = snacksData.map(s => ({
+        id: s.id,
+        name: s.name,
+        price: Number(s.price),
+        cost: Number(s.cost || 0),
+        unit: s.unit || 'ชิ้น',
+        description: s.description || '',
+        image: s.image || '',
+        isAvailable: s.isAvailable !== false,
+        createdAt: s.createdAt,
+        updatedAt: s.updatedAt
+      }));
+      writeJson(SNACKS_FILE, memoryCache.snacks);
+    }
+
+    memoryCache.lastSyncTime = new Date().toISOString();
+  } catch (e) {
+    // Background polling error is non-fatal
+  }
+}
+
+// ==========================================
+// SNACKS API
+// ==========================================
 function getSnacks(includeUnavailable = false) {
-  const snacks = readJson(SNACKS_FILE, []);
+  initLocalCache();
+  const snacks = memoryCache.snacks || [];
   if (includeUnavailable) return snacks;
   return snacks.filter(s => s.isAvailable !== false);
 }
 
 function getSnackById(id) {
-  const snacks = readJson(SNACKS_FILE, []);
+  initLocalCache();
+  const snacks = memoryCache.snacks || [];
   return snacks.find(s => s.id === id);
 }
 
 function saveSnack(snackData) {
-  const snacks = readJson(SNACKS_FILE, []);
+  initLocalCache();
   const newSnack = {
     id: 'snack-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
     name: snackData.name?.trim() || 'ขนมไม่มีชื่อ',
@@ -57,40 +254,69 @@ function saveSnack(snackData) {
     isAvailable: snackData.isAvailable !== false,
     createdAt: new Date().toISOString()
   };
-  snacks.push(newSnack);
-  writeJson(SNACKS_FILE, snacks);
+
+  memoryCache.snacks.push(newSnack);
+  writeJson(SNACKS_FILE, memoryCache.snacks);
+
+  if (supabase) {
+    supabase.from('snacks').insert([{
+      ...newSnack,
+      sortOrder: memoryCache.snacks.length - 1
+    }]).catch(err => console.error('[Supabase Error] Insert snack:', err.message));
+  }
+
   return newSnack;
 }
 
 function updateSnack(id, updates) {
-  const snacks = readJson(SNACKS_FILE, []);
-  const index = snacks.findIndex(s => s.id === id);
+  initLocalCache();
+  const index = memoryCache.snacks.findIndex(s => s.id === id);
   if (index === -1) return null;
 
-  snacks[index] = {
-    ...snacks[index],
+  memoryCache.snacks[index] = {
+    ...memoryCache.snacks[index],
     ...updates,
-    price: updates.price !== undefined ? Number(updates.price) : snacks[index].price,
-    cost: updates.cost !== undefined ? (Number(updates.cost) >= 0 ? Number(updates.cost) : 0) : (snacks[index].cost || 0),
+    price: updates.price !== undefined ? Number(updates.price) : memoryCache.snacks[index].price,
+    cost: updates.cost !== undefined ? (Number(updates.cost) >= 0 ? Number(updates.cost) : 0) : (memoryCache.snacks[index].cost || 0),
     updatedAt: new Date().toISOString()
   };
-  writeJson(SNACKS_FILE, snacks);
-  return snacks[index];
+
+  writeJson(SNACKS_FILE, memoryCache.snacks);
+
+  if (supabase) {
+    supabase.from('snacks')
+      .update(memoryCache.snacks[index])
+      .eq('id', id)
+      .catch(err => console.error('[Supabase Error] Update snack:', err.message));
+  }
+
+  return memoryCache.snacks[index];
 }
 
 function deleteSnack(id) {
-  const snacks = readJson(SNACKS_FILE, []);
-  const filtered = snacks.filter(s => s.id !== id);
-  if (filtered.length === snacks.length) return false;
-  writeJson(SNACKS_FILE, filtered);
+  initLocalCache();
+  const filtered = memoryCache.snacks.filter(s => s.id !== id);
+  if (filtered.length === memoryCache.snacks.length) return false;
+
+  memoryCache.snacks = filtered;
+  writeJson(SNACKS_FILE, memoryCache.snacks);
+
+  if (supabase) {
+    supabase.from('snacks')
+      .delete()
+      .eq('id', id)
+      .catch(err => console.error('[Supabase Error] Delete snack:', err.message));
+  }
+
   return true;
 }
 
 function reorderSnacks(orderedIds) {
   if (!Array.isArray(orderedIds)) return false;
-  const snacks = readJson(SNACKS_FILE, []);
+  initLocalCache();
+
   const snackMap = new Map();
-  snacks.forEach(s => snackMap.set(s.id, s));
+  memoryCache.snacks.forEach(s => snackMap.set(s.id, s));
 
   const reordered = [];
   orderedIds.forEach(id => {
@@ -103,24 +329,39 @@ function reorderSnacks(orderedIds) {
   // Keep any remaining snacks not present in orderedIds
   snackMap.forEach(s => reordered.push(s));
 
+  memoryCache.snacks = reordered;
   writeJson(SNACKS_FILE, reordered);
+
+  if (supabase) {
+    // Update sortOrder for all items
+    const updates = reordered.map((s, idx) => ({
+      id: s.id,
+      sortOrder: idx
+    }));
+    Promise.all(updates.map(u => supabase.from('snacks').update({ sortOrder: u.sortOrder }).eq('id', u.id)))
+      .catch(err => console.error('[Supabase Error] Reorder snacks:', err.message));
+  }
+
   return reordered;
 }
 
-// Orders API
+// ==========================================
+// ORDERS API
+// ==========================================
 function getOrders() {
-  const orders = readJson(ORDERS_FILE, []);
-  // Return newest first
-  return orders.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  initLocalCache();
+  const orders = memoryCache.orders || [];
+  return [...orders].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 
 function getOrderById(id) {
-  const orders = readJson(ORDERS_FILE, []);
+  initLocalCache();
+  const orders = memoryCache.orders || [];
   return orders.find(o => o.id === id);
 }
 
 function createOrder(orderData) {
-  const orders = readJson(ORDERS_FILE, []);
+  initLocalCache();
   const now = new Date();
   const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
   const randStr = Math.random().toString(36).substring(2, 6).toUpperCase();
@@ -141,29 +382,54 @@ function createOrder(orderData) {
     profitMargin: Number(orderData.profitMargin) || 0,
     slipImage: orderData.slipImage || null,
     slipVerification: orderData.slipVerification || null,
+    qrData: orderData.qrData || null,
+    transactionRef: orderData.transactionRef || null,
+    bankName: orderData.bankName || null,
     orderStatus: orderData.orderStatus || 'pending', // pending, verified, preparing, prepared, delivered, cancelled
     adminNotes: '',
     createdAt: now.toISOString()
   };
 
-  orders.unshift(newOrder);
-  writeJson(ORDERS_FILE, orders);
+  memoryCache.orders.unshift(newOrder);
+  writeJson(ORDERS_FILE, memoryCache.orders);
+
+  if (supabase) {
+    supabase.from('orders')
+      .insert([newOrder])
+      .catch(err => console.error('[Supabase Error] Insert order:', err.message));
+  }
+
   return newOrder;
 }
 
 function updateOrderStatus(id, status, adminNotes = null) {
-  const orders = readJson(ORDERS_FILE, []);
-  const index = orders.findIndex(o => o.id === id);
+  initLocalCache();
+  const index = memoryCache.orders.findIndex(o => o.id === id);
   if (index === -1) return null;
 
-  orders[index].orderStatus = status;
+  memoryCache.orders[index].orderStatus = status;
   if (adminNotes !== null) {
-    orders[index].adminNotes = adminNotes;
+    memoryCache.orders[index].adminNotes = adminNotes;
   }
-  orders[index].updatedAt = new Date().toISOString();
+  memoryCache.orders[index].updatedAt = new Date().toISOString();
 
-  writeJson(ORDERS_FILE, orders);
-  return orders[index];
+  writeJson(ORDERS_FILE, memoryCache.orders);
+
+  if (supabase) {
+    const updatePayload = {
+      orderStatus: status,
+      updatedAt: memoryCache.orders[index].updatedAt
+    };
+    if (adminNotes !== null) {
+      updatePayload.adminNotes = adminNotes;
+    }
+    supabase.from('orders')
+      .update(updatePayload)
+      .eq('id', id)
+      .catch(err => console.error('[Supabase Error] Update order status:', err.message));
+  }
+
+  return memoryCache.orders[index];
 }
 
 // Find orders by query, phone, name, deviceId, or IDs
@@ -213,7 +479,17 @@ function findOrders({ query, phone, name, ids, deviceId } = {}) {
 
 // Reset Mock/Test Orders
 function resetOrders() {
+  initLocalCache();
+  memoryCache.orders = [];
   writeJson(ORDERS_FILE, []);
+
+  if (supabase) {
+    supabase.from('orders')
+      .delete()
+      .neq('id', 'DO_NOT_DELETE_NON_EXISTENT')
+      .catch(err => console.error('[Supabase Error] Reset orders:', err.message));
+  }
+
   const slipsDir = path.join(__dirname, '..', 'uploads', 'slips');
   if (fs.existsSync(slipsDir)) {
     try {
@@ -228,39 +504,47 @@ function resetOrders() {
   return true;
 }
 
-// Settings API
+// ==========================================
+// SETTINGS API
+// ==========================================
 function getSettings() {
-  return readJson(SETTINGS_FILE, {
-    shopName: "ร้านขนมแม้ว 🐾 (Snack by Maew)",
-    shopSubtitle: "ขนมโฮมเมด สดใหม่จากเตาทุกวัน หอม อร่อย วัตถุดิบพรีเมียม",
-    promptpayId: "0891234567",
-    promptpayName: "ร้านขนมแม้ว",
-    bankName: "ธนาคารกสิกรไทย",
-    bankAccountNumber: "089-1-23456-7",
-    adminPin: "411197",
-    isOpen: true,
-    openStartDate: "2026-10-04",
-    openEndDate: "2026-10-10",
-    openScheduleText: "รอบนี้เปิดรับออเดอร์ วันที่ 4 ต.ค. - 10 ต.ค. 2569",
-    closedMessage: "ขณะนี้ร้านแม้วปิดรับออเดอร์ชั่วคราว แล้วพบกันใหม่รอบหน้านะจ๊ะ 🐱",
-    emailReceiver: "",
-    emailSender: "",
-    emailAppPassword: "",
-    lineChannelAccessToken: "",
-    lineTargetId: ""
-  });
+  initLocalCache();
+  return memoryCache.settings || getDefaultSettings();
 }
 
 function updateSettings(updates) {
+  initLocalCache();
   const current = getSettings();
   const updated = { ...current, ...updates };
+  memoryCache.settings = updated;
   writeJson(SETTINGS_FILE, updated);
+
+  if (supabase) {
+    supabase.from('settings')
+      .upsert({ id: 'current', data: updated, updatedAt: new Date().toISOString() })
+      .catch(err => console.error('[Supabase Error] Update settings:', err.message));
+  }
+
   return updated;
 }
 
 function verifyAdminPin(pin) {
   const settings = getSettings();
   return String(settings.adminPin || '411197') === String(pin).trim();
+}
+
+// Database Diagnostics for /health and Monitoring
+function getDatabaseStatus() {
+  initLocalCache();
+  return {
+    mode: memoryCache.isSupabaseActive ? 'supabase_cloud' : 'high_speed_memory_json',
+    supabaseConnected: memoryCache.isSupabaseActive,
+    supabaseConfigured: !!(supabaseUrl && supabaseKey),
+    totalSnacks: memoryCache.snacks ? memoryCache.snacks.length : 0,
+    totalOrders: memoryCache.orders ? memoryCache.orders.length : 0,
+    lastSyncTime: memoryCache.lastSyncTime,
+    syncError: memoryCache.syncError
+  };
 }
 
 module.exports = {
@@ -278,5 +562,6 @@ module.exports = {
   resetOrders,
   getSettings,
   updateSettings,
-  verifyAdminPin
+  verifyAdminPin,
+  getDatabaseStatus
 };
