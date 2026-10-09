@@ -170,107 +170,87 @@ app.post('/api/orders', uploadSlip.single('slip'), async (req, res) => {
       return res.status(400).json({ success: false, error: 'กรุณาระบุชื่อลูกค้า' });
     }
 
-    // Calculate server-side total price to ensure accuracy
+    // Calculate server-side total price and cost snapshot at this exact order moment
     const allSnacks = db.getSnacks(true);
     let calculatedTotal = 0;
+    let totalOrderCost = 0;
+
     const verifiedItems = items.map(item => {
       const originalSnack = allSnacks.find(s => s.id === item.snackId) || {};
-      const unitPrice = originalSnack.price !== undefined ? originalSnack.price : Number(item.price) || 0;
+      const unitPrice = originalSnack.price !== undefined ? originalSnack.price : (Number(item.price) || 0);
+      const unitCost = (originalSnack.cost !== undefined && Number(originalSnack.cost) >= 0) ? Number(originalSnack.cost) : 0;
       const qty = Math.max(1, parseInt(item.quantity) || 1);
       const subtotal = unitPrice * qty;
+      const totalItemCost = unitCost * qty;
+      const itemProfit = subtotal - totalItemCost;
+
       calculatedTotal += subtotal;
+      totalOrderCost += totalItemCost;
+
       return {
         snackId: item.snackId,
         name: originalSnack.name || item.name || 'ขนม',
         price: unitPrice,
+        cost: unitCost,            // Locked cost at this exact order moment!
         quantity: qty,
         unit: originalSnack.unit || item.unit || 'ชิ้น',
-        subtotal
+        subtotal,
+        totalCost: totalItemCost,  // Locked total cost for this item
+        profit: itemProfit         // Locked profit for this item
       };
     });
 
+    const totalOrderProfit = calculatedTotal - totalOrderCost;
+    const profitMargin = calculatedTotal > 0 ? Math.round((totalOrderProfit / calculatedTotal) * 100) : 0;
+
     let slipImage = '';
-    let slipVerification = null;
-
-    const expectedReceiver = settings.promptpayName || 'พัชญ์ชามญชุ์ กฤติณัฐธนชัย';
-
     if (req.file) {
       slipImage = `/uploads/slips/${req.file.filename}`;
-      // Verify slip with AI for Price, Date, and Receiver
-      slipVerification = await verifySlip(req.file.path, req.file.mimetype, calculatedTotal, expectedReceiver);
     } else if (body.existingSlipUrl) {
       slipImage = body.existingSlipUrl;
-      try {
-        slipVerification = typeof body.existingVerification === 'string'
-          ? JSON.parse(body.existingVerification)
-          : (body.existingVerification || null);
-      } catch {
-        slipVerification = null;
-      }
     }
 
-    if (!slipVerification) {
+    if (!slipImage) {
       return res.status(400).json({
         success: false,
         error: 'กรุณาแนบสลิปการโอนเงินเพื่อยืนยันคำสั่งซื้อ'
       });
     }
 
-    // Re-verify duplicate slip check on server side to prevent re-use
-    const { checkDuplicateSlip } = require('./services/slipDuplicateChecker');
-    const dupCheck = checkDuplicateSlip({
-      fileHash: slipVerification.fileHash,
-      qrData: slipVerification.qrData,
-      transactionRef: slipVerification.transactionRef
-    });
-
-    if (dupCheck.isDuplicate) {
-      return res.status(400).json({
-        success: false,
-        error: dupCheck.message || 'สลิปนี้เคยถูกใช้งานแล้ว ไม่สามารถใช้ซ้ำได้',
-        isDuplicate: true,
-        verification: slipVerification
-      });
+    // Optional background QR code scanner for admin reference (never blocks order submission)
+    let qrMetadata = null;
+    if (req.file) {
+      try {
+        const { scanSlipQrCode } = require('./services/slipQrScanner');
+        qrMetadata = await scanSlipQrCode(req.file.path).catch(() => null);
+      } catch {
+        // Non-critical background scan
+      }
     }
 
-    // If slip price or date is not valid, do not save order
-    if (!slipVerification.isReadyToSave) {
-      return res.status(400).json({
-        success: false,
-        error: slipVerification.message || 'ข้อมูลในสลิปไม่ถูกต้อง',
-        verification: slipVerification
-      });
-    }
-
-    // All checks passed! Save order
+    // Save order with permanently locked cost, profit, and pending review status
     const orderData = {
       customerName: body.customerName,
       customerPhone: body.customerPhone || '',
-      customerEmail: body.customerEmail || '',
-      customerAddress: '', // Delivery address removed per user request
       customerNote: body.customerNote || '',
       items: verifiedItems,
       totalPrice: calculatedTotal,
+      totalCost: totalOrderCost,      // Permanently locked cost
+      totalProfit: totalOrderProfit,  // Permanently locked profit
+      profitMargin: profitMargin,     // Permanently locked margin %
       slipImage,
-      slipVerification,
-      fileHash: slipVerification.fileHash || null,
-      qrData: slipVerification.qrData || null,
-      transactionRef: slipVerification.transactionRef || null,
-      orderStatus: 'verified' // Automatically verified!
+      qrData: qrMetadata?.qrData || null,
+      transactionRef: qrMetadata?.transactionRef || null,
+      bankName: qrMetadata?.bankName || null,
+      orderStatus: 'pending'          // เริ่มต้นเป็น "รอตรวจสอบสลิป" (แอดมินตรวจเองและกดยืนยัน)
     };
 
     const newOrder = db.createOrder(orderData);
 
-    // Send Email notification to shop owner in background
-    emailNotifier.sendOrderEmail(newOrder).catch(err => {
-      console.warn('[Email Notification] Background error:', err.message);
-    });
-
     res.json({
       success: true,
-      message: 'ตรวจสอบสลิปและวันที่สำเร็จ! บันทึกคำสั่งซื้อเรียบร้อยแล้ว',
-      order: newOrder,
-      verification: slipVerification
+      message: 'แนบสลิปและส่งคำสั่งซื้อสำเร็จ! รอทางร้านตรวจสอบสลิปสักครู่นะครับ 🐾',
+      order: newOrder
     });
   } catch (err) {
     console.error('Error creating order:', err);

@@ -11,20 +11,29 @@
         "snackId": "snack-1791432853727-fzqh",
         "name": "อาลัว",
         "price": 50,
+        "cost": 40,
         "quantity": 1,
         "unit": "กล่อง",
-        "subtotal": 50
+        "subtotal": 50,
+        "totalCost": 40,
+        "profit": 10
       },
       {
         "snackId": "snack-1791449904937-3i4m",
         "name": "น้ำตาลสด",
         "price": 50,
+        "cost": 35,
         "quantity": 1,
         "unit": "ขวด",
-        "subtotal": 50
+        "subtotal": 50,
+        "totalCost": 35,
+        "profit": 15
       }
     ],
     "totalPrice": 100,
+    "totalCost": 75,
+    "totalProfit": 25,
+    "profitMargin": 25,
     "slipImage": "/uploads/slips/slip-1791468081478-6414.jpg",
     "slipVerification": {
       "isValidSlip": true,
@@ -77,20 +86,29 @@
         "snackId": "snack-1791432853727-fzqh",
         "name": "อาลัว",
         "price": 50,
+        "cost": 40,
         "quantity": 2,
         "unit": "กล่อง",
-        "subtotal": 100
+        "subtotal": 100,
+        "totalCost": 80,
+        "profit": 20
       },
       {
         "snackId": "snack-1791449904937-3i4m",
         "name": "น้ำตาลสด",
         "price": 50,
+        "cost": 35,
         "quantity": 1,
         "unit": "ขวด",
-        "subtotal": 50
+        "subtotal": 50,
+        "totalCost": 35,
+        "profit": 15
       }
     ],
     "totalPrice": 150,
+    "totalCost": 115,
+    "totalProfit": 35,
+    "profitMargin": 23,
     "slipImage": "/uploads/slips/slip-1791467370197-6467.jpg",
     "slipVerification": {
       "isValidSlip": true,
@@ -101,7 +119,7 @@
       "transferDate": "8 ต.ค. 2569",
       "transferTime": "20:47:42",
       "isDateToday": true,
-      "receiverName": "นาง พัชญ์ชามญชุ์ กฤติณัฐธ****",
+      "receiverName": "นาง พัชญ์ชามญช์ กฤติณัฐธ****",
       "isReceiverMatched": true,
       "expectedReceiver": "พัชญ์ชามญชุ์ กฤติณัฐธนชัย",
       "isReadyToSave": true,

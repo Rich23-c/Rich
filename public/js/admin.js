@@ -204,9 +204,36 @@ function switchTab(tab) {
   if (window.lucide) lucide.createIcons();
 }
 
-// Calculate profit for an individual order based on snack costs
+// Calculate profit for an individual order based on cost snapshot at the time of order
 function getOrderCostAndProfit(order) {
+  // 1. If order has totalCost and totalProfit snapshotted directly, ALWAYS use them!
+  if (order.totalCost !== undefined && order.totalProfit !== undefined) {
+    const cost = Number(order.totalCost) || 0;
+    const profit = Number(order.totalProfit) || 0;
+    const sales = Number(order.totalPrice) || 0;
+    const marginPercent = sales > 0 ? Math.round((profit / sales) * 100) : 0;
+    return { cost, profit, marginPercent };
+  }
+
+  // 2. If order items have their own cost snapshotted at order time, sum them up!
   let orderCost = 0;
+  let hasItemCost = false;
+  (order.items || []).forEach(item => {
+    if (item.cost !== undefined && item.cost !== null) {
+      orderCost += (Number(item.cost) || 0) * (Number(item.quantity) || 1);
+      hasItemCost = true;
+    }
+  });
+
+  if (hasItemCost) {
+    const orderSales = Number(order.totalPrice) || 0;
+    const orderProfit = orderSales - orderCost;
+    const marginPercent = orderSales > 0 ? Math.round((orderProfit / orderSales) * 100) : 0;
+    return { cost: orderCost, profit: orderProfit, marginPercent };
+  }
+
+  // 3. Fallback for legacy orders (prior to snapshotting): use current snack cost
+  orderCost = 0;
   (order.items || []).forEach(item => {
     const snack = allAdminSnacks.find(s => s.id === item.snackId || s.name === item.name);
     const unitCost = (snack && snack.cost !== undefined) ? Number(snack.cost) : 0;
@@ -236,8 +263,7 @@ function updateStats() {
   const totalMargin = totalSales > 0 ? Math.round((totalProfit / totalSales) * 100) : 0;
 
   const verifiedSlips = allOrders.filter(o => {
-    const v = o.slipVerification;
-    return v && (v.isReadyToSave || v.status === 'VALID_AND_MATCHED' || v.isAmountMatched);
+    return o.orderStatus === 'verified' || o.orderStatus === 'preparing' || o.orderStatus === 'delivered';
   }).length;
 
   const statTotalSnacksEl = document.getElementById('statTotalSnacks');
@@ -820,17 +846,34 @@ function renderOrdersTable() {
       verifyBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] text-slate-400">ไม่มีข้อมูล</span>';
     }
 
+    // Confirm button if pending review
+    const confirmBtnHtml = (order.orderStatus === 'pending') ? `
+      <button
+        type="button"
+        onclick="changeOrderStatus('${order.id}', 'verified')"
+        class="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3 py-1.5 rounded-xl shadow-xs transition active:scale-95 cursor-pointer mb-1.5"
+        title="กดยืนยันว่าตรวจสอบสลิปถูกต้องแล้ว"
+      >
+        <i data-lucide="check-circle" class="w-3.5 h-3.5"></i>
+        <span>ยืนยันสลิป</span>
+      </button>
+    ` : '';
+
     // Status select dropdown
     const statusSelectHtml = `
-      <select
-        onchange="changeOrderStatus('${order.id}', this.value)"
-        class="text-xs font-semibold rounded-xl px-2.5 py-1.5 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-orange-500 bg-white shadow-xs"
-      >
-        <option value="verified" ${order.orderStatus === 'verified' ? 'selected' : ''}>🟢 ยืนยันยอดแล้ว</option>
-        <option value="preparing" ${order.orderStatus === 'preparing' ? 'selected' : ''}>👨‍🍳 กำลังเตรียมขนม</option>
-        <option value="delivered" ${order.orderStatus === 'delivered' ? 'selected' : ''}>🚚 ส่งมอบเรียบร้อย</option>
-        <option value="cancelled" ${order.orderStatus === 'cancelled' ? 'selected' : ''}>❌ ยกเลิก</option>
-      </select>
+      <div class="flex flex-col items-center">
+        ${confirmBtnHtml}
+        <select
+          onchange="changeOrderStatus('${order.id}', this.value)"
+          class="text-xs font-semibold rounded-xl px-2.5 py-1.5 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-orange-500 bg-white shadow-xs"
+        >
+          <option value="pending" ${order.orderStatus === 'pending' ? 'selected' : ''}>⏳ รอตรวจสอบสลิป</option>
+          <option value="verified" ${order.orderStatus === 'verified' ? 'selected' : ''}>🟢 ยืนยันสลิปแล้ว</option>
+          <option value="preparing" ${order.orderStatus === 'preparing' ? 'selected' : ''}>👨‍🍳 กำลังเตรียมขนม</option>
+          <option value="delivered" ${order.orderStatus === 'delivered' ? 'selected' : ''}>🚚 ส่งมอบเรียบร้อย</option>
+          <option value="cancelled" ${order.orderStatus === 'cancelled' ? 'selected' : ''}>❌ ยกเลิก</option>
+        </select>
+      </div>
     `;
 
     const dateStr = new Date(order.createdAt).toLocaleString('th-TH', {
@@ -905,7 +948,8 @@ function renderOrdersTable() {
 
         // Status badge info
         let statusBadge = '';
-        if (order.orderStatus === 'verified') statusBadge = '<span class="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-emerald-200">🟢 ยืนยันยอดแล้ว</span>';
+        if (order.orderStatus === 'pending') statusBadge = '<span class="bg-amber-100 text-amber-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-amber-200">⏳ รอตรวจสอบสลิป</span>';
+        else if (order.orderStatus === 'verified') statusBadge = '<span class="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-emerald-200">🟢 ยืนยันสลิปแล้ว</span>';
         else if (order.orderStatus === 'preparing') statusBadge = '<span class="bg-blue-100 text-blue-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-blue-200">👨‍🍳 กำลังเตรียมขนม</span>';
         else if (order.orderStatus === 'delivered') statusBadge = '<span class="bg-emerald-600 text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full">🚚 ส่งมอบแล้ว</span>';
         else if (order.orderStatus === 'cancelled') statusBadge = '<span class="bg-red-100 text-red-700 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-red-200">❌ ยกเลิก</span>';
@@ -915,10 +959,10 @@ function renderOrdersTable() {
         const v = order.slipVerification;
         if (v && v.isDuplicateSlip) {
           verifyBadge = `<span class="text-[10px] text-red-700 font-bold bg-red-50 px-2 py-0.5 rounded-lg border border-red-200">🚨 สลิปซ้ำ!</span>`;
-        } else if (v && (v.isReadyToSave || v.status === 'VALID_AND_MATCHED' || v.isAmountMatched)) {
-          verifyBadge = `<span class="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200">✓ ยอดตรง ${order.totalPrice}฿ (${v.transferDate || 'วันนี้'})</span>`;
+        } else if (order.orderStatus === 'verified' || (v && (v.isReadyToSave || v.status === 'VALID_AND_MATCHED' || v.isAmountMatched))) {
+          verifyBadge = `<span class="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200">✓ ยืนยันสลิปแล้ว (${v?.transferDate || 'วันนี้'})</span>`;
         } else {
-          verifyBadge = `<span class="text-[10px] text-amber-700 font-bold bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200">⚠️ รอตรวจสลิป</span>`;
+          verifyBadge = `<span class="text-[10px] text-amber-700 font-bold bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200">⏳ รอแอดมินตรวจ</span>`;
         }
 
         // Phone call button
@@ -945,6 +989,17 @@ function renderOrdersTable() {
             </button>
           `;
         }
+
+        const mobileConfirmBtn = (order.orderStatus === 'pending') ? `
+          <button
+            type="button"
+            onclick="changeOrderStatus('${order.id}', 'verified')"
+            class="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer mb-2"
+          >
+            <i data-lucide="check-circle" class="w-4 h-4"></i>
+            <span>✅ กดยืนยันสลิปถูกต้อง</span>
+          </button>
+        ` : '';
 
         card.innerHTML = `
           <!-- Card Header -->
@@ -986,17 +1041,21 @@ function renderOrdersTable() {
           </div>
 
           <!-- Status update dropdown -->
-          <div class="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
-            <span class="text-[11px] text-slate-500 font-semibold shrink-0">สถานะ:</span>
-            <select
-              onchange="changeOrderStatus('${order.id}', this.value)"
-              class="w-full text-xs font-bold rounded-xl px-2.5 py-2 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-orange-500 bg-white shadow-xs"
-            >
-              <option value="verified" ${order.orderStatus === 'verified' ? 'selected' : ''}>🟢 ยืนยันยอดแล้ว</option>
-              <option value="preparing" ${order.orderStatus === 'preparing' ? 'selected' : ''}>👨‍🍳 กำลังเตรียมขนม</option>
-              <option value="delivered" ${order.orderStatus === 'delivered' ? 'selected' : ''}>🚚 ส่งมอบเรียบร้อย</option>
-              <option value="cancelled" ${order.orderStatus === 'cancelled' ? 'selected' : ''}>❌ ยกเลิก</option>
-            </select>
+          <div class="pt-2 border-t border-slate-100 space-y-2">
+            ${mobileConfirmBtn}
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-[11px] text-slate-500 font-semibold shrink-0">สถานะ:</span>
+              <select
+                onchange="changeOrderStatus('${order.id}', this.value)"
+                class="w-full text-xs font-bold rounded-xl px-2.5 py-2 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-orange-500 bg-white shadow-xs"
+              >
+                <option value="pending" ${order.orderStatus === 'pending' ? 'selected' : ''}>⏳ รอตรวจสอบสลิป</option>
+                <option value="verified" ${order.orderStatus === 'verified' ? 'selected' : ''}>🟢 ยืนยันสลิปแล้ว</option>
+                <option value="preparing" ${order.orderStatus === 'preparing' ? 'selected' : ''}>👨‍🍳 กำลังเตรียมขนม</option>
+                <option value="delivered" ${order.orderStatus === 'delivered' ? 'selected' : ''}>🚚 ส่งมอบเรียบร้อย</option>
+                <option value="cancelled" ${order.orderStatus === 'cancelled' ? 'selected' : ''}>❌ ยกเลิก</option>
+              </select>
+            </div>
           </div>
         `;
 
@@ -1086,15 +1145,18 @@ function openSlipDetailModal(orderId) {
   }
 
   const banner = document.getElementById('slipModalStatusBanner');
-  if (v.isDuplicateSlip) {
+  if (order.orderStatus === 'pending') {
+    banner.className = 'p-3 rounded-2xl border font-bold text-xs bg-amber-50 text-amber-800 border-amber-200';
+    banner.innerText = '⏳ รอยืนยันสลิป: กรุณาตรวจสอบรูปสลิปเทียบกับยอดสั่งซื้อ แล้วกดปุ่ม "✅ ยืนยันสลิปถูกต้อง" ด้านล่าง';
+  } else if (order.orderStatus === 'verified') {
+    banner.className = 'p-3 rounded-2xl border font-bold text-xs bg-emerald-50 text-emerald-800 border-emerald-200';
+    banner.innerText = '✅ สลิปได้รับการยืนยันแล้ว: ยอดเงินและสลิปถูกต้อง';
+  } else if (v.isDuplicateSlip) {
     banner.className = 'p-3 rounded-2xl border font-bold text-xs bg-red-50 text-red-800 border-red-200';
     banner.innerText = `🚨 ตรวจพบสลิปซ้ำ! ${v.message || 'สลิปนี้ถูกใช้ไปแล้วในระบบ'}`;
-  } else if (v.isReadyToSave || v.status === 'VALID_AND_MATCHED') {
-    banner.className = 'p-3 rounded-2xl border font-bold text-xs bg-emerald-50 text-emerald-800 border-emerald-200';
-    banner.innerText = '✅ สลิปถูกต้อง: ยอดเงินตรงกับราคาสั่งซื้อ และวันที่โอนเป็นวันที่ปัจจุบัน';
   } else {
-    banner.className = 'p-3 rounded-2xl border font-bold text-xs bg-amber-50 text-amber-800 border-amber-200';
-    banner.innerText = v.message || '⚠️ กรุณาตรวจสอบรูปสลิปเทียบกับยอดจริง';
+    banner.className = 'p-3 rounded-2xl border font-bold text-xs bg-slate-50 text-slate-800 border-slate-200';
+    banner.innerText = '📄 รูปสลิปการโอนเงิน';
   }
 
   document.getElementById('slipDetailModal').classList.remove('hidden');
@@ -1232,13 +1294,6 @@ async function loadAdminSettings() {
       // Update UI for store status in header and settings tab
       updateStoreStatusUi(s.isOpen);
 
-      // Email fields
-      const emReceiver = document.getElementById('settingEmailReceiver');
-      if (emReceiver) emReceiver.value = s.emailReceiver || '';
-      const emSender = document.getElementById('settingEmailSender');
-      if (emSender) emSender.value = s.emailSender || '';
-      const emPass = document.getElementById('settingEmailAppPassword');
-      if (emPass) emPass.value = s.emailAppPassword || '';
     }
   } catch (err) {
     console.error('Failed to load settings:', err);
@@ -1339,12 +1394,7 @@ async function saveShopSettings() {
 
     // Store status settings
     isOpen: document.getElementById('settingIsOpen').checked,
-    closedMessage: document.getElementById('settingClosedMessage') ? document.getElementById('settingClosedMessage').value.trim() : '',
-
-    // Email settings
-    emailReceiver: document.getElementById('settingEmailReceiver') ? document.getElementById('settingEmailReceiver').value.trim() : '',
-    emailSender: document.getElementById('settingEmailSender') ? document.getElementById('settingEmailSender').value.trim() : '',
-    emailAppPassword: document.getElementById('settingEmailAppPassword') ? document.getElementById('settingEmailAppPassword').value.trim() : ''
+    closedMessage: document.getElementById('settingClosedMessage') ? document.getElementById('settingClosedMessage').value.trim() : ''
   };
 
   try {
@@ -1365,70 +1415,5 @@ async function saveShopSettings() {
     }
   } catch (err) {
     console.error('Save settings error:', err);
-  }
-}
-
-// Test send email from admin panel
-async function testEmailNotification() {
-  const receiver = document.getElementById('settingEmailReceiver')?.value.trim();
-  const sender = document.getElementById('settingEmailSender')?.value.trim();
-  const appPassword = document.getElementById('settingEmailAppPassword')?.value.trim();
-
-  if (!sender || !appPassword) {
-    Swal.fire({
-      icon: 'warning',
-      title: 'กรุณากรอกข้อมูลให้ครบ',
-      text: 'กรุณาระบุ Gmail ผู้ส่ง และ รหัสผ่านแอป (App Password 16 หลัก)',
-      confirmButtonColor: '#f97316'
-    });
-    return;
-  }
-
-  Swal.fire({
-    title: 'กำลังส่งอีเมลทดสอบ...',
-    text: 'กรุณารอสักครู่ ระบบกำลังเชื่อมต่อ Gmail SMTP...',
-    allowOutsideClick: false,
-    didOpen: () => Swal.showLoading()
-  });
-
-  try {
-    const res = await adminFetch('/api/admin/test-email', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ receiver, sender, appPassword })
-    });
-    const data = await res.json();
-
-    if (data.success) {
-      Swal.fire({
-        icon: 'success',
-        title: 'ส่งอีเมลทดสอบสำเร็จ! 🎉',
-        html: `
-          <div class="text-left text-xs sm:text-sm text-slate-700 space-y-2 mt-2">
-            <p>ระบบได้ส่งอีเมลทดสอบไปยัง: <b>${receiver || sender}</b> เรียบร้อยแล้ว</p>
-            <div class="p-3 bg-amber-50 rounded-xl border border-amber-200 text-amber-900 text-xs">
-              ⚠️ <b>ข้อแนะนำสำคัญ:</b><br>
-              - หากใช้ <b>Hotmail / Outlook</b> อีเมลอาจเข้าไปอยู่ในโฟลเดอร์ <b>"อีเมลขยะ" (Junk Email / Spam)</b> หรือแท็บ "อื่นๆ"<br>
-              - หากตรวจดูในกล่องจดหมายแล้วไม่พบ ให้เข้าไปเช็กใน <b>"อีเมลขยะ (Junk)"</b> แล้วกด <i>"ไม่ใช่ขยะ (Not Junk)"</i> นะครับ
-            </div>
-          </div>
-        `,
-        confirmButtonColor: '#f97316'
-      });
-    } else {
-      Swal.fire({
-        icon: 'error',
-        title: 'ส่งอีเมลไม่สำเร็จ',
-        text: data.error || 'กรุณาตรวจสอบ Email และ App Password 16 หลัก',
-        confirmButtonColor: '#f97316'
-      });
-    }
-  } catch (err) {
-    Swal.fire({
-      icon: 'error',
-      title: 'เกิดข้อผิดพลาด',
-      text: err.message,
-      confirmButtonColor: '#f97316'
-    });
   }
 }

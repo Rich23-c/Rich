@@ -604,130 +604,18 @@ function handleSlipSelected(file) {
     document.getElementById('slipDropZone').classList.add('hidden');
     document.getElementById('slipVerificationBox').classList.remove('hidden');
 
-    if (window.lucide) lucide.createIcons();
+    // Reveal order confirmation button immediately!
+    const confirmSection = document.getElementById('customerConfirmSection');
+    if (confirmSection) confirmSection.classList.remove('hidden');
+    const hintBanner = document.getElementById('slipHintBanner');
+    if (hintBanner) hintBanner.classList.add('hidden');
 
-    // Automatically verify slip with AI, then ask customer to confirm
-    autoVerifySlip(file);
+    if (window.lucide) lucide.createIcons();
   };
   reader.readAsDataURL(file);
 }
 
-// 1. Automatically verify Date & Price via AI
-async function autoVerifySlip(file) {
-  const customerName = document.getElementById('customerName').value.trim();
-  const customerPhone = document.getElementById('customerPhone').value.trim();
-  const items = Object.values(selectedItems);
-  const total = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-
-  const loadingCard = document.getElementById('verifyingLoadingCard');
-  const resultCard = document.getElementById('verificationResultCard');
-  const reverifyBtn = document.getElementById('reverifyBtn');
-  const confirmSection = document.getElementById('customerConfirmSection');
-  const hintBanner = document.getElementById('slipHintBanner');
-
-  if (loadingCard) loadingCard.classList.remove('hidden');
-  if (resultCard) resultCard.classList.add('hidden');
-  if (reverifyBtn) reverifyBtn.disabled = true;
-  if (confirmSection) confirmSection.classList.add('hidden');
-
-  // Show loading indicator
-  Swal.fire({
-    title: 'กำลังตรวจสอบสลิปอัตโนมัติ...',
-    html: `
-      <div class="space-y-3 py-3 text-center">
-        <div class="spinner mx-auto border-4 w-10 h-10 border-orange-200 border-t-orange-600"></div>
-        <p class="text-sm font-semibold text-slate-800">กำลังตรวจสอบ <b>ผู้รับเงิน</b>, <b>วันที่โอน</b> และ <b>ยอดเงิน</b> ด้วย AI...</p>
-        <p class="text-xs text-orange-600">เข้าบัญชีร้าน: <b>พัชญ์ชามญชุ์</b> | ยอด: <b>${total.toFixed(2)} บาท</b></p>
-      </div>
-    `,
-    allowOutsideClick: false,
-    showConfirmButton: false
-  });
-
-  const formData = new FormData();
-  formData.append('slip', file);
-  formData.append('expectedAmount', total);
-
-  try {
-    const res = await fetch('/api/verify-slip', {
-      method: 'POST',
-      body: formData
-    });
-    const data = await res.json();
-
-    if (data.success && data.verification && data.verification.isReadyToSave) {
-      Swal.close();
-      currentSlipVerification = data.verification;
-      uploadedSlipUrl = data.slipUrl;
-      displayVerificationResult(data.verification, total);
-
-      // Reveal confirmation section on page
-      if (confirmSection) confirmSection.classList.remove('hidden');
-      if (hintBanner) hintBanner.classList.add('hidden');
-
-      // Pop up interactive confirmation modal for customer
-      Swal.fire({
-        icon: 'success',
-        title: 'ตรวจสอบสลิปผ่านแล้ว! 🎉',
-        html: `
-          <div class="text-left text-xs sm:text-sm bg-orange-50 p-4 rounded-2xl border border-orange-200 space-y-2 mt-2">
-            <div class="flex justify-between"><span>👤 ผู้สั่งซื้อ:</span> <b class="text-slate-800">${customerName || 'ลูกค้า'}</b></div>
-            <div class="flex justify-between"><span>📞 เบอร์ติดต่อ:</span> <b class="text-slate-800">${customerPhone || 'ไม่ได้ระบุ'}</b></div>
-            <div class="flex justify-between"><span>🏪 โอนเข้าบัญชี:</span> <b class="text-emerald-700">${data.verification.receiverName || 'พัชญ์ชามญชุ์'} ✅</b></div>
-            <div class="flex justify-between"><span>💰 ยอดชำระ:</span> <b class="text-orange-600 text-base font-bold">${total.toFixed(2)} บาท ✅</b></div>
-            <div class="flex justify-between"><span>📄 วันที่โอน:</span> <b class="text-emerald-600">${data.verification.transferDate || 'วันนี้'} ✅</b></div>
-          </div>
-          <p class="text-xs text-slate-600 mt-3 text-center">กรุณากดปุ่ม <b>"ยืนยันการสั่งซื้อ"</b> เพื่อบันทึกคำสั่งซื้อเข้าระบบร้านแม้ว</p>
-        `,
-        showCancelButton: true,
-        confirmButtonText: '✅ ยืนยันการสั่งซื้อ',
-        cancelButtonText: 'แก้ไข / เปลี่ยนสลิป',
-        confirmButtonColor: '#ea580c',
-        cancelButtonColor: '#94a3b8'
-      }).then((result) => {
-        if (result.isConfirmed) {
-          confirmAndSaveOrder();
-        }
-      });
-    } else {
-      // Verification failed
-      currentSlipVerification = data.verification || null;
-      uploadedSlipUrl = null;
-      if (confirmSection) confirmSection.classList.add('hidden');
-      if (hintBanner) hintBanner.classList.remove('hidden');
-
-      if (data.verification) {
-        displayVerificationResult(data.verification, total);
-      }
-
-      Swal.fire({
-        icon: 'error',
-        title: 'ตรวจสอบสลิปไม่ผ่าน',
-        html: `
-          <div class="text-sm text-slate-700 space-y-2 text-left bg-red-50 p-4 rounded-xl border border-red-200 mt-2">
-            <p class="font-bold text-red-800">${(data.verification && data.verification.message) || data.error || 'ข้อมูลในสลิปไม่ถูกต้อง'}</p>
-            <p class="text-xs text-slate-600">กรุณาตรวจสอบว่าสลิปที่แนบมียอดเงินตรงกับยอดสั่งซื้อ <b>(${total.toFixed(2)} บาท)</b> และเป็นสลิปที่โอนใน<b>วันนี้</b></p>
-          </div>
-        `,
-        confirmButtonText: 'เปลี่ยนรูปสลิปใหม่',
-        confirmButtonColor: '#f97316'
-      });
-    }
-  } catch (err) {
-    console.error('Slip verification error:', err);
-    Swal.fire({
-      icon: 'error',
-      title: 'เกิดข้อผิดพลาดในการตรวจสอบสลิป',
-      text: 'ไม่สามารถติดต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่อีกครั้ง',
-      confirmButtonColor: '#f97316'
-    });
-  } finally {
-    if (loadingCard) loadingCard.classList.add('hidden');
-    if (reverifyBtn) reverifyBtn.disabled = false;
-  }
-}
-
-// 2. Customer confirms the order -> Save to database & notify
+// Customer confirms the order -> Save to database
 async function confirmAndSaveOrder() {
   if (shopSettings && shopSettings.isOpen === false) {
     Swal.fire({
@@ -741,7 +629,6 @@ async function confirmAndSaveOrder() {
 
   const customerName = document.getElementById('customerName').value.trim();
   const customerPhone = document.getElementById('customerPhone').value.trim();
-  const customerEmail = document.getElementById('customerEmail') ? document.getElementById('customerEmail').value.trim() : '';
   const items = Object.values(selectedItems);
   const total = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
@@ -765,11 +652,11 @@ async function confirmAndSaveOrder() {
     return;
   }
 
-  if (!currentSlipVerification || !currentSlipVerification.isReadyToSave) {
+  if (!currentSlipFile && !uploadedSlipUrl) {
     Swal.fire({
       icon: 'warning',
-      title: 'ยังไม่มีสลิปที่ตรวจสอบผ่าน',
-      text: 'กรุณาแนบรูปสลิปการโอนเงินที่มียอดเงินและวันที่ถูกต้องก่อนกดยืนยันครับ',
+      title: 'ยังไม่ได้แนบสลิป',
+      text: 'กรุณาแนบรูปสลิปการโอนเงินก่อนกดยืนยันการสั่งซื้อครับ',
       confirmButtonColor: '#f97316'
     });
     return;
@@ -777,8 +664,8 @@ async function confirmAndSaveOrder() {
 
   // Show saving progress
   Swal.fire({
-    title: 'กำลังบันทึกคำสั่งซื้อ...',
-    text: 'กรุณารอสักครู่ ระบบกำลังบันทึกข้อมูลและส่งแจ้งเตือน...',
+    title: 'กำลังส่งคำสั่งซื้อ...',
+    text: 'กรุณารอสักครู่ ระบบกำลังบันทึกข้อมูลออเดอร์...',
     allowOutsideClick: false,
     didOpen: () => Swal.showLoading()
   });
@@ -789,11 +676,9 @@ async function confirmAndSaveOrder() {
   }
   if (uploadedSlipUrl) {
     formData.append('existingSlipUrl', uploadedSlipUrl);
-    formData.append('existingVerification', JSON.stringify(currentSlipVerification));
   }
   formData.append('customerName', customerName);
   formData.append('customerPhone', customerPhone);
-  formData.append('customerEmail', customerEmail);
   formData.append('items', JSON.stringify(items));
 
   try {
@@ -841,27 +726,24 @@ async function confirmAndSaveOrder() {
   }
 }
 
+// Alias for form onsubmit
+function submitOrder() {
+  confirmAndSaveOrder();
+}
+
 // Remove uploaded slip
 function removeSlip() {
   currentSlipFile = null;
-  currentSlipVerification = null;
   uploadedSlipUrl = null;
-  document.getElementById('slipInput').value = '';
+  const slipInput = document.getElementById('slipInput');
+  if (slipInput) slipInput.value = '';
   document.getElementById('slipDropZone').classList.remove('hidden');
   document.getElementById('slipVerificationBox').classList.add('hidden');
-  document.getElementById('verificationResultCard').classList.add('hidden');
 
   const confirmSection = document.getElementById('customerConfirmSection');
   if (confirmSection) confirmSection.classList.add('hidden');
   const hintBanner = document.getElementById('slipHintBanner');
   if (hintBanner) hintBanner.classList.remove('hidden');
-}
-
-// Trigger re-verification if customer wants to re-check
-function triggerSlipVerification() {
-  if (currentSlipFile) {
-    autoVerifySlip(currentSlipFile);
-  }
 }
 
 // Display verification result card with badges and details
@@ -894,13 +776,13 @@ function displayVerificationResult(v, expectedAmount) {
 
   if (detectedQrBox && detectedQrText) {
     if (v.hasQrCode) {
-      detectedQrBox.className = 'col-span-2 flex items-center justify-between bg-blue-50/80 px-2.5 py-1.5 rounded-lg border border-blue-200';
-      detectedQrText.innerText = v.qrData ? `✓ สแกน QR ผ่าน (${v.qrData.slice(0, 16)}...)` : '✓ ตรวจพบ QR Code ถูกต้อง';
-      detectedQrText.className = 'font-bold text-blue-900 text-[11px] truncate max-w-[200px]';
+      detectedQrBox.className = 'col-span-2 flex items-center justify-between bg-emerald-50/90 px-3 py-2 rounded-xl border border-emerald-300';
+      const bankLabel = v.bankName ? ` (${v.bankName})` : '';
+      detectedQrText.innerHTML = `<span class="inline-flex items-center gap-1.5 font-bold text-emerald-800 text-xs"><i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-600"></i> ${v.qrStatusText || 'ตรวจพบ Mini QR Code ธนาคาร'}${bankLabel}</span>`;
     } else {
-      detectedQrBox.className = 'col-span-2 flex items-center justify-between bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-200';
-      detectedQrText.innerText = 'ไม่พบ QR Code ในรูป';
-      detectedQrText.className = 'font-medium text-slate-500 text-[11px]';
+      detectedQrBox.className = 'col-span-2 flex items-center justify-between bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200';
+      detectedQrText.innerText = 'ไม่พบ QR Code ในรูป (ใช้การอ่านข้อความจาก AI)';
+      detectedQrText.className = 'font-medium text-slate-500 text-xs';
     }
   }
 
@@ -1067,15 +949,36 @@ function getOrderStatusInfo(status) {
         step2Active: false,
         step3Active: false
       };
+    case 'pending':
+      return {
+        label: '⏳ รอร้านตรวจสอบสลิป',
+        step: 0,
+        progressPercent: '15%',
+        badgeClass: 'bg-amber-100 text-amber-800 border-amber-200',
+        detail: '⏳ ส่งสลิปเรียบร้อยแล้ว! ร้านแม้วกำลังตรวจสอบสลิปและจะเริ่มทำขนมให้คุณในไม่ช้าจ้า 🐾',
+        step1Active: false,
+        step2Active: false,
+        step3Active: false
+      };
     case 'verified':
+      return {
+        label: '🟢 ยืนยันสลิปแล้ว',
+        step: 1,
+        progressPercent: '40%',
+        badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+        detail: '🟢 ร้านแม้วตรวจสอบและยืนยันสลิปเรียบร้อยแล้ว กำลังจัดเตรียมคิวทำขนมสดใหม่ให้คุณครับ 🍰',
+        step1Active: true,
+        step2Active: false,
+        step3Active: false
+      };
     default:
       return {
-        label: '🟢 ยืนยันยอดแล้ว',
-        step: 1,
+        label: '⏳ รอตรวจสอบสลิป',
+        step: 0,
         progressPercent: '15%',
-        badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-        detail: '🟢 ร้านแม้วได้รับยอดเงินแล้ว กำลังจัดเตรียมคิวทำขนมสดใหม่ให้คุณครับ',
-        step1Active: true,
+        badgeClass: 'bg-amber-100 text-amber-800 border-amber-200',
+        detail: '⏳ ส่งสลิปเรียบร้อยแล้ว! รอทางร้านตรวจสอบสลิป',
+        step1Active: false,
         step2Active: false,
         step3Active: false
       };
@@ -1191,13 +1094,12 @@ function showReceiptModal(order) {
   `).join('');
 
   const statusEl = document.getElementById('modalSlipStatus');
-  const v = order.slipVerification;
-  if (v && (v.isReadyToSave || v.status === 'VALID_AND_MATCHED')) {
+  if (order.orderStatus === 'verified' || order.orderStatus === 'preparing' || order.orderStatus === 'delivered') {
     statusEl.className = 'font-bold px-2.5 py-0.5 rounded-full text-xs bg-emerald-100 text-emerald-700';
-    statusEl.innerText = `✅ ตรวจสอบผ่าน: ยอด ${order.totalPrice}฿ วันที่ ${v.transferDate || 'วันนี้'}`;
+    statusEl.innerText = `✅ ร้านยืนยันสลิปแล้ว (${order.totalPrice.toLocaleString()} บาท)`;
   } else {
-    statusEl.className = 'font-bold px-2.5 py-0.5 rounded-full text-xs bg-blue-100 text-blue-700';
-    statusEl.innerText = '🟡 บันทึกออเดอร์แล้ว';
+    statusEl.className = 'font-bold px-2.5 py-0.5 rounded-full text-xs bg-amber-100 text-amber-800';
+    statusEl.innerText = '⏳ แนบสลิปแล้ว (รอร้านตรวจสอบ)';
   }
 
   renderReceiptStatus(order);

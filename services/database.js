@@ -135,6 +135,9 @@ function createOrder(orderData) {
     customerNote: orderData.customerNote?.trim() || '',
     items: orderData.items || [],
     totalPrice: Number(orderData.totalPrice) || 0,
+    totalCost: Number(orderData.totalCost) || 0,
+    totalProfit: Number(orderData.totalProfit) || 0,
+    profitMargin: Number(orderData.profitMargin) || 0,
     slipImage: orderData.slipImage || null,
     slipVerification: orderData.slipVerification || null,
     orderStatus: orderData.orderStatus || 'pending', // pending, verified, preparing, delivered, cancelled
