@@ -527,20 +527,19 @@ function updateOrderStatus(id, status, adminNotes = null) {
   return memoryCache.orders[index];
 }
 
-// Find orders by query, phone, name, deviceId, or IDs (with smart fallback so orders never vanish)
+// Find orders by query, deviceId, or IDs (Strict device isolation to prevent privacy leaks)
 function findOrders({ query, phone, name, ids, deviceId } = {}) {
   const allOrders = getOrders();
 
+  // 1. Explicit search query from customer search bar (Order ID or Phone number)
   if (query && query.trim()) {
     const q = query.trim().toLowerCase();
-    if (q === 'all' || q === '*') {
-      return allOrders;
-    }
     const cleanQPhone = q.replace(/[\s\-]/g, '');
     return allOrders.filter(o => {
+      // Match by Order ID (e.g. MW-...)
       if (o.id && o.id.toLowerCase().includes(q)) return true;
-      if (o.customerName && o.customerName.toLowerCase().includes(q)) return true;
-      if (cleanQPhone.length >= 3) {
+      // Match by Customer Phone (require at least 6 digits to prevent matching everything)
+      if (cleanQPhone.length >= 6) {
         const orderPhone = (o.customerPhone || '').replace(/[\s\-]/g, '');
         if (orderPhone.includes(cleanQPhone)) return true;
       }
@@ -548,41 +547,24 @@ function findOrders({ query, phone, name, ids, deviceId } = {}) {
     });
   }
 
-  // Combined matching set for deviceId and/or ids and/or phone and/or name
+  // 2. Strict per-device retrieval: ONLY return orders created by this device or explicitly saved IDs
   const idSet = (ids && Array.isArray(ids)) ? new Set(ids) : new Set();
-  const cleanPhone = phone ? phone.replace(/[\s\-]/g, '') : '';
-  const cleanName = name ? name.trim().toLowerCase() : '';
   const cleanDeviceId = (deviceId || '').trim();
 
-  let matched = [];
-  if (cleanDeviceId || idSet.size > 0 || cleanPhone || cleanName) {
-    matched = allOrders.filter(o => {
-      // 1. Matched by deviceId from cloud
+  if (cleanDeviceId || idSet.size > 0) {
+    return allOrders.filter(o => {
+      // 1. Matched by deviceId from cloud (order genuinely created on this device)
       if (cleanDeviceId && o.deviceId && o.deviceId === cleanDeviceId) return true;
-      // 2. Matched by order ID list
+      // 2. Matched by order ID list saved on this device
       if (idSet.has(o.id)) return true;
-      // 3. Matched by phone
-      if (cleanPhone.length >= 3) {
-        const orderPhone = (o.customerPhone || '').replace(/[\s\-]/g, '');
-        if (orderPhone.includes(cleanPhone)) return true;
-      }
-      // 4. Matched by name
-      if (cleanName && o.customerName && o.customerName.toLowerCase().includes(cleanName)) return true;
-      // 5. Legacy orders without deviceId: associate them so they never get lost
-      if (!o.deviceId) return true;
 
       return false;
     });
   }
 
-  // If specific matched orders exist, return them
-  if (matched.length > 0) {
-    return matched;
-  }
-
-  // Fallback: If no orders match this specific device (e.g. cookies cleared, incognito, new browser session),
-  // return all recent orders in the store so customers/testers never see an empty "ประวัติหาย" screen
-  return allOrders;
+  // If new device or no matching identifiers, return empty array!
+  // NEVER fallback to allOrders to ensure complete privacy across devices.
+  return [];
 }
 
 // Permanent Used Slips Memory API

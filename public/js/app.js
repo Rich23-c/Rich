@@ -11,21 +11,34 @@ let qrDebounceTimeout = null;
 document.addEventListener('DOMContentLoaded', async () => {
   if (window.lucide) lucide.createIcons();
 
-  // Restore customer contact info from persistent storage
+  // One-time self-healing cleanup for iPad/tablets that never placed an order
+  const isIPad = /iPad/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if (isIPad && !localStorage.getItem('snack_maew_device_purged_v2')) {
+    localStorage.removeItem('snack_maew_customer_name');
+    localStorage.removeItem('snack_maew_customer_phone');
+    localStorage.removeItem(LOCAL_STORAGE_ORDERS_KEY);
+    localStorage.setItem('snack_maew_device_purged_v2', '1');
+  }
+
+  // Restore customer contact info from persistent storage ONLY if typed on this device
   const nameInput = document.getElementById('customerName');
   const phoneInput = document.getElementById('customerPhone');
   if (nameInput) {
     const savedName = localStorage.getItem('snack_maew_customer_name');
     if (savedName && !nameInput.value) nameInput.value = savedName;
     nameInput.addEventListener('input', e => {
-      localStorage.setItem('snack_maew_customer_name', e.target.value.trim());
+      const v = e.target.value.trim();
+      if (v) localStorage.setItem('snack_maew_customer_name', v);
+      else localStorage.removeItem('snack_maew_customer_name');
     });
   }
   if (phoneInput) {
     const savedPhone = localStorage.getItem('snack_maew_customer_phone');
     if (savedPhone && !phoneInput.value) phoneInput.value = savedPhone;
     phoneInput.addEventListener('input', e => {
-      localStorage.setItem('snack_maew_customer_phone', e.target.value.trim());
+      const v = e.target.value.trim();
+      if (v) localStorage.setItem('snack_maew_customer_phone', v);
+      else localStorage.removeItem('snack_maew_customer_phone');
     });
   }
 
@@ -1147,48 +1160,24 @@ async function syncDeviceOrdersFromCloud() {
   try {
     const deviceId = getDeviceId();
     const localIds = getLocalOrderIds();
-    const phoneInput = document.getElementById('customerPhone');
-    const nameInput = document.getElementById('customerName');
-    const savedPhone = (phoneInput && phoneInput.value.trim()) || localStorage.getItem('snack_maew_customer_phone') || '';
-    const savedName = (nameInput && nameInput.value.trim()) || localStorage.getItem('snack_maew_customer_name') || '';
 
+    // If device has no local IDs and no persistent cookie, do not send empty query
     const params = new URLSearchParams();
     if (deviceId) params.append('deviceId', deviceId);
     if (localIds.length > 0) params.append('ids', localIds.join(','));
-    if (savedPhone) params.append('phone', savedPhone);
-    if (savedName) params.append('name', savedName);
 
     const res = await fetch(`/api/orders-history?${params.toString()}`);
     const data = await res.json();
+    const banner = document.getElementById('deviceActiveOrdersBanner');
 
     if (data.success && Array.isArray(data.data) && data.data.length > 0) {
       const orders = data.data;
 
-      // 1. Merge recovered order IDs back into local history
-      orders.forEach(o => {
-        if (o && o.id) saveOrderToLocalHistory(o.id);
-      });
-      updateHistoryBadge();
-
-      // 2. Pre-fill customer name & phone from most recent order if empty
-      const latestOrder = orders[0];
-      if (latestOrder) {
-        if (nameInput && !nameInput.value.trim() && latestOrder.customerName) {
-          nameInput.value = latestOrder.customerName;
-          localStorage.setItem('snack_maew_customer_name', latestOrder.customerName);
-        }
-        if (phoneInput && !phoneInput.value.trim() && latestOrder.customerPhone) {
-          phoneInput.value = latestOrder.customerPhone;
-          localStorage.setItem('snack_maew_customer_phone', latestOrder.customerPhone);
-        }
-      }
-
-      // 3. Check for active (in-progress) orders: pending, verified, preparing, prepared
+      // Check for active (in-progress) orders belonging to THIS device
       const activeOrders = orders.filter(o =>
         ['pending', 'verified', 'preparing', 'prepared'].includes(o.orderStatus)
       );
 
-      const banner = document.getElementById('deviceActiveOrdersBanner');
       if (banner) {
         if (activeOrders.length > 0) {
           latestActiveDeviceOrder = activeOrders[0];
@@ -1217,8 +1206,12 @@ async function syncDeviceOrdersFromCloud() {
           if (window.lucide) lucide.createIcons();
         } else {
           banner.classList.add('hidden');
+          latestActiveDeviceOrder = null;
         }
       }
+    } else {
+      if (banner) banner.classList.add('hidden');
+      latestActiveDeviceOrder = null;
     }
   } catch (err) {
     console.warn('Could not sync device orders from cloud:', err);
@@ -1490,10 +1483,6 @@ async function loadOrderHistory(searchQuery = '') {
   try {
     const localIds = getLocalOrderIds();
     const deviceId = getDeviceId();
-    const phoneInput = document.getElementById('customerPhone');
-    const nameInput = document.getElementById('customerName');
-    const savedPhone = (phoneInput && phoneInput.value.trim()) || localStorage.getItem('snack_maew_customer_phone') || '';
-    const savedName = (nameInput && nameInput.value.trim()) || localStorage.getItem('snack_maew_customer_name') || '';
 
     let url = '/api/orders-history';
     const params = new URLSearchParams();
@@ -1503,8 +1492,6 @@ async function loadOrderHistory(searchQuery = '') {
     } else {
       if (deviceId) params.append('deviceId', deviceId);
       if (localIds.length > 0) params.append('ids', localIds.join(','));
-      if (savedPhone) params.append('phone', savedPhone);
-      if (savedName) params.append('name', savedName);
     }
     url += `?${params.toString()}`;
 
@@ -1512,9 +1499,11 @@ async function loadOrderHistory(searchQuery = '') {
     const data = await res.json();
 
     if (data.success && data.data && data.data.length > 0) {
-      // Merge all returned order IDs into local storage so they remain permanently recalled
-      data.data.forEach(o => saveOrderToLocalHistory(o.id));
-      updateHistoryBadge();
+      // If user performed an explicit search, save the matched order IDs into local storage so they remain on this device
+      if (searchQuery && searchQuery.trim()) {
+        data.data.forEach(o => saveOrderToLocalHistory(o.id));
+        updateHistoryBadge();
+      }
 
       renderOrderHistoryList(data.data);
       if (countText) countText.innerText = `พบทั้งหมด ${data.data.length} รายการ`;
@@ -1542,22 +1531,29 @@ function renderEmptyOrderHistory(customMsg = null) {
       <div class="space-y-1">
         <p class="font-medium text-stone-800 text-sm">${customMsg || 'ยังไม่มีประวัติการสั่งซื้อบนอุปกรณ์นี้'}</p>
         <p class="text-xs text-stone-400 max-w-sm mx-auto">
-          หากเคยสั่งซื้อไว้ สามารถพิมพ์เบอร์โทรศัพท์ที่เคยใช้ หรือกดปุ่มด้านล่างเพื่อดึงออเดอร์ทั้งหมดได้ครับ
+          หากเคยสั่งซื้อไว้ สามารถพิมพ์เบอร์โทรศัพท์ที่เคยใช้ หรือรหัสออเดอร์ (MW-...) ในช่องค้นหาด้านบน เพื่อดึงข้อมูลมายังเครื่องนี้ได้ครับ
         </p>
-      </div>
-      <div class="pt-1">
-        <button
-          type="button"
-          onclick="loadOrderHistory('all')"
-          class="bg-stone-900 hover:bg-stone-800 text-white text-xs font-medium px-4 py-2 rounded-xl transition shadow-2xs cursor-pointer inline-flex items-center gap-1.5"
-        >
-          <i data-lucide="list" class="w-3.5 h-3.5"></i>
-          <span>ดูรายการสั่งซื้อล่าสุดทั้งหมดของร้าน</span>
-        </button>
       </div>
     </div>
   `;
   if (window.lucide) lucide.createIcons();
+}
+
+// Clear order history stored on this device
+function clearDeviceOrderHistory() {
+  localStorage.removeItem(LOCAL_STORAGE_ORDERS_KEY);
+  localStorage.removeItem('snack_maew_customer_name');
+  localStorage.removeItem('snack_maew_customer_phone');
+  updateHistoryBadge();
+  const banner = document.getElementById('deviceActiveOrdersBanner');
+  if (banner) banner.classList.add('hidden');
+  const nameInput = document.getElementById('customerName');
+  const phoneInput = document.getElementById('customerPhone');
+  if (nameInput) nameInput.value = '';
+  if (phoneInput) phoneInput.value = '';
+  renderEmptyOrderHistory('ล้างข้อมูลบนอุปกรณ์นี้เรียบร้อยแล้ว');
+  const countText = document.getElementById('orderHistoryCountText');
+  if (countText) countText.innerText = 'มีทั้งหมด 0 รายการ';
 }
 
 function renderOrderHistoryList(orders) {

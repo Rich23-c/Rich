@@ -765,7 +765,17 @@
 
       <!-- Modal Footer -->
       <div class="pt-3 border-t border-stone-100 flex items-center justify-between text-xs text-stone-500 shrink-0">
-        <span id="orderHistoryCountText">มีทั้งหมด 0 รายการ</span>
+        <div class="flex items-center gap-3">
+          <span id="orderHistoryCountText">มีทั้งหมด 0 รายการ</span>
+          <button
+            type="button"
+            onclick="clearDeviceOrderHistory()"
+            class="text-[11px] text-stone-400 hover:text-stone-700 underline transition cursor-pointer"
+            title="ล้างประวัติคำสั่งซื้อที่จำไว้บนเครื่องนี้"
+          >
+            ล้างประวัติบนเครื่องนี้
+          </button>
+        </div>
         <button
           type="button"
           onclick="closeOrderHistoryModal()"
