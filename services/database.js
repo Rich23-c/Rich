@@ -140,7 +140,7 @@ function createOrder(orderData) {
     profitMargin: Number(orderData.profitMargin) || 0,
     slipImage: orderData.slipImage || null,
     slipVerification: orderData.slipVerification || null,
-    orderStatus: orderData.orderStatus || 'pending', // pending, verified, preparing, delivered, cancelled
+    orderStatus: orderData.orderStatus || 'pending', // pending, verified, preparing, prepared, delivered, cancelled
     adminNotes: '',
     createdAt: now.toISOString()
   };

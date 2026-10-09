@@ -263,7 +263,7 @@ function updateStats() {
   const totalMargin = totalSales > 0 ? Math.round((totalProfit / totalSales) * 100) : 0;
 
   const verifiedSlips = allOrders.filter(o => {
-    return o.orderStatus === 'verified' || o.orderStatus === 'preparing' || o.orderStatus === 'delivered';
+    return o.orderStatus === 'verified' || o.orderStatus === 'preparing' || o.orderStatus === 'prepared' || o.orderStatus === 'delivered';
   }).length;
 
   const statTotalSnacksEl = document.getElementById('statTotalSnacks');
@@ -770,8 +770,236 @@ async function loadAdminOrders(showLoading = false) {
   }
 }
 
+// ==============================================
+// KITCHEN & SHOPPING LIST (รายการเตรียมขนม & สั่งซื้อของ)
+// ==============================================
+const STORAGE_PURCHASED_ITEMS_KEY = 'snack_maew_purchased_items';
+
+function getPurchasedItems() {
+  try {
+    const raw = localStorage.getItem(STORAGE_PURCHASED_ITEMS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function savePurchasedItems(map) {
+  try {
+    localStorage.setItem(STORAGE_PURCHASED_ITEMS_KEY, JSON.stringify(map));
+  } catch (e) {
+    console.error('Failed to save purchased snacks:', e);
+  }
+}
+
+function toggleSnackPurchased(snackNameEncoded) {
+  const snackName = decodeURIComponent(snackNameEncoded);
+  const map = getPurchasedItems();
+  map[snackName] = !map[snackName];
+  savePurchasedItems(map);
+  renderKitchenShoppingList();
+}
+
+function clearAllPurchasedSnacks() {
+  savePurchasedItems({});
+  renderKitchenShoppingList();
+  const Toast = Swal.mixin({
+    toast: true,
+    position: 'top-end',
+    showConfirmButton: false,
+    timer: 1200
+  });
+  Toast.fire({
+    icon: 'success',
+    title: 'รีเซ็ตสถานะซื้อแล้วทั้งหมดเรียบร้อย'
+  });
+}
+
+function renderKitchenShoppingList() {
+  const container = document.getElementById('kitchenShoppingListGrid');
+  const countBadge = document.getElementById('kitchenPendingCountBadge');
+  if (!container) return;
+
+  // Active orders that STILL NEED snacks to be prepared/purchased
+  // (Excludes 'prepared', 'delivered', and 'cancelled')
+  const activeOrders = allOrders.filter(o => 
+    o.orderStatus !== 'prepared' && 
+    o.orderStatus !== 'delivered' && 
+    o.orderStatus !== 'cancelled'
+  );
+
+  // Aggregate items across active orders
+  const itemsMap = {};
+  activeOrders.forEach(order => {
+    (order.items || []).forEach(item => {
+      const name = (item.name || 'ขนม').trim();
+      const unit = item.unit || 'ชิ้น';
+      const qty = Number(item.quantity) || 0;
+      if (qty <= 0) return;
+
+      if (!itemsMap[name]) {
+        const adminSnack = allAdminSnacks.find(s => s.name === name || s.id === item.snackId);
+        itemsMap[name] = {
+          name: name,
+          unit: unit,
+          totalQuantity: 0,
+          image: (adminSnack && adminSnack.image) || item.image || 'https://images.unsplash.com/photo-1558961363-fa8fdf82db35?w=300',
+          orders: []
+        };
+      }
+      itemsMap[name].totalQuantity += qty;
+      itemsMap[name].orders.push({
+        orderId: order.id,
+        customerName: order.customerName,
+        quantity: qty,
+        orderStatus: order.orderStatus
+      });
+    });
+  });
+
+  const purchasedMap = getPurchasedItems();
+  const itemsList = Object.values(itemsMap);
+
+  // Auto clean up purchased keys that are no longer in any active order
+  let cleaned = false;
+  Object.keys(purchasedMap).forEach(key => {
+    if (!itemsMap[key]) {
+      delete purchasedMap[key];
+      cleaned = true;
+    }
+  });
+  if (cleaned) {
+    savePurchasedItems(purchasedMap);
+  }
+
+  // Sort: unpurchased first, then higher quantity
+  itemsList.sort((a, b) => {
+    const aBought = !!purchasedMap[a.name];
+    const bBought = !!purchasedMap[b.name];
+    if (aBought !== bBought) return aBought ? 1 : -1;
+    return b.totalQuantity - a.totalQuantity;
+  });
+
+  const totalPieces = itemsList.reduce((sum, item) => sum + item.totalQuantity, 0);
+  if (countBadge) {
+    if (itemsList.length === 0) {
+      countBadge.innerText = '0 รายการ (เตรียมครบแล้ว)';
+      countBadge.className = 'bg-emerald-600 text-white text-[11px] font-bold px-2.5 py-0.5 rounded-full shadow-2xs';
+    } else {
+      countBadge.innerText = `${itemsList.length} เมนู (รวม ${totalPieces} ชิ้น/กล่อง)`;
+      countBadge.className = 'bg-orange-600 text-white text-[11px] font-bold px-2.5 py-0.5 rounded-full shadow-2xs';
+    }
+  }
+
+  container.innerHTML = '';
+
+  if (itemsList.length === 0) {
+    container.innerHTML = `
+      <div class="col-span-full py-8 px-4 bg-white/90 rounded-2xl border border-dashed border-amber-300 text-center space-y-2 shadow-2xs">
+        <div class="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-2xl mx-auto shadow-2xs">
+          🎉
+        </div>
+        <div>
+          <h5 class="font-bold text-slate-800 text-sm">เตรียมขนมครบทุกออเดอร์แล้ว! 🐾</h5>
+          <p class="text-xs text-slate-500 mt-0.5 max-w-md mx-auto">
+            ไม่มีรายการขนมที่ต้องเตรียมหรือซื้อเพิ่มในขณะนี้ (ออเดอร์ทั้งหมดอยู่ในสถานะเตรียมเสร็จแล้ว หรือส่งมอบแล้ว)
+          </p>
+        </div>
+      </div>
+    `;
+    if (window.lucide) lucide.createIcons();
+    return;
+  }
+
+  itemsList.forEach(item => {
+    const isBought = !!purchasedMap[item.name];
+    const card = document.createElement('div');
+    card.className = isBought
+      ? 'bg-emerald-50/80 rounded-2xl p-3.5 border-2 border-emerald-400/90 shadow-2xs space-y-3 transition duration-200'
+      : 'bg-white rounded-2xl p-3.5 border border-amber-200/90 shadow-2xs hover:border-orange-300 space-y-3 transition duration-200';
+
+    // Order breakdown tags
+    const breakdownHtml = item.orders.map(o => `
+      <span class="inline-flex items-center gap-1 bg-white/90 border border-slate-200/90 px-2 py-0.5 rounded-lg text-[10px] text-slate-700 shadow-2xs" title="ลูกค้า: ${o.customerName}">
+        <span class="font-mono font-bold text-orange-600">${o.orderId.replace('MW-', '')}</span>
+        <span class="font-extrabold text-slate-900">×${o.quantity}</span>
+      </span>
+    `).join('');
+
+    const toggleButtonHtml = isBought
+      ? `
+        <button
+          type="button"
+          onclick="toggleSnackPurchased('${encodeURIComponent(item.name)}')"
+          class="w-full py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-xs flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer"
+        >
+          <i data-lucide="check-circle-2" class="w-4 h-4 text-white"></i>
+          <span>✓ ซื้อแล้ว / เตรียมแล้ว (แตะเพื่อเปลี่ยน)</span>
+        </button>
+      `
+      : `
+        <button
+          type="button"
+          onclick="toggleSnackPurchased('${encodeURIComponent(item.name)}')"
+          class="w-full py-2 px-3 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white rounded-xl text-xs font-bold transition shadow-xs flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer"
+        >
+          <i data-lucide="shopping-cart" class="w-4 h-4"></i>
+          <span>ยังไม่ได้ซื้อ (แตะเมื่อซื้อแล้ว)</span>
+        </button>
+      `;
+
+    card.innerHTML = `
+      <div class="flex items-start gap-3">
+        <img
+          src="${item.image}"
+          alt="${item.name}"
+          class="w-14 h-14 rounded-xl object-cover border border-slate-200 shrink-0 shadow-2xs"
+          onerror="this.src='https://images.unsplash.com/photo-1558961363-fa8fdf82db35?w=300'"
+        />
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center justify-between gap-1">
+            <h5 class="font-extrabold text-slate-900 text-sm truncate" title="${item.name}">
+              ${item.name}
+            </h5>
+            ${isBought
+              ? '<span class="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-300 shrink-0">✓ ซื้อแล้ว</span>'
+              : '<span class="bg-amber-100 text-amber-900 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-300 shrink-0">🛒 ต้องเตรียม</span>'
+            }
+          </div>
+
+          <div class="flex items-baseline gap-1 mt-1">
+            <span class="text-xs text-slate-500">ต้องใช้ทั้งหมด:</span>
+            <span class="text-lg font-black ${isBought ? 'text-emerald-700' : 'text-orange-600'} font-heading">
+              ${item.totalQuantity.toLocaleString()}
+            </span>
+            <span class="text-xs font-bold text-slate-700">${item.unit}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Breakdown of which orders ordered this snack -->
+      <div class="bg-slate-50/80 p-2 rounded-xl border border-slate-100">
+        <div class="text-[10px] text-slate-500 font-semibold mb-1">จาก ${item.orders.length} ออเดอร์ที่รอทำ:</div>
+        <div class="flex flex-wrap gap-1.5 max-h-20 overflow-y-auto">
+          ${breakdownHtml}
+        </div>
+      </div>
+
+      <!-- Item Purchased Toggle Button -->
+      <div>
+        ${toggleButtonHtml}
+      </div>
+    `;
+
+    container.appendChild(card);
+  });
+
+  if (window.lucide) lucide.createIcons();
+}
+
 function renderOrdersTable() {
   const tbody = document.getElementById('ordersTableBody');
+  const mobileContainer = document.getElementById('adminOrdersMobileCards');
   tbody.innerHTML = '';
 
   if (allOrders.length === 0) {
@@ -783,6 +1011,15 @@ function renderOrdersTable() {
         </td>
       </tr>
     `;
+    if (mobileContainer) {
+      mobileContainer.innerHTML = `
+        <div class="p-8 text-center text-slate-400 bg-slate-50/70 rounded-2xl border border-dashed border-slate-200">
+          <i data-lucide="inbox" class="w-8 h-8 mx-auto text-slate-300 mb-1.5"></i>
+          <p class="font-medium text-xs">ยังไม่มีรายการสั่งซื้อเข้ามา</p>
+        </div>
+      `;
+    }
+    renderKitchenShoppingList();
     if (window.lucide) lucide.createIcons();
     return;
   }
@@ -870,6 +1107,7 @@ function renderOrdersTable() {
           <option value="pending" ${order.orderStatus === 'pending' ? 'selected' : ''}>⏳ รอตรวจสอบสลิป</option>
           <option value="verified" ${order.orderStatus === 'verified' ? 'selected' : ''}>🟢 ยืนยันสลิปแล้ว</option>
           <option value="preparing" ${order.orderStatus === 'preparing' ? 'selected' : ''}>👨‍🍳 กำลังเตรียมขนม</option>
+          <option value="prepared" ${order.orderStatus === 'prepared' ? 'selected' : ''}>🍰 เตรียมขนมเสร็จแล้ว</option>
           <option value="delivered" ${order.orderStatus === 'delivered' ? 'selected' : ''}>🚚 ส่งมอบเรียบร้อย</option>
           <option value="cancelled" ${order.orderStatus === 'cancelled' ? 'selected' : ''}>❌ ยกเลิก</option>
         </select>
@@ -918,7 +1156,6 @@ function renderOrdersTable() {
   });
 
   // Also render Mobile Cards for smartphones (adminOrdersMobileCards)
-  const mobileContainer = document.getElementById('adminOrdersMobileCards');
   if (mobileContainer) {
     mobileContainer.innerHTML = '';
     if (allOrders.length === 0) {
@@ -951,6 +1188,7 @@ function renderOrdersTable() {
         if (order.orderStatus === 'pending') statusBadge = '<span class="bg-amber-100 text-amber-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-amber-200">⏳ รอตรวจสอบสลิป</span>';
         else if (order.orderStatus === 'verified') statusBadge = '<span class="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-emerald-200">🟢 ยืนยันสลิปแล้ว</span>';
         else if (order.orderStatus === 'preparing') statusBadge = '<span class="bg-blue-100 text-blue-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-blue-200">👨‍🍳 กำลังเตรียมขนม</span>';
+        else if (order.orderStatus === 'prepared') statusBadge = '<span class="bg-amber-100 text-amber-900 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-amber-300">🍰 เตรียมขนมเสร็จแล้ว</span>';
         else if (order.orderStatus === 'delivered') statusBadge = '<span class="bg-emerald-600 text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full">🚚 ส่งมอบแล้ว</span>';
         else if (order.orderStatus === 'cancelled') statusBadge = '<span class="bg-red-100 text-red-700 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-red-200">❌ ยกเลิก</span>';
 
@@ -1052,6 +1290,7 @@ function renderOrdersTable() {
                 <option value="pending" ${order.orderStatus === 'pending' ? 'selected' : ''}>⏳ รอตรวจสอบสลิป</option>
                 <option value="verified" ${order.orderStatus === 'verified' ? 'selected' : ''}>🟢 ยืนยันสลิปแล้ว</option>
                 <option value="preparing" ${order.orderStatus === 'preparing' ? 'selected' : ''}>👨‍🍳 กำลังเตรียมขนม</option>
+                <option value="prepared" ${order.orderStatus === 'prepared' ? 'selected' : ''}>🍰 เตรียมขนมเสร็จแล้ว</option>
                 <option value="delivered" ${order.orderStatus === 'delivered' ? 'selected' : ''}>🚚 ส่งมอบเรียบร้อย</option>
                 <option value="cancelled" ${order.orderStatus === 'cancelled' ? 'selected' : ''}>❌ ยกเลิก</option>
               </select>
@@ -1064,6 +1303,7 @@ function renderOrdersTable() {
     }
   }
 
+  renderKitchenShoppingList();
   if (window.lucide) lucide.createIcons();
 }
 
@@ -1151,6 +1391,9 @@ function openSlipDetailModal(orderId) {
   } else if (order.orderStatus === 'verified') {
     banner.className = 'p-3 rounded-2xl border font-bold text-xs bg-emerald-50 text-emerald-800 border-emerald-200';
     banner.innerText = '✅ สลิปได้รับการยืนยันแล้ว: ยอดเงินและสลิปถูกต้อง';
+  } else if (order.orderStatus === 'prepared') {
+    banner.className = 'p-3 rounded-2xl border font-bold text-xs bg-amber-50 text-amber-900 border-amber-300';
+    banner.innerText = '🍰 ขนมเตรียมเสร็จเรียบร้อยแล้ว: พร้อมส่งมอบให้ลูกค้า';
   } else if (v.isDuplicateSlip) {
     banner.className = 'p-3 rounded-2xl border font-bold text-xs bg-red-50 text-red-800 border-red-200';
     banner.innerText = `🚨 ตรวจพบสลิปซ้ำ! ${v.message || 'สลิปนี้ถูกใช้ไปแล้วในระบบ'}`;

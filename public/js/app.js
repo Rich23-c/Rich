@@ -920,23 +920,37 @@ function getOrderStatusInfo(status) {
       return {
         label: '👨‍🍳 กำลังเตรียมขนม',
         step: 2,
-        progressPercent: '50%',
-        badgeClass: 'bg-orange-100 text-orange-800 border-orange-200',
+        progressPercent: '60%',
+        badgeClass: 'bg-blue-100 text-blue-800 border-blue-200',
         detail: '👨‍🍳 ร้านแม้วกำลังอบและจัดเตรียมขนมสดใหม่ตามออเดอร์ของคุณอย่างตั้งใจ',
         step1Active: true,
         step2Active: true,
-        step3Active: false
+        step3Active: false,
+        step4Active: false
+      };
+    case 'prepared':
+      return {
+        label: '🍰 เตรียมขนมเสร็จแล้ว',
+        step: 3,
+        progressPercent: '85%',
+        badgeClass: 'bg-amber-100 text-amber-900 border-amber-300',
+        detail: '🍰 ร้านแม้วทำขนมเสร็จเรียบร้อยแล้ว พร้อมส่งมอบให้คุณจ้า 🐾',
+        step1Active: true,
+        step2Active: true,
+        step3Active: true,
+        step4Active: false
       };
     case 'delivered':
       return {
         label: '🚚 ส่งมอบเรียบร้อย',
-        step: 3,
+        step: 4,
         progressPercent: '100%',
         badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-200',
         detail: '🚚 ขนมส่งมอบเรียบร้อยแล้ว หรือพร้อมให้คุณรับประทานแล้ว ทานให้อร่อยนะจ๊ะ! 🐾',
         step1Active: true,
         step2Active: true,
-        step3Active: true
+        step3Active: true,
+        step4Active: true
       };
     case 'cancelled':
       return {
@@ -947,7 +961,8 @@ function getOrderStatusInfo(status) {
         detail: '❌ คำสั่งซื้อนี้ถูกยกเลิกแล้ว หากมีข้อสงสัยสามารถติดต่อร้านได้โดยตรงครับ',
         step1Active: false,
         step2Active: false,
-        step3Active: false
+        step3Active: false,
+        step4Active: false
       };
     case 'pending':
       return {
@@ -958,18 +973,20 @@ function getOrderStatusInfo(status) {
         detail: '⏳ ส่งสลิปเรียบร้อยแล้ว! ร้านแม้วกำลังตรวจสอบสลิปและจะเริ่มทำขนมให้คุณในไม่ช้าจ้า 🐾',
         step1Active: false,
         step2Active: false,
-        step3Active: false
+        step3Active: false,
+        step4Active: false
       };
     case 'verified':
       return {
         label: '🟢 ยืนยันสลิปแล้ว',
         step: 1,
-        progressPercent: '40%',
+        progressPercent: '35%',
         badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-200',
         detail: '🟢 ร้านแม้วตรวจสอบและยืนยันสลิปเรียบร้อยแล้ว กำลังจัดเตรียมคิวทำขนมสดใหม่ให้คุณครับ 🍰',
         step1Active: true,
         step2Active: false,
-        step3Active: false
+        step3Active: false,
+        step4Active: false
       };
     default:
       return {
@@ -980,29 +997,33 @@ function getOrderStatusInfo(status) {
         detail: '⏳ ส่งสลิปเรียบร้อยแล้ว! รอทางร้านตรวจสอบสลิป',
         step1Active: false,
         step2Active: false,
-        step3Active: false
+        step3Active: false,
+        step4Active: false
       };
   }
 }
 
-// Render Status Stepper in Receipt Modal
+// Render Status Stepper in Receipt Modal (4 Steps)
 function renderReceiptStatus(order) {
   const statusInfo = getOrderStatusInfo(order.orderStatus);
   const progressLine = document.getElementById('modalStatusProgressLine');
   const step1Icon = document.getElementById('modalStep1Icon');
   const step2Icon = document.getElementById('modalStep2Icon');
   const step3Icon = document.getElementById('modalStep3Icon');
+  const step4Icon = document.getElementById('modalStep4Icon');
   const step1Text = document.getElementById('modalStep1Text');
   const step2Text = document.getElementById('modalStep2Text');
   const step3Text = document.getElementById('modalStep3Text');
+  const step4Text = document.getElementById('modalStep4Text');
   const detailBox = document.getElementById('modalStatusDetailBox');
 
   if (progressLine) progressLine.style.width = statusInfo.progressPercent;
 
   if (order.orderStatus === 'cancelled') {
-    if (step1Icon) step1Icon.className = 'w-8 h-8 rounded-full bg-red-500 text-white flex items-center justify-center text-xs font-bold';
-    if (step2Icon) step2Icon.className = 'w-8 h-8 rounded-full bg-slate-200 text-slate-400 flex items-center justify-center text-xs font-bold';
-    if (step3Icon) step3Icon.className = 'w-8 h-8 rounded-full bg-slate-200 text-slate-400 flex items-center justify-center text-xs font-bold';
+    if (step1Icon) step1Icon.className = 'w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-red-500 text-white flex items-center justify-center text-xs font-bold';
+    if (step2Icon) step2Icon.className = 'w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-slate-200 text-slate-400 flex items-center justify-center text-xs font-bold';
+    if (step3Icon) step3Icon.className = 'w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-slate-200 text-slate-400 flex items-center justify-center text-xs font-bold';
+    if (step4Icon) step4Icon.className = 'w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-slate-200 text-slate-400 flex items-center justify-center text-xs font-bold';
     if (detailBox) {
       detailBox.className = 'bg-red-50 p-2.5 rounded-xl border border-red-200 text-xs text-center font-bold text-red-800';
       detailBox.innerText = statusInfo.detail;
@@ -1010,37 +1031,48 @@ function renderReceiptStatus(order) {
     return;
   }
 
-  // Step 1
+  // Step 1: ยืนยันสลิป
   if (step1Icon) {
     step1Icon.className = statusInfo.step1Active
-      ? 'w-8 h-8 rounded-full bg-orange-600 text-white flex items-center justify-center text-xs font-bold shadow-sm transition'
-      : 'w-8 h-8 rounded-full bg-orange-200 text-orange-700 flex items-center justify-center text-xs font-bold';
+      ? 'w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-orange-600 text-white flex items-center justify-center text-xs font-bold shadow-sm transition'
+      : 'w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-orange-200 text-orange-700 flex items-center justify-center text-xs font-bold';
     step1Icon.innerHTML = statusInfo.step1Active ? '✓' : '1';
   }
   if (step1Text) {
-    step1Text.className = statusInfo.step1Active ? 'text-[10px] font-bold text-orange-900' : 'text-[10px] font-semibold text-slate-500';
+    step1Text.className = statusInfo.step1Active ? 'text-[9px] sm:text-[10px] font-bold text-orange-900' : 'text-[9px] sm:text-[10px] font-semibold text-slate-500';
   }
 
-  // Step 2
+  // Step 2: กำลังทำ
   if (step2Icon) {
     step2Icon.className = statusInfo.step2Active
-      ? 'w-8 h-8 rounded-full bg-orange-600 text-white flex items-center justify-center text-xs font-bold shadow-sm transition'
-      : 'w-8 h-8 rounded-full bg-orange-200 text-orange-700 flex items-center justify-center text-xs font-bold';
+      ? 'w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-orange-600 text-white flex items-center justify-center text-xs font-bold shadow-sm transition'
+      : 'w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-orange-200 text-orange-700 flex items-center justify-center text-xs font-bold';
     step2Icon.innerHTML = statusInfo.step2Active ? (statusInfo.step3Active ? '✓' : '👨‍🍳') : '2';
   }
   if (step2Text) {
-    step2Text.className = statusInfo.step2Active ? 'text-[10px] font-bold text-orange-900' : 'text-[10px] font-semibold text-slate-500';
+    step2Text.className = statusInfo.step2Active ? 'text-[9px] sm:text-[10px] font-bold text-orange-900' : 'text-[9px] sm:text-[10px] font-semibold text-slate-500';
   }
 
-  // Step 3
+  // Step 3: ขนมเสร็จแล้ว 🍰
   if (step3Icon) {
     step3Icon.className = statusInfo.step3Active
-      ? 'w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs font-bold shadow-sm transition'
-      : 'w-8 h-8 rounded-full bg-orange-200 text-orange-700 flex items-center justify-center text-xs font-bold';
-    step3Icon.innerHTML = statusInfo.step3Active ? '✓' : '3';
+      ? 'w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-amber-500 text-white flex items-center justify-center text-xs font-bold shadow-sm transition'
+      : 'w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-orange-200 text-orange-700 flex items-center justify-center text-xs font-bold';
+    step3Icon.innerHTML = statusInfo.step3Active ? (statusInfo.step4Active ? '✓' : '🍰') : '3';
   }
   if (step3Text) {
-    step3Text.className = statusInfo.step3Active ? 'text-[10px] font-bold text-emerald-800' : 'text-[10px] font-semibold text-slate-500';
+    step3Text.className = statusInfo.step3Active ? 'text-[9px] sm:text-[10px] font-bold text-amber-900' : 'text-[9px] sm:text-[10px] font-semibold text-slate-500';
+  }
+
+  // Step 4: ส่งมอบแล้ว 🚚
+  if (step4Icon) {
+    step4Icon.className = statusInfo.step4Active
+      ? 'w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs font-bold shadow-sm transition'
+      : 'w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-orange-200 text-orange-700 flex items-center justify-center text-xs font-bold';
+    step4Icon.innerHTML = statusInfo.step4Active ? '✓' : '4';
+  }
+  if (step4Text) {
+    step4Text.className = statusInfo.step4Active ? 'text-[9px] sm:text-[10px] font-bold text-emerald-800' : 'text-[9px] sm:text-[10px] font-semibold text-slate-500';
   }
 
   // Detail box
@@ -1094,7 +1126,7 @@ function showReceiptModal(order) {
   `).join('');
 
   const statusEl = document.getElementById('modalSlipStatus');
-  if (order.orderStatus === 'verified' || order.orderStatus === 'preparing' || order.orderStatus === 'delivered') {
+  if (order.orderStatus === 'verified' || order.orderStatus === 'preparing' || order.orderStatus === 'prepared' || order.orderStatus === 'delivered') {
     statusEl.className = 'font-bold px-2.5 py-0.5 rounded-full text-xs bg-emerald-100 text-emerald-700';
     statusEl.innerText = `✅ ร้านยืนยันสลิปแล้ว (${order.totalPrice.toLocaleString()} บาท)`;
   } else {
@@ -1232,9 +1264,10 @@ function renderOrderHistoryList(orders) {
       <!-- Mini Stepper Indicator -->
       <div class="bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-[11px] space-y-1.5">
         <div class="flex justify-between items-center text-slate-500 font-semibold text-[10px]">
-          <span class="${statusInfo.step1Active ? 'text-orange-600 font-bold' : ''}">1. รับยอดแล้ว</span>
+          <span class="${statusInfo.step1Active ? 'text-orange-600 font-bold' : ''}">1. ยืนยันสลิป</span>
           <span class="${statusInfo.step2Active ? 'text-orange-600 font-bold' : ''}">2. กำลังทำ</span>
-          <span class="${statusInfo.step3Active ? 'text-emerald-600 font-bold' : ''}">3. ส่งมอบ</span>
+          <span class="${statusInfo.step3Active ? 'text-amber-600 font-bold' : ''}">3. เสร็จแล้ว 🍰</span>
+          <span class="${statusInfo.step4Active ? 'text-emerald-600 font-bold' : ''}">4. ส่งมอบ 🚚</span>
         </div>
         <div class="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
           <div class="bg-orange-500 h-full rounded-full transition-all" style="width: ${statusInfo.progressPercent}"></div>
