@@ -858,19 +858,29 @@ function renderKitchenShoppingList() {
 
       if (!itemsMap[name]) {
         const adminSnack = allAdminSnacks.find(s => s.name === name || s.id === item.snackId);
+        const unitPrice = (item.price !== undefined && Number(item.price) >= 0) ? Number(item.price) : ((adminSnack && adminSnack.price) || 0);
+        const unitCost = (item.cost !== undefined && Number(item.cost) >= 0) ? Number(item.cost) : ((adminSnack && adminSnack.cost) || 0);
         itemsMap[name] = {
           name: name,
           unit: unit,
+          price: unitPrice,
+          cost: unitCost,
           totalQuantity: 0,
+          totalPrice: 0,
+          totalCost: 0,
           image: (adminSnack && adminSnack.image) || item.image || 'https://images.unsplash.com/photo-1558961363-fa8fdf82db35?w=300',
           orders: []
         };
       }
       itemsMap[name].totalQuantity += qty;
+      itemsMap[name].totalPrice += (itemsMap[name].price * qty);
+      itemsMap[name].totalCost += (itemsMap[name].cost * qty);
       itemsMap[name].orders.push({
         orderId: order.id,
         customerName: order.customerName,
         quantity: qty,
+        unit: unit,
+        price: itemsMap[name].price,
         orderStatus: order.orderStatus
       });
     });
@@ -900,12 +910,14 @@ function renderKitchenShoppingList() {
   unpurchasedItems.sort((a, b) => b.totalQuantity - a.totalQuantity);
 
   const totalPieces = unpurchasedItems.reduce((sum, item) => sum + item.totalQuantity, 0);
+  const totalAmount = unpurchasedItems.reduce((sum, item) => sum + item.totalPrice, 0);
+
   if (countBadge) {
     if (unpurchasedItems.length === 0) {
       countBadge.innerText = allItemsList.length > 0 ? '✓ ซื้อครบทุกรายการแล้ว' : '0 รายการ';
       countBadge.className = 'bg-emerald-600 text-white text-[11px] font-bold px-2.5 py-0.5 rounded-full shadow-2xs';
     } else {
-      countBadge.innerText = `${unpurchasedItems.length} เมนูที่ต้องซื้อ (รวม ${totalPieces} ชิ้น/กล่อง)`;
+      countBadge.innerText = `${unpurchasedItems.length} เมนูที่ต้องซื้อ (รวม ${totalPieces} ชิ้น • ฿${totalAmount.toLocaleString()})`;
       countBadge.className = 'bg-orange-600 text-white text-[11px] font-bold px-2.5 py-0.5 rounded-full shadow-2xs';
     }
   }
@@ -921,7 +933,7 @@ function renderKitchenShoppingList() {
         <div>
           <h5 class="font-bold text-slate-800 text-sm">ซื้อและเตรียมของครบแล้วทุกเมนู! 🐾</h5>
           <p class="text-xs text-slate-500 mt-0.5 max-w-md mx-auto">
-            ${boughtCount > 0 ? `ซื้อเสร็จสิ้นแล้วทั้งหมด ${boughtCount} เมนู (หากต้องการดูใหม่ กดปุ่ม "รีเซ็ตติ๊กซื้อแล้ว" ด้านบนได้ครับ)` : 'ไม่มีรายการขนมที่ต้องเตรียมหรือซื้อเพิ่มในขณะนี้'}
+            ${boughtCount > 0 ? `ซื้อเสร็จสิ้นแล้วทั้งหมด ${boughtCount} เมนู (หากต้องการดูใหม่ กดปุ่ม "รีเซ็ต / แสดงรายการที่ลบไป" ด้านบนได้ครับ)` : 'ไม่มีรายการขนมที่ต้องเตรียมหรือซื้อเพิ่มในขณะนี้'}
           </p>
         </div>
       </div>
@@ -939,6 +951,7 @@ function renderKitchenShoppingList() {
       <span class="inline-flex items-center gap-1 bg-white/90 border border-slate-200/90 px-2 py-0.5 rounded-lg text-[10px] text-slate-700 shadow-2xs" title="ลูกค้า: ${o.customerName}">
         <span class="font-mono font-bold text-orange-600">${o.orderId.replace('MW-', '')}</span>
         <span class="font-extrabold text-slate-900">×${o.quantity}</span>
+        <span class="text-slate-400">(${o.customerName || 'ลูกค้า'})</span>
       </span>
     `).join('');
 
@@ -967,19 +980,34 @@ function renderKitchenShoppingList() {
             <h5 class="font-extrabold text-slate-900 text-sm truncate" title="${item.name}">
               ${item.name}
             </h5>
-            ${isBought
-              ? '<span class="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-300 shrink-0">✓ ซื้อแล้ว</span>'
-              : '<span class="bg-amber-100 text-amber-900 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-300 shrink-0">🛒 ต้องเตรียม</span>'
-            }
+            <span class="bg-amber-100 text-amber-900 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-300 shrink-0">🛒 ต้องสั่ง/เตรียม</span>
           </div>
 
-          <div class="flex items-baseline gap-1 mt-1">
-            <span class="text-xs text-slate-500">ต้องใช้ทั้งหมด:</span>
-            <span class="text-lg font-black ${isBought ? 'text-emerald-700' : 'text-orange-600'} font-heading">
-              ${item.totalQuantity.toLocaleString()}
-            </span>
-            <span class="text-xs font-bold text-slate-700">${item.unit}</span>
+          <!-- จำนวนที่ต้องสั่งซื้อ และ ราคา -->
+          <div class="mt-1.5 flex items-baseline justify-between gap-1 bg-amber-50/70 px-2.5 py-1.5 rounded-xl border border-amber-200/70">
+            <div>
+              <span class="text-[10px] text-slate-500 block leading-tight font-medium">จำนวนที่ต้องสั่ง:</span>
+              <div class="flex items-baseline gap-1 mt-0.5">
+                <span class="text-xl font-black text-orange-600 font-heading">
+                  ${item.totalQuantity.toLocaleString()}
+                </span>
+                <span class="text-xs font-bold text-slate-700">${item.unit}</span>
+              </div>
+            </div>
+            <div class="text-right">
+              <span class="text-[10px] text-slate-500 block leading-tight font-medium">ราคา / ยอดรวม:</span>
+              <div class="mt-0.5">
+                <span class="text-sm font-black text-slate-900">฿${item.totalPrice.toLocaleString()}</span>
+                ${item.price > 0 ? `<span class="text-[10px] text-slate-500 block">(@฿${item.price}/${item.unit})</span>` : ''}
+              </div>
+            </div>
           </div>
+          ${item.totalCost > 0 ? `
+            <div class="text-[10px] text-slate-500 mt-1 flex items-center justify-between px-1">
+              <span>ต้นทุนที่ต้องเตรียม:</span>
+              <span class="font-bold text-slate-700">฿${item.totalCost.toLocaleString()} (ทุน ฿${item.cost}/${item.unit})</span>
+            </div>
+          ` : ''}
         </div>
       </div>
 
