@@ -4,7 +4,11 @@ const { Jimp } = require('jimp');
 const { getFileHash, scanSlipQrCode, parseSlipQrInfo } = require('./slipQrScanner');
 const { checkDuplicateSlip } = require('./slipDuplicateChecker');
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+// Support multiple Gemini API keys for seamless quota expansion & load balancing
+function getGeminiApiKeys() {
+  const raw = process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || '';
+  return raw.split(',').map(k => k.trim()).filter(Boolean);
+}
 
 // High-speed, high-accuracy vision models in priority order
 const VISION_MODELS = [
@@ -129,7 +133,8 @@ async function getOptimizedImageBase64(filePath, mimeType) {
  * Ultra-fast Gemini AI Vision OCR with deterministic prompt & zero temperature
  */
 async function runGeminiVisionOcr(filePath, mimeType, targetAmount, expectedReceiver, today) {
-  if (!GEMINI_API_KEY) {
+  const keys = getGeminiApiKeys();
+  if (keys.length === 0) {
     return { success: false, error: 'NO_API_KEY' };
   }
 
@@ -160,49 +165,57 @@ async function runGeminiVisionOcr(filePath, mimeType, targetAmount, expectedRece
 
   let lastError = null;
 
-  for (const model of VISION_MODELS) {
-    try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
-      const payload = {
-        contents: [
-          {
-            parts: [
-              { text: prompt },
-              { inline_data: { mime_type: mime, data: base64Data } }
-            ]
+  for (const apiKey of keys) {
+    for (const model of VISION_MODELS) {
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+        const payload = {
+          contents: [
+            {
+              parts: [
+                { text: prompt },
+                { inline_data: { mime_type: mime, data: base64Data } }
+              ]
+            }
+          ],
+          generationConfig: {
+            responseMimeType: 'application/json',
+            temperature: 0.0,
+            maxOutputTokens: 250
           }
-        ],
-        generationConfig: {
-          responseMimeType: 'application/json',
-          temperature: 0.0,
-          maxOutputTokens: 250
+        };
+
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (response.status === 429) {
+          // Daily free limit reached for this specific key -> automatically cascade to next API key!
+          console.warn(`[Gemini OCR] Quota 429 reached on key (${apiKey.slice(0, 6)}...). Trying backup key...`);
+          break; // Break model loop to advance to next key in keys array
         }
-      };
 
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
+        if (!response.ok) {
+          continue;
+        }
 
-      if (!response.ok) {
-        continue;
+        const resJson = await response.json();
+        const rawText = resJson.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!rawText) continue;
+
+        const cleaned = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+        const parsed = JSON.parse(cleaned);
+
+        return {
+          success: true,
+          model,
+          data: parsed
+        };
+      } catch (err) {
+        lastError = err;
       }
-
-      const resJson = await response.json();
-      const rawText = resJson.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!rawText) continue;
-
-      const cleaned = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
-      const parsed = JSON.parse(cleaned);
-
-      return {
-        success: true,
-        model,
-        data: parsed
-      };
-    } catch (err) {
-      lastError = err;
     }
   }
 
