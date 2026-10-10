@@ -566,16 +566,22 @@ function findOrders({ query, phone, name, ids, deviceId } = {}) {
     });
   }
 
-  // 2. Strict per-device retrieval: ONLY return orders created by this device or explicitly saved IDs
+  // 2. Per-device or customer phone retrieval (Strict privacy to prevent foreign leaks)
   const idSet = (ids && Array.isArray(ids)) ? new Set(ids) : new Set();
   const cleanDeviceId = (deviceId || '').trim();
+  const cleanPhone = (phone || '').replace(/[\s\-]/g, '');
 
-  if (cleanDeviceId || idSet.size > 0) {
+  if (cleanDeviceId || idSet.size > 0 || cleanPhone.length >= 8) {
     return allOrders.filter(o => {
       // 1. Matched by deviceId from cloud (order genuinely created on this device)
       if (cleanDeviceId && o.deviceId && o.deviceId === cleanDeviceId) return true;
       // 2. Matched by order ID list saved on this device
       if (idSet.has(o.id)) return true;
+      // 3. Matched by customer phone (reconnects customer's orders across browser resets)
+      if (cleanPhone.length >= 8) {
+        const orderPhone = (o.customerPhone || '').replace(/[\s\-]/g, '');
+        if (orderPhone && (orderPhone === cleanPhone || orderPhone.includes(cleanPhone))) return true;
+      }
 
       return false;
     });

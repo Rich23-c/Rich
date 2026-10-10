@@ -1308,11 +1308,14 @@ async function syncDeviceOrdersFromCloud() {
     }
 
     const deviceId = getDeviceId();
+    const savedPhone = localStorage.getItem('snack_maew_customer_phone');
     const params = new URLSearchParams();
     if (deviceId) params.append('deviceId', deviceId);
     if (localIds.length > 0) params.append('ids', localIds.join(','));
+    if (savedPhone && savedPhone.trim().length >= 8) params.append('phone', savedPhone.trim());
+    params.append('_t', Date.now());
 
-    const res = await fetch(`/api/orders-history?${params.toString()}`);
+    const res = await fetch(`/api/orders-history?${params.toString()}`, { cache: 'no-store' });
     const data = await res.json();
     const banner = document.getElementById('deviceActiveOrdersBanner');
 
@@ -1636,6 +1639,7 @@ async function loadOrderHistory(searchQuery = '') {
   try {
     const localIds = getLocalOrderIds();
     const deviceId = getDeviceId();
+    const savedPhone = localStorage.getItem('snack_maew_customer_phone');
 
     let url = '/api/orders-history';
     const params = new URLSearchParams();
@@ -1645,10 +1649,12 @@ async function loadOrderHistory(searchQuery = '') {
     } else {
       if (deviceId) params.append('deviceId', deviceId);
       if (localIds.length > 0) params.append('ids', localIds.join(','));
+      if (savedPhone && savedPhone.trim().length >= 8) params.append('phone', savedPhone.trim());
     }
+    params.append('_t', Date.now());
     url += `?${params.toString()}`;
 
-    const res = await fetch(url);
+    const res = await fetch(url, { cache: 'no-store' });
     const data = await res.json();
 
     if (data.success && data.data && data.data.length > 0) {

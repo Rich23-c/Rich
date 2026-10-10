@@ -15,12 +15,12 @@ document.addEventListener('DOMContentLoaded', () => {
   if (window.lucide) lucide.createIcons();
   showLoginOverlay();
 
-  // Auto-refresh orders every 8 seconds when authenticated
+  // Auto-refresh orders every 5 seconds when authenticated
   setInterval(() => {
-    if (adminPin && currentTab === 'orders') {
+    if (adminPin) {
       loadAdminOrders(false);
     }
-  }, 8000);
+  }, 5000);
 });
 
 // Reset PIN whenever user leaves the page or closes the tab
@@ -162,7 +162,10 @@ function logoutAdmin() {
 async function adminFetch(url, options = {}) {
   const headers = options.headers || {};
   headers['x-admin-pin'] = adminPin || '';
+  headers['Cache-Control'] = 'no-cache, no-store, must-revalidate';
+  headers['Pragma'] = 'no-cache';
   options.headers = headers;
+  options.cache = 'no-store';
 
   const res = await fetch(url, options);
   if (res.status === 401) {
@@ -200,6 +203,10 @@ function switchTab(tab) {
       content.classList.add('hidden');
     }
   });
+
+  if (tab === 'orders') {
+    loadAdminOrders(false);
+  }
 
   if (window.lucide) lucide.createIcons();
 }
@@ -758,10 +765,10 @@ async function deleteSnack(snackId, snackName) {
 
 async function loadAdminOrders(showLoading = false) {
   try {
-    const res = await adminFetch('/api/admin/orders');
+    const res = await adminFetch(`/api/admin/orders?_t=${Date.now()}`);
     const data = await res.json();
-    if (data.success && data.data) {
-      allOrders = data.data;
+    if (data.success && Array.isArray(data.data)) {
+      allOrders = data.data.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
       updateStats();
       renderOrdersTable();
     }
@@ -795,9 +802,21 @@ function savePurchasedItems(map) {
 function toggleSnackPurchased(snackNameEncoded) {
   const snackName = decodeURIComponent(snackNameEncoded);
   const map = getPurchasedItems();
-  map[snackName] = !map[snackName];
+  // Mark as purchased and remove immediately from shopping list
+  map[snackName] = true;
   savePurchasedItems(map);
   renderKitchenShoppingList();
+
+  const Toast = Swal.mixin({
+    toast: true,
+    position: 'top-end',
+    showConfirmButton: false,
+    timer: 1500
+  });
+  Toast.fire({
+    icon: 'success',
+    title: `✓ ลบ "${snackName}" ออกจากรายการที่ต้องซื้อแล้ว`
+  });
 }
 
 function clearAllPurchasedSnacks() {
@@ -807,11 +826,11 @@ function clearAllPurchasedSnacks() {
     toast: true,
     position: 'top-end',
     showConfirmButton: false,
-    timer: 1200
+    timer: 1500
   });
   Toast.fire({
     icon: 'success',
-    title: 'รีเซ็ตสถานะซื้อแล้วทั้งหมดเรียบร้อย'
+    title: 'รีเซ็ตและแสดงรายการขนมทั้งหมดเรียบร้อย'
   });
 }
 
@@ -858,7 +877,7 @@ function renderKitchenShoppingList() {
   });
 
   const purchasedMap = getPurchasedItems();
-  const itemsList = Object.values(itemsMap);
+  const allItemsList = Object.values(itemsMap);
 
   // Auto clean up purchased keys that are no longer in any active order
   let cleaned = false;
@@ -872,37 +891,37 @@ function renderKitchenShoppingList() {
     savePurchasedItems(purchasedMap);
   }
 
-  // Sort: unpurchased first, then higher quantity
-  itemsList.sort((a, b) => {
-    const aBought = !!purchasedMap[a.name];
-    const bBought = !!purchasedMap[b.name];
-    if (aBought !== bBought) return aBought ? 1 : -1;
-    return b.totalQuantity - a.totalQuantity;
-  });
+  // Filter only items that have NOT been bought yet!
+  // When admin clicks "ซื้อแล้ว", the item is immediately deleted/removed from this view!
+  const unpurchasedItems = allItemsList.filter(item => !purchasedMap[item.name]);
+  const boughtCount = allItemsList.length - unpurchasedItems.length;
 
-  const totalPieces = itemsList.reduce((sum, item) => sum + item.totalQuantity, 0);
+  // Sort by quantity descending
+  unpurchasedItems.sort((a, b) => b.totalQuantity - a.totalQuantity);
+
+  const totalPieces = unpurchasedItems.reduce((sum, item) => sum + item.totalQuantity, 0);
   if (countBadge) {
-    if (itemsList.length === 0) {
-      countBadge.innerText = '0 รายการ (เตรียมครบแล้ว)';
+    if (unpurchasedItems.length === 0) {
+      countBadge.innerText = allItemsList.length > 0 ? '✓ ซื้อครบทุกรายการแล้ว' : '0 รายการ';
       countBadge.className = 'bg-emerald-600 text-white text-[11px] font-bold px-2.5 py-0.5 rounded-full shadow-2xs';
     } else {
-      countBadge.innerText = `${itemsList.length} เมนู (รวม ${totalPieces} ชิ้น/กล่อง)`;
+      countBadge.innerText = `${unpurchasedItems.length} เมนูที่ต้องซื้อ (รวม ${totalPieces} ชิ้น/กล่อง)`;
       countBadge.className = 'bg-orange-600 text-white text-[11px] font-bold px-2.5 py-0.5 rounded-full shadow-2xs';
     }
   }
 
   container.innerHTML = '';
 
-  if (itemsList.length === 0) {
+  if (unpurchasedItems.length === 0) {
     container.innerHTML = `
-      <div class="col-span-full py-8 px-4 bg-white/90 rounded-2xl border border-dashed border-amber-300 text-center space-y-2 shadow-2xs">
+      <div class="col-span-full py-8 px-4 bg-white/90 rounded-2xl border border-dashed border-emerald-300 text-center space-y-2 shadow-2xs">
         <div class="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-2xl mx-auto shadow-2xs">
           🎉
         </div>
         <div>
-          <h5 class="font-bold text-slate-800 text-sm">เตรียมขนมครบทุกออเดอร์แล้ว! 🐾</h5>
+          <h5 class="font-bold text-slate-800 text-sm">ซื้อและเตรียมของครบแล้วทุกเมนู! 🐾</h5>
           <p class="text-xs text-slate-500 mt-0.5 max-w-md mx-auto">
-            ไม่มีรายการขนมที่ต้องเตรียมหรือซื้อเพิ่มในขณะนี้ (ออเดอร์ทั้งหมดอยู่ในสถานะเตรียมเสร็จแล้ว หรือส่งมอบแล้ว)
+            ${boughtCount > 0 ? `ซื้อเสร็จสิ้นแล้วทั้งหมด ${boughtCount} เมนู (หากต้องการดูใหม่ กดปุ่ม "รีเซ็ตติ๊กซื้อแล้ว" ด้านบนได้ครับ)` : 'ไม่มีรายการขนมที่ต้องเตรียมหรือซื้อเพิ่มในขณะนี้'}
           </p>
         </div>
       </div>
@@ -911,12 +930,9 @@ function renderKitchenShoppingList() {
     return;
   }
 
-  itemsList.forEach(item => {
-    const isBought = !!purchasedMap[item.name];
+  unpurchasedItems.forEach(item => {
     const card = document.createElement('div');
-    card.className = isBought
-      ? 'bg-emerald-50/80 rounded-2xl p-3.5 border-2 border-emerald-400/90 shadow-2xs space-y-3 transition duration-200'
-      : 'bg-white rounded-2xl p-3.5 border border-amber-200/90 shadow-2xs hover:border-orange-300 space-y-3 transition duration-200';
+    card.className = 'bg-white rounded-2xl p-3.5 border border-amber-200/90 shadow-2xs hover:border-orange-300 space-y-3 transition duration-200';
 
     // Order breakdown tags
     const breakdownHtml = item.orders.map(o => `
@@ -926,27 +942,17 @@ function renderKitchenShoppingList() {
       </span>
     `).join('');
 
-    const toggleButtonHtml = isBought
-      ? `
-        <button
-          type="button"
-          onclick="toggleSnackPurchased('${encodeURIComponent(item.name)}')"
-          class="w-full py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-xs flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer"
-        >
-          <i data-lucide="check-circle-2" class="w-4 h-4 text-white"></i>
-          <span>✓ ซื้อแล้ว / เตรียมแล้ว (แตะเพื่อเปลี่ยน)</span>
-        </button>
-      `
-      : `
-        <button
-          type="button"
-          onclick="toggleSnackPurchased('${encodeURIComponent(item.name)}')"
-          class="w-full py-2 px-3 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white rounded-xl text-xs font-bold transition shadow-xs flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer"
-        >
-          <i data-lucide="shopping-cart" class="w-4 h-4"></i>
-          <span>ยังไม่ได้ซื้อ (แตะเมื่อซื้อแล้ว)</span>
-        </button>
-      `;
+    const toggleButtonHtml = `
+      <button
+        type="button"
+        onclick="toggleSnackPurchased('${encodeURIComponent(item.name)}')"
+        class="w-full py-2.5 px-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-bold transition shadow-xs flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer"
+        title="แตะเพื่อลบรายการนี้ออกเมื่อซื้อแล้ว"
+      >
+        <i data-lucide="check" class="w-4 h-4 text-white"></i>
+        <span>✓ ซื้อแล้ว (แตะเพื่อลบรายการนี้ออก)</span>
+      </button>
+    `;
 
     card.innerHTML = `
       <div class="flex items-start gap-3">

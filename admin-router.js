@@ -149,6 +149,9 @@ router.delete('/api/admin/snacks/:id', requireAdmin, (req, res) => {
 // Admin get all orders
 router.get('/api/admin/orders', requireAdmin, (req, res) => {
   try {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     const orders = db.getOrders();
     res.json({ success: true, data: orders });
   } catch (err) {
