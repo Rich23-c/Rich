@@ -4,10 +4,18 @@ const { Jimp } = require('jimp');
 const { getFileHash, scanSlipQrCode, parseSlipQrInfo } = require('./slipQrScanner');
 const { checkDuplicateSlip } = require('./slipDuplicateChecker');
 
-// Support multiple Gemini API keys for seamless quota expansion & load balancing
+const db = require('./database');
+
+// Support multiple Gemini API keys from both Admin Settings & Environment variables
 function getGeminiApiKeys() {
-  const raw = process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || '';
-  return raw.split(',').map(k => k.trim()).filter(Boolean);
+  let settingsKeys = '';
+  try {
+    const s = db.getSettings ? db.getSettings() : {};
+    settingsKeys = s.geminiApiKeys || s.geminiApiKey || '';
+  } catch (e) {}
+  const envKeys = process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || '';
+  const combined = `${settingsKeys},${envKeys}`;
+  return [...new Set(combined.split(',').map(k => k.trim()).filter(Boolean))];
 }
 
 // High-speed, high-accuracy vision models in priority order

@@ -1594,6 +1594,10 @@ async function loadAdminSettings() {
       document.getElementById('settingIsOpen').checked = s.isOpen !== false;
       document.getElementById('settingClosedMessage').value = s.closedMessage || '';
 
+      // Gemini AI Slip Verification keys
+      const geminiEl = document.getElementById('settingGeminiKeys');
+      if (geminiEl) geminiEl.value = s.geminiApiKeys || s.geminiApiKey || '';
+
       // Update UI for store status in header and settings tab
       updateStoreStatusUi(s.isOpen);
 
@@ -1697,7 +1701,10 @@ async function saveShopSettings() {
 
     // Store status settings
     isOpen: document.getElementById('settingIsOpen').checked,
-    closedMessage: document.getElementById('settingClosedMessage') ? document.getElementById('settingClosedMessage').value.trim() : ''
+    closedMessage: document.getElementById('settingClosedMessage') ? document.getElementById('settingClosedMessage').value.trim() : '',
+
+    // Gemini AI Slip Verification keys
+    geminiApiKeys: document.getElementById('settingGeminiKeys') ? document.getElementById('settingGeminiKeys').value.trim() : ''
   };
 
   try {

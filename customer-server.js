@@ -225,11 +225,11 @@ app.get('/api/snacks', (req, res) => {
   }
 });
 
-// Get shop settings (sanitized, no admin pin)
+// Get shop settings (sanitized, no admin pin, no secret api keys)
 app.get('/api/settings', (req, res) => {
   try {
     const settings = db.getSettings();
-    const { adminPin, ...publicSettings } = settings;
+    const { adminPin, geminiApiKeys, geminiApiKey, ...publicSettings } = settings;
     res.setHeader('Cache-Control', 'public, max-age=15, stale-while-revalidate=60');
     res.json({ success: true, data: publicSettings });
   } catch (err) {
