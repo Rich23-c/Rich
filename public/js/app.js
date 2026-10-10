@@ -7,26 +7,158 @@ let currentSlipVerification = null;
 let uploadedSlipUrl = null;
 let qrDebounceTimeout = null;
 
+// Storage keys
+const LOCAL_STORAGE_ORDERS_KEY = 'snack_maew_my_orders';
+const LOCAL_STORAGE_SUBMITTED_KEY = 'snack_maew_submitted_on_this_device';
+
+// Comprehensive Tablet / iPad Detector (handles iPadOS desktop mode, touch screen, and screen resolution)
+function isIPadOrTablet() {
+  const ua = navigator.userAgent || '';
+  const platform = navigator.platform || '';
+  const maxTouch = navigator.maxTouchPoints || 0;
+  if (/iPad/i.test(ua)) return true;
+  if ((/Macintosh/i.test(ua) || platform === 'MacIntel') && maxTouch > 1) return true;
+  if (window.screen && Math.min(window.screen.width, window.screen.height) >= 600 && maxTouch > 0) return true;
+  if (/Tablet|Android(?!.*Mobile)/i.test(ua)) return true;
+  return false;
+}
+
+// Immediate purge for iPad/tablets that never actually submitted an order on this device
+(function purgeUnintendedTabletCache() {
+  try {
+    if (isIPadOrTablet() && !localStorage.getItem(LOCAL_STORAGE_SUBMITTED_KEY)) {
+      localStorage.removeItem('snack_maew_customer_name');
+      localStorage.removeItem('snack_maew_customer_phone');
+      localStorage.removeItem(LOCAL_STORAGE_ORDERS_KEY);
+    }
+  } catch (e) {}
+})();
+
+// Detect mobile phone model and browser environment
+function detectDeviceDetails() {
+  const ua = navigator.userAgent || '';
+  const platform = navigator.platform || '';
+  const maxTouch = navigator.maxTouchPoints || 0;
+  const w = window.screen ? window.screen.width : 0;
+  const h = window.screen ? window.screen.height : 0;
+  const ratio = window.devicePixelRatio || 1;
+  const screenRes = `${w}×${h}`;
+
+  let deviceType = 'desktop';
+  let model = 'ไม่ระบุรุ่น';
+  let os = 'Unknown OS';
+  let inApp = '';
+
+  if (/Line\//i.test(ua)) inApp = 'LINE 🟢';
+  else if (/FBAV|FBAN/i.test(ua)) inApp = 'Facebook 🔵';
+  else if (/Instagram/i.test(ua)) inApp = 'Instagram 📷';
+  else if (/musical_ly|ByteLocale|TikTok/i.test(ua)) inApp = 'TikTok 🎵';
+
+  const isIPad = /iPad/i.test(ua) || ((/Macintosh/i.test(ua) || platform === 'MacIntel') && maxTouch > 1);
+  const isIPhone = /iPhone/i.test(ua);
+  const isAndroid = /Android/i.test(ua);
+  const isWindows = /Windows/i.test(ua);
+  const isMac = !isIPad && /Macintosh/i.test(ua);
+
+  if (isIPhone) {
+    deviceType = 'mobile';
+    os = 'iOS';
+    const osMatch = ua.match(/OS (\d+[_\d]*)/);
+    if (osMatch) os = `iOS ${osMatch[1].replace(/_/g, '.')}`;
+
+    const minSide = Math.min(w, h);
+    const maxSide = Math.max(w, h);
+    const key = `${minSide}×${maxSide}@${ratio}`;
+
+    if (key === '430×932@3') model = 'iPhone 15 Pro Max / 16 Plus';
+    else if (key === '393×852@3') model = 'iPhone 14 Pro / 15 / 15 Pro / 16';
+    else if (key === '428×926@3') model = 'iPhone 13 Pro Max / 14 Plus';
+    else if (key === '390×844@3') model = 'iPhone 12 / 12 Pro / 13 / 13 Pro / 14';
+    else if (key === '414×896@3') model = 'iPhone 11 Pro Max / XS Max';
+    else if (key === '414×896@2') model = 'iPhone 11 / XR';
+    else if (key === '375×812@3') model = 'iPhone X / XS / 11 Pro / 12 mini / 13 mini';
+    else if (key === '414×736@3') model = 'iPhone 6+/7+/8+';
+    else if (key === '375×667@2') model = 'iPhone 6/7/8/SE';
+    else model = 'Apple iPhone';
+  } else if (isIPad) {
+    deviceType = 'tablet';
+    model = 'Apple iPad';
+    os = 'iPadOS';
+  } else if (isAndroid) {
+    deviceType = 'mobile';
+    os = 'Android';
+    const osMatch = ua.match(/Android\s+([0-9.]+)/i);
+    if (osMatch) os = `Android ${osMatch[1]}`;
+
+    const modelMatch = ua.match(/Android[^;]*;\s*([^;]+?)\s*(?:Build|[;)])/i);
+    if (modelMatch && modelMatch[1]) {
+      const raw = modelMatch[1].trim();
+      if (/^SM-S928/i.test(raw)) model = 'Samsung Galaxy S24 Ultra';
+      else if (/^SM-S926/i.test(raw)) model = 'Samsung Galaxy S24+';
+      else if (/^SM-S921/i.test(raw)) model = 'Samsung Galaxy S24';
+      else if (/^SM-S918/i.test(raw)) model = 'Samsung Galaxy S23 Ultra';
+      else if (/^SM-S916/i.test(raw)) model = 'Samsung Galaxy S23+';
+      else if (/^SM-S911/i.test(raw)) model = 'Samsung Galaxy S23';
+      else if (/^SM-S908/i.test(raw)) model = 'Samsung Galaxy S22 Ultra';
+      else if (/^SM-S90/i.test(raw)) model = 'Samsung Galaxy S22';
+      else if (/^SM-G998/i.test(raw)) model = 'Samsung Galaxy S21 Ultra';
+      else if (/^SM-G99/i.test(raw)) model = 'Samsung Galaxy S21';
+      else if (/^SM-A54/i.test(raw)) model = 'Samsung Galaxy A54 5G';
+      else if (/^SM-A/i.test(raw)) model = `Samsung Galaxy A-Series (${raw})`;
+      else if (/^SM-/i.test(raw)) model = `Samsung (${raw})`;
+      else if (/^CPH/i.test(raw)) model = `OPPO (${raw})`;
+      else if (/^V2|^V1/i.test(raw)) model = `Vivo (${raw})`;
+      else if (/^RMX/i.test(raw)) model = `Realme (${raw})`;
+      else if (/Redmi|POCO|Xiaomi|2201|2312/i.test(raw)) model = `Xiaomi / Redmi (${raw})`;
+      else if (/Pixel/i.test(raw)) model = `Google Pixel (${raw})`;
+      else model = raw;
+    } else {
+      model = 'Android Smartphone';
+    }
+  } else if (isWindows) {
+    deviceType = 'desktop';
+    model = 'Windows PC';
+    os = 'Windows';
+  } else if (isMac) {
+    deviceType = 'desktop';
+    model = 'Apple Mac';
+    os = 'macOS';
+  }
+
+  const summary = inApp ? `${model} (เปิดใน ${inApp})` : model;
+  return {
+    deviceType,
+    deviceModel: model,
+    os,
+    inApp,
+    screen: screenRes,
+    summary
+  };
+}
+
 // Initialize on DOM ready
 document.addEventListener('DOMContentLoaded', async () => {
   if (window.lucide) lucide.createIcons();
 
-  // One-time self-healing cleanup to guarantee strict device isolation
-  const PURGE_FLAG = 'snack_maew_isolation_clean_v9';
-  if (!localStorage.getItem(PURGE_FLAG)) {
+  // One-time self-healing cleanup for iPad/tablets that never placed an order
+  if (isIPadOrTablet() && !localStorage.getItem(LOCAL_STORAGE_SUBMITTED_KEY)) {
     localStorage.removeItem('snack_maew_customer_name');
     localStorage.removeItem('snack_maew_customer_phone');
     localStorage.removeItem(LOCAL_STORAGE_ORDERS_KEY);
-    localStorage.removeItem('snack_maew_orders_history');
-    localStorage.removeItem('snack_maew_device_purged_v2');
-    localStorage.setItem(PURGE_FLAG, '1');
+    const n = document.getElementById('customerName');
+    const p = document.getElementById('customerPhone');
+    if (n) n.value = '';
+    if (p) p.value = '';
+    const b = document.getElementById('deviceActiveOrdersBanner');
+    if (b) b.classList.add('hidden');
   }
 
   // Restore customer contact info from persistent storage ONLY if typed on this device
   const nameInput = document.getElementById('customerName');
   const phoneInput = document.getElementById('customerPhone');
   if (nameInput) {
-    nameInput.value = localStorage.getItem('snack_maew_customer_name') || '';
+    const savedName = localStorage.getItem('snack_maew_customer_name');
+    if (savedName && !nameInput.value) nameInput.value = savedName;
     nameInput.addEventListener('input', e => {
       const v = e.target.value.trim();
       if (v) localStorage.setItem('snack_maew_customer_name', v);
@@ -34,7 +166,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
   if (phoneInput) {
-    phoneInput.value = localStorage.getItem('snack_maew_customer_phone') || '';
+    const savedPhone = localStorage.getItem('snack_maew_customer_phone');
+    if (savedPhone && !phoneInput.value) phoneInput.value = savedPhone;
     phoneInput.addEventListener('input', e => {
       const v = e.target.value.trim();
       if (v) localStorage.setItem('snack_maew_customer_phone', v);
@@ -820,7 +953,10 @@ async function confirmAndSaveOrder() {
       formData.append('slipBase64', currentSlipVerification.slipBase64);
     }
   }
+  const devDetails = detectDeviceDetails();
   formData.append('deviceId', getDeviceId());
+  formData.append('deviceInfo', JSON.stringify(devDetails));
+  formData.append('deviceModel', devDetails.summary || devDetails.deviceModel);
   formData.append('customerName', customerName);
   formData.append('customerPhone', customerPhone);
   formData.append('items', JSON.stringify(items));
@@ -843,6 +979,9 @@ async function confirmAndSaveOrder() {
           origin: { y: 0.6 }
         });
       }
+
+      // Mark this device as having genuinely submitted an order
+      localStorage.setItem(LOCAL_STORAGE_SUBMITTED_KEY, 'true');
 
       // Save customer contact info to persistent storage
       if (customerName) localStorage.setItem('snack_maew_customer_name', customerName);
@@ -1079,7 +1218,6 @@ function displayVerificationResult(v, expectedAmount) {
 
 // State for order history & tracking
 let currentActiveReceiptOrderId = null;
-const LOCAL_STORAGE_ORDERS_KEY = 'snack_maew_my_orders';
 
 // Helpers for localStorage
 function getLocalOrderIds() {
@@ -1158,10 +1296,18 @@ let latestActiveDeviceOrder = null;
 // Synchronize device orders from cloud (Mobile memory across browser close)
 async function syncDeviceOrdersFromCloud() {
   try {
-    const deviceId = getDeviceId();
     const localIds = getLocalOrderIds();
+    const hasSubmitted = localStorage.getItem(LOCAL_STORAGE_SUBMITTED_KEY);
 
-    // If device has no local IDs and no persistent cookie, do not send empty query
+    // If device has no local IDs and never submitted an order on this device, it is a completely clean device
+    if (localIds.length === 0 && !hasSubmitted) {
+      const banner = document.getElementById('deviceActiveOrdersBanner');
+      if (banner) banner.classList.add('hidden');
+      latestActiveDeviceOrder = null;
+      return;
+    }
+
+    const deviceId = getDeviceId();
     const params = new URLSearchParams();
     if (deviceId) params.append('deviceId', deviceId);
     if (localIds.length > 0) params.append('ids', localIds.join(','));
@@ -1431,6 +1577,13 @@ function showReceiptModal(order) {
   document.getElementById('modalOrderDate').innerText = new Date(order.createdAt).toLocaleString('th-TH');
   document.getElementById('modalTotalPrice').innerText = `${order.totalPrice.toLocaleString()} บาท`;
 
+  const modalDeviceEl = document.getElementById('modalDeviceModel');
+  if (modalDeviceEl) {
+    const d = order.deviceInfo || (order.slipVerification && order.slipVerification.deviceInfo) || {};
+    const model = order.deviceModel || d.summary || d.deviceModel || 'อุปกรณ์มือถือ';
+    modalDeviceEl.innerText = `📱 ${model}`;
+  }
+
   const itemsListEl = document.getElementById('modalItemsList');
   itemsListEl.innerHTML = (order.items || []).map(item => `
     <div class="flex justify-between text-xs text-slate-700">
@@ -1542,8 +1695,11 @@ function renderEmptyOrderHistory(customMsg = null) {
 // Clear order history stored on this device
 function clearDeviceOrderHistory() {
   localStorage.removeItem(LOCAL_STORAGE_ORDERS_KEY);
+  localStorage.removeItem(LOCAL_STORAGE_SUBMITTED_KEY);
   localStorage.removeItem('snack_maew_customer_name');
   localStorage.removeItem('snack_maew_customer_phone');
+  localStorage.removeItem('snack_maew_device_id');
+  document.cookie = 'snack_maew_device_id=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
   updateHistoryBadge();
   const banner = document.getElementById('deviceActiveOrdersBanner');
   if (banner) banner.classList.add('hidden');
@@ -1580,7 +1736,10 @@ function renderOrderHistoryList(orders) {
           <div class="font-mono font-semibold text-stone-900 text-xs flex items-center gap-1.5">
             <span>${order.id}</span>
           </div>
-          <div class="text-[11px] text-stone-400">${dateFormatted}</div>
+          <div class="text-[11px] text-stone-400 flex items-center gap-1.5 mt-0.5">
+            <span>${dateFormatted}</span>
+            <span class="text-[10px] text-stone-600 bg-stone-100 px-1.5 py-0.2 rounded font-sans">📱 ${order.deviceModel || 'อุปกรณ์มือถือ'}</span>
+          </div>
         </div>
         <span class="px-2.5 py-0.5 rounded-full text-xs font-medium border ${statusInfo.badgeClass}">
           ${statusInfo.label}

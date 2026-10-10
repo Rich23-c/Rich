@@ -1140,6 +1140,10 @@ function renderOrdersTable() {
       <td class="p-3.5">
         <div class="font-bold text-slate-900 text-xs">${order.customerName}</div>
         <div class="text-[11px] text-slate-500">${order.customerPhone || 'ไม่ระบุเบอร์'}</div>
+        <div class="inline-flex items-center gap-1 text-[10px] text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md mt-1 font-medium" title="${order.deviceModel || 'ไม่ระบุรุ่น'}">
+          <span>📱</span>
+          <span>${order.deviceModel || 'อุปกรณ์มือถือ'}</span>
+        </div>
       </td>
       <td class="p-3.5 space-y-1">
         ${itemsHtml}
@@ -1267,6 +1271,10 @@ function renderOrdersTable() {
             <div>
               <span class="text-slate-400 text-[10px]">ลูกค้า:</span>
               <span class="font-bold text-slate-800 ml-1">${order.customerName}</span>
+              <div class="inline-flex items-center gap-1 text-[10px] text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded mt-0.5 font-medium">
+                <span>📱</span>
+                <span>${order.deviceModel || 'อุปกรณ์มือถือ'}</span>
+              </div>
             </div>
             <div>${phoneCallBtn}</div>
           </div>
@@ -1426,6 +1434,14 @@ function openSlipDetailModal(orderId) {
     } else {
       dupEl.innerHTML = `<span class="inline-flex items-center gap-1 text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 text-[11px] font-semibold"><i data-lucide="shield-check" class="w-3 h-3 text-emerald-600"></i> ไม่ซ้ำ (สลิปใหม่)</span>`;
     }
+  }
+
+  // Device model display
+  const deviceEl = document.getElementById('slipModalDevice');
+  if (deviceEl) {
+    const d = order.deviceInfo || (v && v.deviceInfo) || {};
+    const model = order.deviceModel || d.summary || d.deviceModel || 'อุปกรณ์มือถือ';
+    deviceEl.innerText = `📱 ${model}`;
   }
 
   const banner = document.getElementById('slipModalStatusBanner');

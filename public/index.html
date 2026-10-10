@@ -32,29 +32,28 @@
     }
   </script>
   <!-- Lucide Icons -->
-  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-  <meta http-equiv="Pragma" content="no-cache">
-  <meta http-equiv="Expires" content="0">
   <script src="https://unpkg.com/lucide@latest"></script>
   <!-- SweetAlert2 -->
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   <!-- Canvas Confetti -->
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
-  <link rel="stylesheet" href="/css/style.css?v=20261009_v9">
-  <!-- Immediate Device-Isolation Storage Self-Healing Script -->
+  <link rel="stylesheet" href="/css/style.css">
+  <!-- Immediate Device Isolation: Purge any foreign/unintended storage before render -->
   <script>
     (function() {
       try {
-        const PURGE_FLAG = 'snack_maew_isolation_clean_v9';
-        if (!localStorage.getItem(PURGE_FLAG)) {
-          localStorage.removeItem('snack_maew_customer_name');
-          localStorage.removeItem('snack_maew_customer_phone');
-          localStorage.removeItem('snack_maew_my_orders');
-          localStorage.removeItem('snack_maew_orders_history');
-          localStorage.removeItem('snack_maew_device_purged_v2');
-          localStorage.setItem(PURGE_FLAG, '1');
+        const SUBMITTED_KEY = 'snack_maew_submitted_on_this_device';
+        const CLEAN_KEY = 'snack_maew_isolation_clean_v10';
+        if (!localStorage.getItem(SUBMITTED_KEY) || !localStorage.getItem(CLEAN_KEY)) {
+          if (!localStorage.getItem(SUBMITTED_KEY)) {
+            localStorage.removeItem('snack_maew_customer_name');
+            localStorage.removeItem('snack_maew_customer_phone');
+            localStorage.removeItem('snack_maew_my_orders');
+            localStorage.removeItem('snack_maew_orders_history');
+          }
+          localStorage.setItem(CLEAN_KEY, '1');
         }
-      } catch(e) {}
+      } catch (e) {}
     })();
   </script>
 </head>
@@ -200,6 +199,7 @@
                 id="customerName"
                 name="customerName"
                 required
+                autocomplete="off"
                 placeholder="ระบุชื่อของคุณ (เช่น คุณสมชาย หรือ น้องแม็ก)"
                 class="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-stone-200 bg-stone-50/30 hover:bg-white focus:bg-white focus:outline-none focus:ring-1 focus:ring-stone-900 focus:border-stone-900 text-sm text-stone-800 placeholder-stone-400 transition"
               >
@@ -219,6 +219,7 @@
                 type="tel"
                 id="customerPhone"
                 name="customerPhone"
+                autocomplete="off"
                 placeholder="เช่น 081-234-5678"
                 class="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-stone-200 bg-stone-50/30 hover:bg-white focus:bg-white focus:outline-none focus:ring-1 focus:ring-stone-900 focus:border-stone-900 text-sm text-stone-800 placeholder-stone-400 transition"
               >
@@ -668,6 +669,10 @@
           <span>ชื่อลูกค้า:</span>
           <span id="modalCustomerName" class="font-medium text-stone-900">-</span>
         </div>
+        <div class="flex justify-between text-stone-600 font-sans items-center">
+          <span>สั่งจากอุปกรณ์:</span>
+          <span id="modalDeviceModel" class="font-medium text-stone-800 text-[11px] bg-stone-100 px-2 py-0.5 rounded-md">📱 -</span>
+        </div>
         <div class="flex justify-between text-stone-600 font-sans">
           <span>เวลาที่สั่ง:</span>
           <span id="modalOrderDate" class="text-stone-800">-</span>
@@ -806,6 +811,6 @@
     </div>
   </div>
 
-  <script src="/js/app.js?v=20261009_v9"></script>
+  <script src="/js/app.js?v=2.7.0"></script>
 </body>
 </html>

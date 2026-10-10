@@ -38,17 +38,86 @@ if (!fs.existsSync(slipsUploadDir)) {
   fs.mkdirSync(slipsUploadDir, { recursive: true });
 }
 
-// Serve static assets for Customer Storefront with instant revalidation for HTML, JS & CSS
-app.use(express.static(path.join(__dirname, 'public'), {
-  setHeaders: (res, filePath) => {
-    if (filePath.endsWith('.html') || filePath.endsWith('.js') || filePath.endsWith('.css')) {
-      // HTML, JS, and CSS must revalidate immediately to prevent stale cached client code
-      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-      res.setHeader('Pragma', 'no-cache');
-      res.setHeader('Expires', '0');
+// Helper to detect mobile phone model and browser environment
+function parseDeviceFromUserAgent(ua, clientInfo = {}) {
+  ua = ua || '';
+  let model = (clientInfo.deviceModel || '').trim();
+  let os = (clientInfo.os || '').trim();
+  let inApp = '';
+
+  if (/Line\//i.test(ua)) inApp = 'LINE 🟢';
+  else if (/FBAV|FBAN/i.test(ua)) inApp = 'Facebook 🔵';
+  else if (/Instagram/i.test(ua)) inApp = 'Instagram 📷';
+  else if (/musical_ly|ByteLocale|TikTok/i.test(ua)) inApp = 'TikTok 🎵';
+
+  if (!model || model === 'ไม่ระบุรุ่น') {
+    if (/iPhone/i.test(ua)) {
+      model = 'Apple iPhone';
+      const m = ua.match(/OS (\d+[_\d]*)/);
+      if (m) os = 'iOS ' + m[1].replace(/_/g, '.');
+    } else if (/iPad/i.test(ua) || (/Macintosh/i.test(ua) && clientInfo.deviceType === 'tablet')) {
+      model = 'Apple iPad';
+      os = 'iPadOS';
+    } else if (/Android/i.test(ua)) {
+      const m = ua.match(/Android\s+([0-9.]+)/i);
+      if (m) os = 'Android ' + m[1];
+      const modelMatch = ua.match(/Android[^;]*;\s*([^;]+?)\s*(?:Build|[;)])/i);
+      if (modelMatch && modelMatch[1]) {
+        const raw = modelMatch[1].trim();
+        if (/^SM-S928/i.test(raw)) model = 'Samsung Galaxy S24 Ultra';
+        else if (/^SM-S926/i.test(raw)) model = 'Samsung Galaxy S24+';
+        else if (/^SM-S921/i.test(raw)) model = 'Samsung Galaxy S24';
+        else if (/^SM-S918/i.test(raw)) model = 'Samsung Galaxy S23 Ultra';
+        else if (/^SM-S916/i.test(raw)) model = 'Samsung Galaxy S23+';
+        else if (/^SM-S911/i.test(raw)) model = 'Samsung Galaxy S23';
+        else if (/^SM-S908/i.test(raw)) model = 'Samsung Galaxy S22 Ultra';
+        else if (/^SM-S90/i.test(raw)) model = 'Samsung Galaxy S22';
+        else if (/^SM-G998/i.test(raw)) model = 'Samsung Galaxy S21 Ultra';
+        else if (/^SM-G99/i.test(raw)) model = 'Samsung Galaxy S21';
+        else if (/^SM-A54/i.test(raw)) model = 'Samsung Galaxy A54 5G';
+        else if (/^SM-A/i.test(raw)) model = `Samsung Galaxy A-Series (${raw})`;
+        else if (/^SM-/i.test(raw)) model = `Samsung (${raw})`;
+        else if (/^CPH/i.test(raw)) model = `OPPO (${raw})`;
+        else if (/^V2|^V1/i.test(raw)) model = `Vivo (${raw})`;
+        else if (/^RMX/i.test(raw)) model = `Realme (${raw})`;
+        else if (/Redmi|POCO|Xiaomi|2201|2312/i.test(raw)) model = `Xiaomi / Redmi (${raw})`;
+        else if (/Pixel/i.test(raw)) model = `Google Pixel (${raw})`;
+        else model = raw;
+      } else {
+        model = 'Android Smartphone';
+      }
+    } else if (/Windows/i.test(ua)) {
+      model = 'Windows PC';
+      os = 'Windows';
+    } else if (/Macintosh/i.test(ua)) {
+      model = 'Apple Mac';
+      os = 'macOS';
     } else {
-      // Images and media assets can be cached
-      res.setHeader('Cache-Control', 'public, max-age=86400');
+      model = 'อุปกรณ์มือถือ';
+    }
+  }
+
+  const summary = inApp ? `${model} (เปิดใน ${inApp})` : model;
+  return {
+    deviceType: clientInfo.deviceType || (/iPhone|Android|Mobile/i.test(ua) ? 'mobile' : (/iPad/i.test(ua) ? 'tablet' : 'desktop')),
+    deviceModel: model,
+    os: os || clientInfo.os || '',
+    inApp: inApp || clientInfo.inApp || '',
+    screen: clientInfo.screen || '',
+    summary: clientInfo.summary || summary
+  };
+}
+
+// Serve static assets for Customer Storefront with CDN-optimized Cache-Control
+app.use(express.static(path.join(__dirname, 'public'), {
+  maxAge: '1d',
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.html') || filePath.endsWith('.js')) {
+      // HTML and JS scripts revalidate immediately to ensure instant code updates across all devices
+      res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+    } else {
+      // CSS, images, icons cached in browser for 1 day, and Cloudflare Edge CDN for 7 days
+      res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400');
     }
   }
 }));
@@ -393,9 +462,23 @@ app.post('/api/orders', uploadSlip.single('slip'), async (req, res) => {
       slipVerification.slipFilename = slipFilename || slipVerification.slipFilename || null;
     }
 
+    // Extract and parse device model information
+    let clientDevInfo = {};
+    try {
+      if (typeof body.deviceInfo === 'string') clientDevInfo = JSON.parse(body.deviceInfo);
+      else if (body.deviceInfo && typeof body.deviceInfo === 'object') clientDevInfo = body.deviceInfo;
+    } catch (e) {}
+
+    const userAgent = req.headers['user-agent'] || '';
+    const parsedDevice = parseDeviceFromUserAgent(userAgent, clientDevInfo);
+    const deviceModel = clientDevInfo.summary || parsedDevice.summary || parsedDevice.deviceModel || 'ไม่ระบุรุ่น';
+    const deviceInfo = { ...parsedDevice, ...clientDevInfo, summary: deviceModel };
+
     // Save order with permanently locked cost, profit, and pending review status
     const orderData = {
       deviceId,                       // Cloud memory for mobile phone device
+      deviceModel,                    // Detected mobile device model (e.g. iPhone 15 Pro, Samsung Galaxy S23)
+      deviceInfo,                     // Full hardware and OS information
       customerName: body.customerName,
       customerPhone: body.customerPhone || '',
       customerNote: body.customerNote || '',
@@ -429,10 +512,7 @@ app.post('/api/orders', uploadSlip.single('slip'), async (req, res) => {
 // Customer order history & search (Supports cloud recall by deviceId, phone, query, or IDs)
 app.get('/api/orders-history', (req, res) => {
   try {
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
     const { query, phone, name, ids, deviceId } = req.query;
     let idList = [];
     if (ids) {
@@ -459,6 +539,7 @@ app.get('/api/orders-history', (req, res) => {
 // Customer track single order
 app.get('/api/orders/:id', (req, res) => {
   try {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
     const order = db.getOrderById(req.params.id);
     if (!order) {
       return res.status(404).json({ success: false, error: 'ไม่พบหมายเลขคำสั่งซื้อนี้' });

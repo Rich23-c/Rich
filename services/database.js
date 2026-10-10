@@ -197,11 +197,15 @@ async function initSupabaseSync() {
       .order('createdAt', { ascending: false });
 
     if (!ordersErr && ordersData && ordersData.length > 0) {
-      memoryCache.orders = ordersData;
+      memoryCache.orders = ordersData.map(o => ({
+        ...o,
+        deviceModel: o.deviceModel || (o.slipVerification && o.slipVerification.deviceModel) || 'ไม่ระบุรุ่น',
+        deviceInfo: o.deviceInfo || (o.slipVerification && o.slipVerification.deviceInfo) || null
+      }));
       writeJson(ORDERS_FILE, memoryCache.orders);
     } else if (!ordersErr && (!ordersData || ordersData.length === 0) && memoryCache.orders.length > 0) {
       // Seed local orders to Supabase cloud
-      const sanitizedSeeds = memoryCache.orders.map(({ slipBase64, ...rest }) => rest);
+      const sanitizedSeeds = memoryCache.orders.map(({ slipBase64, deviceInfo, deviceModel, ...rest }) => rest);
       await supabase.from('orders').upsert(sanitizedSeeds);
     }
 
@@ -252,7 +256,11 @@ async function backgroundSyncFromSupabase() {
       .order('createdAt', { ascending: false });
 
     if (ordersData && ordersData.length >= 0) {
-      memoryCache.orders = ordersData;
+      memoryCache.orders = ordersData.map(o => ({
+        ...o,
+        deviceModel: o.deviceModel || (o.slipVerification && o.slipVerification.deviceModel) || 'ไม่ระบุรุ่น',
+        deviceInfo: o.deviceInfo || (o.slipVerification && o.slipVerification.deviceInfo) || null
+      }));
       writeJson(ORDERS_FILE, memoryCache.orders);
     }
 
@@ -448,9 +456,14 @@ function createOrder(orderData) {
   const randStr = Math.random().toString(36).substring(2, 6).toUpperCase();
   const orderId = `MW-${dateStr}-${randStr}`;
 
+  const devModel = orderData.deviceModel || (orderData.deviceInfo && orderData.deviceInfo.summary) || 'ไม่ระบุรุ่น';
+  const devInfo = orderData.deviceInfo || null;
+
   const newOrder = {
     id: orderId,
     deviceId: orderData.deviceId?.trim() || null, // Mobile device unique identifier
+    deviceModel: devModel,                       // Detected phone model (e.g. iPhone 15 Pro, Samsung Galaxy S23)
+    deviceInfo: devInfo,
     customerName: orderData.customerName?.trim() || 'ไม่ระบุชื่อ',
     customerPhone: orderData.customerPhone?.trim() || '',
     customerEmail: orderData.customerEmail?.trim() || '',
@@ -472,6 +485,12 @@ function createOrder(orderData) {
     createdAt: now.toISOString()
   };
 
+  // Embed deviceModel into slipVerification for persistent storage in Supabase JSONB
+  if (newOrder.slipVerification && typeof newOrder.slipVerification === 'object') {
+    newOrder.slipVerification.deviceModel = devModel;
+    newOrder.slipVerification.deviceInfo = devInfo;
+  }
+
   memoryCache.orders.unshift(newOrder);
   writeJson(ORDERS_FILE, memoryCache.orders);
 
@@ -485,7 +504,7 @@ function createOrder(orderData) {
   });
 
   if (supabase) {
-    const { slipBase64, ...supabasePayload } = newOrder;
+    const { slipBase64, deviceInfo, deviceModel, ...supabasePayload } = newOrder;
     safeSupabaseExec(
       supabase.from('orders').insert([supabasePayload]),
       'Insert order'
