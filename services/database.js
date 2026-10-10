@@ -190,23 +190,36 @@ async function initSupabaseSync() {
       await supabase.from('snacks').upsert(seeds);
     }
 
-    // 3. Sync Orders
+    // 3. Sync Orders (Bi-directional merge so no local orders are ever lost on container restart)
     const { data: ordersData, error: ordersErr } = await supabase
       .from('orders')
       .select('*')
       .order('createdAt', { ascending: false });
 
-    if (!ordersErr && ordersData && ordersData.length > 0) {
-      memoryCache.orders = ordersData.map(o => ({
-        ...o,
-        deviceModel: o.deviceModel || (o.slipVerification && o.slipVerification.deviceModel) || 'ไม่ระบุรุ่น',
-        deviceInfo: o.deviceInfo || (o.slipVerification && o.slipVerification.deviceInfo) || null
-      }));
+    if (!ordersErr) {
+      const ordersMap = new Map();
+      (ordersData || []).forEach(o => {
+        const mapped = mapSupabaseOrder(o);
+        ordersMap.set(mapped.id, mapped);
+      });
+
+      const missingInCloud = [];
+      (memoryCache.orders || []).forEach(localOrder => {
+        if (!ordersMap.has(localOrder.id)) {
+          ordersMap.set(localOrder.id, localOrder);
+          missingInCloud.push(localOrder);
+        }
+      });
+
+      memoryCache.orders = Array.from(ordersMap.values()).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
       writeJson(ORDERS_FILE, memoryCache.orders);
-    } else if (!ordersErr && (!ordersData || ordersData.length === 0) && memoryCache.orders.length > 0) {
-      // Seed local orders to Supabase cloud
-      const sanitizedSeeds = memoryCache.orders.map(({ slipBase64, deviceInfo, deviceModel, ...rest }) => rest);
-      await supabase.from('orders').upsert(sanitizedSeeds);
+
+      if (missingInCloud.length > 0) {
+        console.log(`☁️ [Cloud Database] Seeding ${missingInCloud.length} local order(s) up to Supabase cloud...`);
+        for (const order of missingInCloud) {
+          await upsertOrderToSupabase(order);
+        }
+      }
     }
 
     // 4. Sync Permanent Used Slips Memory Registry (Retained forever across order resets)
@@ -247,6 +260,96 @@ async function initSupabaseSync() {
   }
 }
 
+function mapSupabaseOrder(o) {
+  const v = o.slipVerification || {};
+  return {
+    ...o,
+    deviceId: o.deviceId || v.deviceId || null,
+    deviceModel: o.deviceModel || v.deviceModel || (v.deviceInfo && v.deviceInfo.summary) || 'ไม่ระบุรุ่น',
+    deviceInfo: o.deviceInfo || v.deviceInfo || null,
+    qrData: o.qrData || v.qrData || v.rawQrData || null,
+    transactionRef: o.transactionRef || v.transactionRef || null,
+    bankName: o.bankName || v.bankName || null
+  };
+}
+
+async function upsertOrderToSupabase(order) {
+  if (!supabase) return;
+  try {
+    // 1. Ensure all device and metadata fields are safely retained in slipVerification JSONB
+    const slipV = (order.slipVerification && typeof order.slipVerification === 'object') ? { ...order.slipVerification } : {};
+    slipV.deviceId = order.deviceId || slipV.deviceId || null;
+    slipV.deviceModel = order.deviceModel || slipV.deviceModel || 'ไม่ระบุรุ่น';
+    slipV.deviceInfo = order.deviceInfo || slipV.deviceInfo || null;
+    slipV.qrData = order.qrData || slipV.qrData || null;
+    slipV.transactionRef = order.transactionRef || slipV.transactionRef || null;
+    slipV.bankName = order.bankName || slipV.bankName || null;
+
+    // Standard columns that match the base PostgreSQL orders table
+    const standardPayload = {
+      id: order.id,
+      customerName: order.customerName,
+      customerPhone: order.customerPhone || '',
+      customerEmail: order.customerEmail || '',
+      customerAddress: order.customerAddress || '',
+      customerNote: order.customerNote || '',
+      items: order.items || [],
+      totalPrice: Number(order.totalPrice) || 0,
+      totalCost: Number(order.totalCost) || 0,
+      totalProfit: Number(order.totalProfit) || 0,
+      profitMargin: Number(order.profitMargin) || 0,
+      slipImage: order.slipImage || null,
+      slipVerification: slipV,
+      orderStatus: order.orderStatus || 'pending',
+      adminNotes: order.adminNotes || '',
+      createdAt: order.createdAt || new Date().toISOString()
+    };
+
+    // Attempt full payload first (in case table has been updated with extra columns)
+    const fullPayload = {
+      ...standardPayload,
+      deviceId: order.deviceId || null,
+      qrData: order.qrData || null,
+      transactionRef: order.transactionRef || null,
+      bankName: order.bankName || null
+    };
+
+    const { error } = await supabase.from('orders').upsert([fullPayload]);
+    if (error) {
+      // If error (e.g. column "deviceId" doesn't exist), retry with standardPayload
+      const { error: fallbackErr } = await supabase.from('orders').upsert([standardPayload]);
+      if (fallbackErr) {
+        console.error('[Cloud Database] Order upsert failed:', fallbackErr.message);
+      } else {
+        console.log(`✅ [Cloud Database] Order ${order.id} persisted to Supabase (standard schema)`);
+      }
+    } else {
+      console.log(`✅ [Cloud Database] Order ${order.id} persisted to Supabase (full schema)`);
+    }
+  } catch (err) {
+    console.warn('[Cloud Database] Exception during order upsert:', err.message);
+  }
+}
+
+async function syncOrderStatusToSupabase(id, status, adminNotes) {
+  if (!supabase) return;
+  try {
+    const payload = { orderStatus: status };
+    if (adminNotes !== null) payload.adminNotes = adminNotes;
+
+    const { error } = await supabase.from('orders').update({ ...payload, updatedAt: new Date().toISOString() }).eq('id', id);
+    if (error) {
+      // Retry without updatedAt in case column doesn't exist in Supabase table
+      const { error: err2 } = await supabase.from('orders').update(payload).eq('id', id);
+      if (err2) {
+        console.error('[Cloud Database] Update order status failed:', err2.message);
+      }
+    }
+  } catch (err) {
+    console.warn('[Cloud Database] Exception during order status update:', err.message);
+  }
+}
+
 async function backgroundSyncFromSupabase() {
   if (!supabase || !memoryCache.isSupabaseActive) return;
   try {
@@ -255,12 +358,19 @@ async function backgroundSyncFromSupabase() {
       .select('*')
       .order('createdAt', { ascending: false });
 
-    if (ordersData && ordersData.length >= 0) {
-      memoryCache.orders = ordersData.map(o => ({
-        ...o,
-        deviceModel: o.deviceModel || (o.slipVerification && o.slipVerification.deviceModel) || 'ไม่ระบุรุ่น',
-        deviceInfo: o.deviceInfo || (o.slipVerification && o.slipVerification.deviceInfo) || null
-      }));
+    if (ordersData && Array.isArray(ordersData)) {
+      const ordersMap = new Map();
+      ordersData.forEach(o => {
+        const mapped = mapSupabaseOrder(o);
+        ordersMap.set(mapped.id, mapped);
+      });
+      // Keep any unsaved local orders in memory
+      (memoryCache.orders || []).forEach(localOrder => {
+        if (!ordersMap.has(localOrder.id)) {
+          ordersMap.set(localOrder.id, localOrder);
+        }
+      });
+      memoryCache.orders = Array.from(ordersMap.values()).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
       writeJson(ORDERS_FILE, memoryCache.orders);
     }
 
@@ -504,11 +614,7 @@ function createOrder(orderData) {
   });
 
   if (supabase) {
-    const { slipBase64, deviceInfo, deviceModel, ...supabasePayload } = newOrder;
-    safeSupabaseExec(
-      supabase.from('orders').insert([supabasePayload]),
-      'Insert order'
-    );
+    upsertOrderToSupabase(newOrder);
   }
 
   return newOrder;
@@ -528,19 +634,7 @@ function updateOrderStatus(id, status, adminNotes = null) {
   writeJson(ORDERS_FILE, memoryCache.orders);
 
   if (supabase) {
-    const updatePayload = {
-      orderStatus: status,
-      updatedAt: memoryCache.orders[index].updatedAt
-    };
-    if (adminNotes !== null) {
-      updatePayload.adminNotes = adminNotes;
-    }
-    safeSupabaseExec(
-      supabase.from('orders')
-        .update(updatePayload)
-        .eq('id', id),
-      'Update order status'
-    );
+    syncOrderStatusToSupabase(id, status, adminNotes);
   }
 
   return memoryCache.orders[index];
