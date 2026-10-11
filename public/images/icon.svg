@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f97316"/>
+      <stop offset="100%" stop-color="#ea580c"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000000" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="128" fill="url(#grad)"/>
+  <!-- Inner circular glow -->
+  <circle cx="256" cy="256" r="190" fill="#ffffff" fill-opacity="0.12"/>
+  
+  <!-- Cat Paw Icon (Maew Paw) -->
+  <!-- Main pad -->
+  <ellipse cx="256" cy="310" rx="95" ry="75" fill="#ffffff" filter="url(#shadow)"/>
+  <!-- Top toe 1 (far left) -->
+  <ellipse cx="160" cy="205" rx="36" ry="48" fill="#ffffff" filter="url(#shadow)"/>
+  <!-- Top toe 2 (middle left) -->
+  <ellipse cx="222" cy="165" rx="38" ry="52" fill="#ffffff" filter="url(#shadow)"/>
+  <!-- Top toe 3 (middle right) -->
+  <ellipse cx="290" cy="165" rx="38" ry="52" fill="#ffffff" filter="url(#shadow)"/>
+  <!-- Top toe 4 (far right) -->
+  <ellipse cx="352" cy="205" rx="36" ry="48" fill="#ffffff" filter="url(#shadow)"/>
+</svg>

@@ -6,6 +6,10 @@
   <meta name="theme-color" content="#ea580c">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="apple-touch-icon" href="/images/icon-192.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="/images/icon-192.png">
+  <link rel="icon" type="image/svg+xml" href="/images/icon.svg">
   <title>ร้านขนมแม้ว 🐾 (Snack by Maew) - สั่งขนมออนไลน์</title>
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -55,6 +59,16 @@
         }
       } catch (e) {}
     })();
+  </script>
+  <!-- PWA Service Worker Registration -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(err => {
+          console.warn('[SW Registration Error]', err);
+        });
+      });
+    }
   </script>
 </head>
 <body class="bg-[#fafaf9] min-h-screen text-stone-800 flex flex-col antialiased selection:bg-stone-200 selection:text-stone-900">
