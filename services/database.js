@@ -61,7 +61,7 @@ function initLocalCache() {
     memoryCache.orders = readJson(ORDERS_FILE, []);
   }
   if (!memoryCache.settings) {
-    memoryCache.settings = readJson(SETTINGS_FILE, getDefaultSettings());
+    memoryCache.settings = { ...getDefaultSettings(), ...readJson(SETTINGS_FILE, getDefaultSettings()) };
   }
   if (!memoryCache.usedSlips) {
     memoryCache.usedSlips = readJson(USED_SLIPS_FILE, []);
@@ -152,7 +152,7 @@ async function initSupabaseSync() {
       .single();
 
     if (!settingsErr && settingsData && settingsData.data) {
-      memoryCache.settings = { ...memoryCache.settings, ...settingsData.data };
+      memoryCache.settings = { ...getDefaultSettings(), ...memoryCache.settings, ...settingsData.data };
       writeJson(SETTINGS_FILE, memoryCache.settings);
     } else if (settingsErr && settingsErr.code === 'PGRST116') {
       // Row doesn't exist yet -> seed local settings to cloud
@@ -790,7 +790,7 @@ function resetOrders() {
 // ==========================================
 function getSettings() {
   initLocalCache();
-  return memoryCache.settings || getDefaultSettings();
+  return { ...getDefaultSettings(), ...(memoryCache.settings || {}) };
 }
 
 function updateSettings(updates) {
