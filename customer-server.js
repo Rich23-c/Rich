@@ -112,7 +112,10 @@ function parseDeviceFromUserAgent(ua, clientInfo = {}) {
 app.use(express.static(path.join(__dirname, 'public'), {
   maxAge: '1d',
   setHeaders: (res, filePath) => {
-    if (filePath.endsWith('.html') || filePath.endsWith('.js')) {
+    if (filePath.endsWith('manifest.json')) {
+      res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+    } else if (filePath.endsWith('.html') || filePath.endsWith('.js')) {
       // HTML and JS scripts revalidate immediately to ensure instant code updates across all devices
       res.setHeader('Cache-Control', 'no-cache, must-revalidate');
     } else {
