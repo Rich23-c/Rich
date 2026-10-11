@@ -108,7 +108,13 @@ function getDefaultSettings() {
     promptpayQrImage: "/images/shop-qr.png",
     adminPin: "411197",
     isOpen: true,
-    closedMessage: "ขณะนี้ร้านแม้วปิดรับออเดอร์ชั่วคราว แล้วพบกันใหม่รอบหน้านะจ๊ะ 🐱"
+    closedMessage: "ขณะนี้ร้านแม้วปิดรับออเดอร์ชั่วคราว แล้วพบกันใหม่รอบหน้านะจ๊ะ 🐱",
+    laptopBannerEnabled: true,
+    laptopBannerTitle: "📢 พื้นที่สำหรับผู้สนับสนุน • สนใจเช่าแบนเนอร์โฆษณา",
+    laptopBannerText: "พื้นที่โฆษณาว่างสำหรับแสดงบนหน้าจอแล็ปท็อป/คอมพิวเตอร์ สนใจเช่าแบนเนอร์รายวัน/รายเดือน ติดต่อร้านขนมแม้ว",
+    laptopBannerContact: "โทร 080-924-9673 หรือ LINE: @snackbymaew",
+    laptopBannerImage: "",
+    laptopBannerLink: ""
   };
 }
 

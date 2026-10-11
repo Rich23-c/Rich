@@ -146,6 +146,19 @@ router.delete('/api/admin/snacks/:id', requireAdmin, (req, res) => {
   }
 });
 
+// Admin upload sponsor banner image
+router.post('/api/admin/upload-banner', requireAdmin, uploadSnackImage.single('bannerFile'), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'กรุณาเลือกไฟล์รูปภาพแบนเนอร์' });
+    }
+    const imageUrl = `/uploads/snacks/${req.file.filename}`;
+    res.json({ success: true, imageUrl });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Admin get all orders
 router.get('/api/admin/orders', requireAdmin, (req, res) => {
   try {

@@ -223,10 +223,119 @@ async function loadShopSettings() {
       // Apply store open/closed status across the entire page
       const isStoreOpen = shopSettings.isOpen !== false;
       applyStoreOpenStatus(isStoreOpen);
+
+      // Render Laptop-exclusive Sponsor Banner (Strictly hidden on mobile & tablets)
+      renderLaptopBanner(shopSettings);
     }
   } catch (err) {
     console.error('Failed to load shop settings:', err);
   }
+}
+
+// Render Laptop-Exclusive Sponsor Banner (Strictly hidden on mobile & tablets, visible on laptops/desktops >= 1024px)
+function renderLaptopBanner(settings) {
+  const container = document.getElementById('laptopBannerContainer');
+  if (!container) return;
+
+  const isEnabled = settings && settings.laptopBannerEnabled !== false;
+  if (!isEnabled) {
+    container.innerHTML = '';
+    container.className = 'hidden';
+    return;
+  }
+
+  // Ensure it is ONLY visible on Laptop/Desktop (hidden on mobile and tablet)
+  container.className = 'hidden lg:block w-full max-w-5xl mx-auto px-4 sm:px-6 my-4 transition duration-300';
+
+  const bannerImg = (settings && settings.laptopBannerImage ? settings.laptopBannerImage.trim() : '');
+  const bannerLink = (settings && settings.laptopBannerLink ? settings.laptopBannerLink.trim() : '');
+  const title = (settings && settings.laptopBannerTitle ? settings.laptopBannerTitle.trim() : '') || '📢 พื้นที่สำหรับผู้สนับสนุน • สนใจเช่าแบนเนอร์โฆษณา';
+  const text = (settings && settings.laptopBannerText ? settings.laptopBannerText.trim() : '') || 'โปรโมตร้านค้า หรือธุรกิจของคุณตรงนี้ เพื่อให้ลูกค้าที่เปิดคอมพิวเตอร์และแล็ปท็อปเห็นแบรนด์คุณทันที!';
+  const contact = (settings && settings.laptopBannerContact ? settings.laptopBannerContact.trim() : '') || 'โทร 080-924-9673 หรือ LINE: @snackbymaew';
+
+  // Construct contact URL (LINE / Tel)
+  let contactUrl = 'javascript:void(0)';
+  if (contact.includes('@')) {
+    const lineIdMatch = contact.match(/@[a-zA-Z0-9_.-]+/);
+    if (lineIdMatch) contactUrl = `https://line.me/R/ti/p/${encodeURIComponent(lineIdMatch[0])}`;
+  } else {
+    const cleanDigits = contact.replace(/[^0-9]/g, '');
+    if (cleanDigits.length >= 9) {
+      contactUrl = `tel:${cleanDigits}`;
+    }
+  }
+
+  if (bannerImg) {
+    // 1. ACTIVE SPONSOR BANNER (เมื่อมีคนเช่าแล้ว และมีรูปภาพ)
+    const targetLink = bannerLink || contactUrl;
+    container.innerHTML = `
+      <div class="bg-white rounded-3xl border border-stone-200/90 shadow-xs p-4 space-y-2.5 hover:border-amber-400 transition group">
+        <div class="flex items-center justify-between text-xs px-1 text-stone-500">
+          <div class="flex items-center gap-1.5 font-bold text-amber-900 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
+            <span class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+            <span>💎 ผู้สนับสนุนร้าน • Sponsored</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <span class="text-[11px] text-stone-400">🖥️ แสดงเฉพาะบน Laptop & จอคอมพิวเตอร์</span>
+            <a href="${contactUrl}" target="_blank" class="text-[11px] font-semibold text-orange-600 hover:text-orange-700 underline">
+              สนใจเช่าพื้นที่แบนเนอร์ ติดต่อเรา
+            </a>
+          </div>
+        </div>
+        <a href="${targetLink}" target="_blank" rel="noopener noreferrer" class="block overflow-hidden rounded-2xl relative" title="คลิกเพื่อเยี่ยมชมผู้สนับสนุน">
+          <img
+            src="${bannerImg}"
+            alt="Sponsor Banner"
+            class="w-full h-auto max-h-56 object-cover rounded-2xl border border-stone-100 group-hover:scale-[1.006] transition duration-300"
+            onerror="this.parentElement.parentElement.style.display='none'"
+          />
+        </a>
+      </div>
+    `;
+  } else {
+    // 2. RENTAL INVITATION BANNER (พื้นที่ว่าง เชิญชวนผู้ที่สนใจมาเช่าแบนเนอร์)
+    container.innerHTML = `
+      <div class="relative overflow-hidden bg-gradient-to-r from-amber-50/90 via-orange-50/70 to-stone-50 rounded-3xl border-2 border-dashed border-amber-300/90 p-5 shadow-xs transition hover:border-orange-400 hover:shadow-sm">
+        <div class="flex items-center justify-between gap-6">
+          <div class="flex items-start gap-4 min-w-0">
+            <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 text-white flex items-center justify-center text-2xl shadow-xs shrink-0">
+              📢
+            </div>
+            <div class="space-y-1 min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="text-[10px] font-extrabold uppercase tracking-wide bg-amber-200/80 text-amber-900 px-2 py-0.5 rounded-md border border-amber-300/60">
+                  🖥️ Laptop Only Banner
+                </span>
+                <span class="text-xs text-stone-500 font-medium">พื้นที่ว่างสำหรับผู้สนับสนุน</span>
+              </div>
+              <h4 class="text-base font-extrabold text-stone-900 truncate">
+                ${title}
+              </h4>
+              <p class="text-xs text-stone-600 max-w-2xl leading-relaxed">
+                ${text}
+              </p>
+            </div>
+          </div>
+
+          <div class="shrink-0 flex flex-col items-end gap-1.5 text-right">
+            <a
+              href="${contactUrl}"
+              target="_blank"
+              class="inline-flex items-center gap-1.5 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-xs transition active:scale-95 cursor-pointer"
+            >
+              <i data-lucide="message-circle" class="w-4 h-4"></i>
+              <span>สนใจเช่าแบนเนอร์ แตะติดต่อ</span>
+            </a>
+            <span class="text-[11px] text-stone-500 font-medium">
+              ${contact}
+            </span>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  if (window.lucide) lucide.createIcons();
 }
 
 // Function to control Store Open / Closed mode across the entire customer interface

@@ -1628,6 +1628,23 @@ async function loadAdminSettings() {
       document.getElementById('settingIsOpen').checked = s.isOpen !== false;
       document.getElementById('settingClosedMessage').value = s.closedMessage || '';
 
+      // Laptop Sponsor Banner fields
+      const bannerEnabledEl = document.getElementById('settingLaptopBannerEnabled');
+      if (bannerEnabledEl) bannerEnabledEl.checked = s.laptopBannerEnabled !== false;
+      const bannerTitleEl = document.getElementById('settingLaptopBannerTitle');
+      if (bannerTitleEl) bannerTitleEl.value = s.laptopBannerTitle || '';
+      const bannerTextEl = document.getElementById('settingLaptopBannerText');
+      if (bannerTextEl) bannerTextEl.value = s.laptopBannerText || '';
+      const bannerContactEl = document.getElementById('settingLaptopBannerContact');
+      if (bannerContactEl) bannerContactEl.value = s.laptopBannerContact || '';
+      const bannerImgEl = document.getElementById('settingLaptopBannerImage');
+      if (bannerImgEl) bannerImgEl.value = s.laptopBannerImage || '';
+      const bannerLinkEl = document.getElementById('settingLaptopBannerLink');
+      if (bannerLinkEl) bannerLinkEl.value = s.laptopBannerLink || '';
+
+      updateLaptopBannerBadge(s.laptopBannerEnabled !== false);
+      updateAdminBannerPreview();
+
       // Gemini AI Slip Verification keys
       const geminiEl = document.getElementById('settingGeminiKeys');
       if (geminiEl) geminiEl.value = s.geminiApiKeys || s.geminiApiKey || '';
@@ -1638,6 +1655,69 @@ async function loadAdminSettings() {
     }
   } catch (err) {
     console.error('Failed to load settings:', err);
+  }
+}
+
+function updateLaptopBannerBadge(isEnabled) {
+  const badge = document.getElementById('settingLaptopBannerBadge');
+  if (badge) {
+    if (isEnabled) {
+      badge.className = 'text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200';
+      badge.innerText = '🟢 เปิดใช้งาน';
+    } else {
+      badge.className = 'text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-300';
+      badge.innerText = '⚪ ปิดใช้งาน';
+    }
+  }
+}
+
+function updateAdminBannerPreview() {
+  const url = (document.getElementById('settingLaptopBannerImage')?.value || '').trim();
+  const imgEl = document.getElementById('adminBannerPreviewImg');
+  const placeholderEl = document.getElementById('adminBannerPlaceholder');
+  if (!imgEl || !placeholderEl) return;
+
+  if (url) {
+    imgEl.src = url;
+    imgEl.classList.remove('hidden');
+    placeholderEl.classList.add('hidden');
+  } else {
+    imgEl.classList.add('hidden');
+    placeholderEl.classList.remove('hidden');
+  }
+}
+
+function clearAdminBannerImage() {
+  const input = document.getElementById('settingLaptopBannerImage');
+  if (input) input.value = '';
+  updateAdminBannerPreview();
+}
+
+async function handleBannerFileUpload(input) {
+  if (!input.files || !input.files[0]) return;
+  const file = input.files[0];
+  const formData = new FormData();
+  formData.append('bannerFile', file);
+
+  try {
+    const Toast = Swal.mixin({ toast: true, position: 'top-end', showConfirmButton: false, timer: 1500 });
+    Toast.fire({ icon: 'info', title: 'กำลังอัปโหลดรูปภาพแบนเนอร์...' });
+
+    const res = await adminFetch('/api/admin/upload-banner', {
+      method: 'POST',
+      body: formData
+    });
+    const data = await res.json();
+    if (data.success && data.imageUrl) {
+      const urlInput = document.getElementById('settingLaptopBannerImage');
+      if (urlInput) urlInput.value = data.imageUrl;
+      updateAdminBannerPreview();
+      Toast.fire({ icon: 'success', title: 'อัปโหลดรูปแบนเนอร์เรียบร้อยแล้ว!' });
+    } else {
+      throw new Error(data.error || 'ไม่สามารถอัปโหลดรูปภาพได้');
+    }
+  } catch (err) {
+    Swal.fire({ icon: 'error', title: 'อัปโหลดไม่สำเร็จ', text: err.message, confirmButtonColor: '#f97316' });
   }
 }
 
@@ -1724,6 +1804,13 @@ function updateStoreStatusUi(isOpen) {
 
 async function saveShopSettings() {
   const ppIdEl = document.getElementById('settingPromptpayId');
+  const bannerEnabledEl = document.getElementById('settingLaptopBannerEnabled');
+  const bannerTitleEl = document.getElementById('settingLaptopBannerTitle');
+  const bannerTextEl = document.getElementById('settingLaptopBannerText');
+  const bannerContactEl = document.getElementById('settingLaptopBannerContact');
+  const bannerImgEl = document.getElementById('settingLaptopBannerImage');
+  const bannerLinkEl = document.getElementById('settingLaptopBannerLink');
+
   const updates = {
     shopName: document.getElementById('settingShopName').value.trim(),
     shopSubtitle: document.getElementById('settingShopSubtitle').value.trim(),
@@ -1736,6 +1823,14 @@ async function saveShopSettings() {
     // Store status settings
     isOpen: document.getElementById('settingIsOpen').checked,
     closedMessage: document.getElementById('settingClosedMessage') ? document.getElementById('settingClosedMessage').value.trim() : '',
+
+    // Laptop Sponsor Banner settings (Only visible on Laptop/PC)
+    laptopBannerEnabled: bannerEnabledEl ? bannerEnabledEl.checked : true,
+    laptopBannerTitle: bannerTitleEl ? bannerTitleEl.value.trim() : '',
+    laptopBannerText: bannerTextEl ? bannerTextEl.value.trim() : '',
+    laptopBannerContact: bannerContactEl ? bannerContactEl.value.trim() : '',
+    laptopBannerImage: bannerImgEl ? bannerImgEl.value.trim() : '',
+    laptopBannerLink: bannerLinkEl ? bannerLinkEl.value.trim() : '',
 
     // Gemini AI Slip Verification keys
     geminiApiKeys: document.getElementById('settingGeminiKeys') ? document.getElementById('settingGeminiKeys').value.trim() : ''
@@ -1753,7 +1848,7 @@ async function saveShopSettings() {
       Swal.fire({
         icon: 'success',
         title: 'บันทึกสำเร็จ 🎉',
-        text: 'ข้อมูลรอบเปิดร้านและบัญชีถูกอัปเดตเรียบร้อยแล้ว',
+        text: 'การตั้งค่าร้านและแบนเนอร์ถูกอัปเดตเรียบร้อยแล้ว',
         confirmButtonColor: '#f97316'
       });
     }
