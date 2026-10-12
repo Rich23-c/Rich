@@ -2253,3 +2253,116 @@ async function triggerPwaInstall() {
     });
   }
 }
+
+// ==========================================
+// ADMIN PIN CHANGE HANDLER
+// ==========================================
+async function handleChangeAdminPin() {
+  const currentPinInput = document.getElementById('adminCurrentPinInput');
+  const newPinInput = document.getElementById('adminNewPinInput');
+  const confirmPinInput = document.getElementById('adminConfirmPinInput');
+  const btn = document.getElementById('adminChangePinBtn');
+
+  const currentPin = currentPinInput ? currentPinInput.value.trim() : '';
+  const newPin = newPinInput ? newPinInput.value.trim() : '';
+  const confirmPin = confirmPinInput ? confirmPinInput.value.trim() : '';
+
+  if (!currentPin) {
+    Swal.fire({
+      icon: 'warning',
+      title: 'กรุณากรอกรหัส PIN ปัจจุบัน',
+      text: 'ต้องระบุรหัส PIN ปัจจุบันเพื่อยืนยันตัวตน',
+      confirmButtonColor: '#ea580c'
+    });
+    return;
+  }
+
+  if (!newPin) {
+    Swal.fire({
+      icon: 'warning',
+      title: 'กรุณากรอกรหัส PIN ใหม่',
+      text: 'รหัส PIN ใหม่ต้องมีความยาวอย่างน้อย 4 ตัวอักษรหรือตัวเลข',
+      confirmButtonColor: '#ea580c'
+    });
+    return;
+  }
+
+  if (newPin.length < 4 || newPin.length > 20) {
+    Swal.fire({
+      icon: 'warning',
+      title: 'ความยาวรหัส PIN ไม่ถูกต้อง',
+      text: 'รหัส PIN ใหม่ต้องมีความยาว 4 - 20 ตัวอักษรหรือตัวเลข',
+      confirmButtonColor: '#ea580c'
+    });
+    return;
+  }
+
+  if (newPin !== confirmPin) {
+    Swal.fire({
+      icon: 'error',
+      title: 'รหัส PIN ใหม่ไม่ตรงกัน',
+      text: 'กรุณากรอกรหัส PIN ใหม่และยืนยันรหัส PIN ให้ตรงกัน',
+      confirmButtonColor: '#ea580c'
+    });
+    return;
+  }
+
+  const result = await Swal.fire({
+    title: 'ยืนยันการเปลี่ยนรหัส PIN หรือไม่?',
+    html: `คุณกำลังจะเปลี่ยนรหัส PIN แอดมินเป็น: <b class="text-orange-600 font-mono text-lg">${newPin}</b><br><span class="text-xs text-slate-500">กรุณาจดจำรหัสใหม่นี้ไว้สำหรับเข้าสู่ระบบในครั้งต่อไป</span>`,
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonText: 'ยืนยันเปลี่ยนรหัส',
+    cancelButtonText: 'ยกเลิก',
+    confirmButtonColor: '#0f172a',
+    cancelButtonColor: '#94a3b8'
+  });
+
+  if (!result.isConfirmed) return;
+
+  if (btn) btn.disabled = true;
+
+  try {
+    const res = await adminFetch('/api/admin/change-pin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentPin, newPin })
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      // Update local memory PIN so the active session is uninterrupted
+      adminPin = newPin;
+
+      // Clear input fields
+      if (currentPinInput) currentPinInput.value = '';
+      if (newPinInput) newPinInput.value = '';
+      if (confirmPinInput) confirmPinInput.value = '';
+
+      Swal.fire({
+        icon: 'success',
+        title: 'เปลี่ยนรหัส PIN สำเร็จ 🎉',
+        html: `รหัส PIN ใหม่ของคุณคือ: <b class="text-emerald-700 font-mono text-lg">${newPin}</b><br><p class="text-xs text-slate-500 mt-2">ระบบบันทึกรหัสใหม่ลงฐานข้อมูลเรียบร้อยแล้ว ในการเข้าใช้งานครั้งถัดไปให้ใช้รหัสใหม่นี้ครับ</p>`,
+        confirmButtonColor: '#10b981'
+      });
+    } else {
+      Swal.fire({
+        icon: 'error',
+        title: 'เปลี่ยนรหัสไม่สำเร็จ',
+        text: data.error || 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง',
+        confirmButtonColor: '#ea580c'
+      });
+    }
+  } catch (err) {
+    console.error('Change PIN error:', err);
+    Swal.fire({
+      icon: 'error',
+      title: 'เกิดข้อผิดพลาด',
+      text: err.message || 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้',
+      confirmButtonColor: '#ea580c'
+    });
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+

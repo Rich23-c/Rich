@@ -52,6 +52,24 @@ router.post('/api/admin/login', (req, res) => {
   return res.status(401).json({ success: false, error: 'รหัสผ่าน Admin ไม่ถูกต้อง' });
 });
 
+// Admin change PIN
+router.post('/api/admin/change-pin', requireAdmin, (req, res) => {
+  try {
+    const { currentPin, newPin } = req.body;
+    if (!currentPin || !db.verifyAdminPin(currentPin)) {
+      return res.status(400).json({ success: false, error: 'รหัส PIN เดิมไม่ถูกต้อง กรุณาตรวจสอบอีกครั้ง' });
+    }
+    const trimmedNewPin = String(newPin || '').trim();
+    if (!trimmedNewPin || trimmedNewPin.length < 4 || trimmedNewPin.length > 20) {
+      return res.status(400).json({ success: false, error: 'รหัส PIN ใหม่ต้องมีความยาวระหว่าง 4 ถึง 20 ตัวอักษรหรือตัวเลข' });
+    }
+    db.updateSettings({ adminPin: trimmedNewPin });
+    return res.json({ success: true, message: 'เปลี่ยนรหัส PIN เรียบร้อยแล้ว', newPin: trimmedNewPin });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Admin get all snacks
 router.get('/api/admin/snacks', requireAdmin, (req, res) => {
   try {
