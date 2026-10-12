@@ -33,10 +33,10 @@
   <!-- SweetAlert2 -->
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   <!-- SortableJS (Drag & Drop Reordering) -->
-  <meta name="theme-color" content="#ea580c">
-  <link rel="manifest" href="/manifest.json">
-  <link rel="apple-touch-icon" href="/images/icon-192.png">
-  <link rel="icon" type="image/png" sizes="192x192" href="/images/icon-192.png">
+  <meta name="theme-color" content="#0f172a">
+  <link rel="manifest" href="/admin-manifest.json">
+  <link rel="apple-touch-icon" href="/images/admin-icon-192.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="/images/admin-icon-192.png">
   <link rel="icon" type="image/svg+xml" href="/images/icon.svg">
   <link rel="stylesheet" href="/css/style.css">
   <!-- PWA Service Worker Registration -->
@@ -124,6 +124,19 @@
         <i data-lucide="unlock" class="w-4 h-4"></i>
         <span>เข้าสู่ระบบหลังบ้าน 🔓</span>
       </button>
+
+      <!-- Install Admin App directly to Android Home Screen -->
+      <div class="pt-2 border-t border-slate-100">
+        <button
+          type="button"
+          onclick="triggerPwaInstall()"
+          class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 px-3 rounded-2xl text-xs transition border border-slate-200 flex items-center justify-center gap-2 cursor-pointer active:scale-95 shadow-2xs"
+          title="ติดตั้งเป็นแอปบนมือถือ Android โดยตรง ไม่ต้องผ่าน Play Store"
+        >
+          <span>📲</span>
+          <span>ติดตั้งแอป Admin ลงมือถือ Android</span>
+        </button>
+      </div>
     </div>
   </div>
 
@@ -170,6 +183,16 @@
           <i data-lucide="plus-circle" class="w-4 h-4"></i>
           <span class="hidden sm:inline">+ เพิ่มขนมใหม่</span>
           <span class="inline sm:hidden">+ เพิ่ม</span>
+        </button>
+
+        <!-- Install Admin App on Android button -->
+        <button
+          onclick="triggerPwaInstall()"
+          class="text-xs text-orange-700 bg-orange-50 hover:bg-orange-100 border border-orange-200 px-2.5 sm:px-3 py-2 rounded-xl transition font-bold flex items-center gap-1.5 cursor-pointer active:scale-95"
+          title="ติดตั้งแอป Admin ลงมือถือ Android โดยตรง"
+        >
+          <span>📲</span>
+          <span class="hidden sm:inline">ติดตั้งแอป</span>
         </button>
 
         <a
@@ -1142,6 +1165,6 @@
     </div>
   </div>
 
-  <script src="/js/admin.js?v=2.9.3"></script>
+  <script src="/js/admin.js?v=2.9.4"></script>
 </body>
 </html>

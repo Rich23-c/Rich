@@ -2183,3 +2183,73 @@ async function confirmResetAnalytics() {
     }
   }
 }
+
+// ==========================================
+// ADMIN APP PWA INSTALLER (ANDROID / MOBILE)
+// ==========================================
+let deferredAdminPwaPrompt = null;
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredAdminPwaPrompt = e;
+});
+
+window.addEventListener('appinstalled', () => {
+  deferredAdminPwaPrompt = null;
+  Swal.fire({
+    icon: 'success',
+    title: 'ติดตั้งแอปหลังบ้านเรียบร้อย 🎉',
+    text: 'ไอคอน "แอดมินแม้ว 🐾" พร้อมใช้งานบนหน้าจอหลักมือถือของคุณแล้วครับ!',
+    timer: 2000,
+    showConfirmButton: false
+  });
+});
+
+async function triggerPwaInstall() {
+  if (deferredAdminPwaPrompt) {
+    deferredAdminPwaPrompt.prompt();
+    const { outcome } = await deferredAdminPwaPrompt.userChoice;
+    if (outcome === 'accepted') {
+      Swal.fire({
+        icon: 'success',
+        title: 'กำลังติดตั้ง... 🎉',
+        text: 'ระบบกำลังเพิ่มไอคอน "แอดมินแม้ว 🐾" ลงในหน้าจอมือถือของคุณ',
+        timer: 1800,
+        showConfirmButton: false
+      });
+    }
+    deferredAdminPwaPrompt = null;
+  } else {
+    // If browser already installed, standalone, or manual install instructions
+    Swal.fire({
+      title: '📲 วิธีติดตั้งแอป Admin บนมือถือ Android',
+      html: `
+        <div class="text-left text-xs sm:text-sm space-y-3 text-slate-700">
+          <p class="font-bold text-slate-800">
+            ติดตั้งเป็นแอปแท้ลงบนหน้าจอมือถือได้ทันที โดยไม่ต้องโหลดผ่าน Google Play:
+          </p>
+          <div class="bg-amber-50/80 border border-amber-200 rounded-2xl p-3.5 space-y-2 text-amber-950 font-medium">
+            <div class="flex items-start gap-2">
+              <span class="w-5 h-5 rounded-full bg-amber-200 text-amber-900 font-bold flex items-center justify-center text-xs shrink-0 mt-0.5">1</span>
+              <span>แตะที่ <b>ปุ่มจุด 3 จุด (⋮)</b> ที่มุมขวาบนของเบราว์เซอร์ Google Chrome</span>
+            </div>
+            <div class="flex items-start gap-2">
+              <span class="w-5 h-5 rounded-full bg-amber-200 text-amber-900 font-bold flex items-center justify-center text-xs shrink-0 mt-0.5">2</span>
+              <span>เลือกเมนู <b>"ติดตั้งแอป" (Install app)</b> หรือ <b>"เพิ่มลงในหน้าจอหลัก" (Add to Home screen)</b></span>
+            </div>
+            <div class="flex items-start gap-2">
+              <span class="w-5 h-5 rounded-full bg-amber-200 text-amber-900 font-bold flex items-center justify-center text-xs shrink-0 mt-0.5">3</span>
+              <span>แตะยืนยัน <b>"ติดตั้ง" (Install)</b></span>
+            </div>
+          </div>
+          <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-2.5 text-center text-emerald-800 text-xs font-bold">
+            ✨ ไอคอนสีเข้ม "แอดมินแม้ว 🐾" จะปรากฏบนหน้าจอมือถือ เปิดใช้งานได้เต็มจอ ไม่มีแถบเว็บกวนใจ!
+          </div>
+        </div>
+      `,
+      icon: 'info',
+      confirmButtonText: 'รับทราบวิธีติดตั้ง',
+      confirmButtonColor: '#ea580c'
+    });
+  }
+}

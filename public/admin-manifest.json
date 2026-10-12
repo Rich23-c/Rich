@@ -1,0 +1,42 @@
+{
+  "name": "จัดการร้านขนมแม้ว 🐾 (Admin)",
+  "short_name": "แอดมินแม้ว",
+  "description": "ระบบจัดการหลังบ้านร้านขนมแม้ว 🐾 จัดการขนม ตรวจสอบสลิป สถิติคนเข้าชม และออเดอร์",
+  "start_url": "/admin",
+  "id": "/admin",
+  "scope": "/admin",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "lang": "th",
+  "dir": "ltr",
+  "categories": ["business", "productivity"],
+  "icons": [
+    {
+      "src": "/images/admin-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/images/admin-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/images/admin-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/images/admin-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
