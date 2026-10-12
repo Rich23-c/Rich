@@ -157,17 +157,18 @@ function getOrCreateVisitorInfo() {
   return { visitorId: vid, visitorCode: vcode };
 }
 
-async function trackVisitorPresence() {
+async function trackVisitorPresence(forceUpdate = false) {
   try {
     const { visitorId, visitorCode } = getOrCreateVisitorInfo();
     const dev = typeof detectDeviceDetails === 'function' ? detectDeviceDetails() : null;
     const deviceSummary = dev ? (dev.summary || dev.deviceModel || 'ไม่ระบุ') : '';
+    const customerName = (localStorage.getItem('snack_maew_customer_name') || '').trim();
 
     // Check throttle to avoid counting consecutive quick refreshes within 3 minutes
     const LAST_TRACK_KEY = 'snack_maew_last_track_timestamp';
     const lastTrackTime = Number(sessionStorage.getItem(LAST_TRACK_KEY) || 0);
     const now = Date.now();
-    if (now - lastTrackTime < 3 * 60 * 1000) {
+    if (!forceUpdate && (now - lastTrackTime < 3 * 60 * 1000)) {
       return;
     }
     sessionStorage.setItem(LAST_TRACK_KEY, String(now));
@@ -178,6 +179,7 @@ async function trackVisitorPresence() {
       body: JSON.stringify({
         visitorId,
         visitorCode,
+        customerName: customerName || undefined,
         deviceSummary,
         path: window.location.pathname
       })
@@ -213,6 +215,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       const v = e.target.value.trim();
       if (v) localStorage.setItem('snack_maew_customer_name', v);
       else localStorage.removeItem('snack_maew_customer_name');
+    });
+    nameInput.addEventListener('change', e => {
+      const v = e.target.value.trim();
+      if (v) trackVisitorPresence(true);
     });
   }
   if (phoneInput) {

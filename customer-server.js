@@ -231,7 +231,7 @@ app.get('/api/snacks', (req, res) => {
 // Track Storefront Visitor Presence
 app.post('/api/track-visit', (req, res) => {
   try {
-    const { visitorId, visitorCode, path: pagePath, deviceSummary } = req.body || {};
+    const { visitorId, visitorCode, path: pagePath, deviceSummary, customerName } = req.body || {};
     const userAgent = req.headers['user-agent'] || '';
     if (!visitorId) {
       return res.status(400).json({ success: false, error: 'visitorId is required' });
@@ -241,7 +241,8 @@ app.post('/api/track-visit', (req, res) => {
       visitorCode,
       userAgent,
       path: pagePath || '/',
-      deviceSummary
+      deviceSummary,
+      customerName
     });
     res.json({ success: true, visitor });
   } catch (err) {
@@ -521,6 +522,17 @@ app.post('/api/orders', uploadSlip.single('slip'), async (req, res) => {
     };
 
     const newOrder = db.createOrder(orderData);
+
+    // Also update visitor record with customerName if deviceId or visitorId is provided
+    if (orderData.customerName && orderData.deviceId) {
+      try {
+        db.trackVisitor({
+          visitorId: orderData.deviceId,
+          customerName: orderData.customerName,
+          path: '/order-placed'
+        });
+      } catch (e) {}
+    }
 
     res.json({
       success: true,

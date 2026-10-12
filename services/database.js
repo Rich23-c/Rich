@@ -99,42 +99,6 @@ function initLocalCache() {
   }
   if (!memoryCache.visitors) {
     memoryCache.visitors = readJson(VISITORS_FILE, []);
-    // Auto-migrate historical visitor devices from past orders if visitors file is fresh
-    if (memoryCache.visitors.length === 0 && Array.isArray(memoryCache.orders) && memoryCache.orders.length > 0) {
-      const vMap = new Map();
-      memoryCache.orders.forEach(order => {
-        const devId = (order.deviceId || (order.customerPhone ? `dev_${order.customerPhone}` : '')).trim();
-        if (!devId) return;
-        const code = generateVisitorCode(devId);
-        const created = order.createdAt || new Date().toISOString();
-        const date = created.slice(0, 10);
-        if (!vMap.has(devId)) {
-          vMap.set(devId, {
-            visitorId: devId,
-            visitorCode: code,
-            device: order.deviceModel || (order.deviceInfo && order.deviceInfo.summary) || 'ไม่ระบุ',
-            firstSeen: created,
-            lastSeen: created,
-            totalVisits: 1,
-            visits: [{ timestamp: created, date, path: '/' }]
-          });
-        } else {
-          const existing = vMap.get(devId);
-          existing.visits.push({ timestamp: created, date, path: '/' });
-          existing.totalVisits = existing.visits.length;
-          if (new Date(created) > new Date(existing.lastSeen)) {
-            existing.lastSeen = created;
-          }
-          if (new Date(created) < new Date(existing.firstSeen)) {
-            existing.firstSeen = created;
-          }
-        }
-      });
-      if (vMap.size > 0) {
-        memoryCache.visitors = Array.from(vMap.values());
-        writeJson(VISITORS_FILE, memoryCache.visitors);
-      }
-    }
   }
 }
 
@@ -938,7 +902,7 @@ function parseDeviceFromUa(ua = '') {
   return 'อุปกรณ์ทั่วไป';
 }
 
-function trackVisitor({ visitorId, visitorCode, userAgent, path: reqPath, deviceSummary }) {
+function trackVisitor({ visitorId, visitorCode, userAgent, path: reqPath, deviceSummary, customerName }) {
   initLocalCache();
   if (!visitorId) return null;
 
@@ -951,11 +915,13 @@ function trackVisitor({ visitorId, visitorCode, userAgent, path: reqPath, device
 
   const device = deviceSummary || parseDeviceFromUa(userAgent);
   const code = visitorCode || (visitor && visitor.visitorCode) || generateVisitorCode(visitorId);
+  const cName = customerName && String(customerName).trim() ? String(customerName).trim() : (visitor ? visitor.customerName : null);
 
   if (!visitor) {
     visitor = {
       visitorId,
       visitorCode: code,
+      customerName: cName,
       device,
       firstSeen: nowIso,
       lastSeen: nowIso,
@@ -971,6 +937,7 @@ function trackVisitor({ visitorId, visitorCode, userAgent, path: reqPath, device
     visitors.unshift(visitor);
   } else {
     if (code) visitor.visitorCode = code;
+    if (cName) visitor.customerName = cName;
     if (device && device !== 'ไม่ระบุ' && device !== 'อุปกรณ์ทั่วไป') {
       visitor.device = device;
     }
@@ -1061,6 +1028,7 @@ function getVisitorAnalytics() {
     return {
       visitorId: v.visitorId,
       visitorCode: v.visitorCode || generateVisitorCode(v.visitorId),
+      customerName: v.customerName || null,
       device: v.device || 'ไม่ระบุ',
       firstSeen: v.firstSeen,
       lastSeen: v.lastSeen,

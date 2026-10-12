@@ -2017,14 +2017,28 @@ function renderVisitorsTable(visitors) {
   }
 
   tbody.innerHTML = visitors.map(v => {
+    const hasName = v.customerName && String(v.customerName).trim();
+    const nameDisplay = hasName
+      ? `<div class="flex flex-col">
+           <span class="font-bold text-slate-900 text-sm flex items-center gap-1.5">
+             <span class="text-amber-500">👤</span>
+             <span class="text-orange-950 font-extrabold">${v.customerName}</span>
+           </span>
+           <span class="font-mono text-[10px] text-slate-400 font-semibold mt-0.5">
+             รหัส: ${v.visitorCode}
+           </span>
+         </div>`
+      : `<div class="flex items-center gap-1.5">
+           <span class="font-mono font-black bg-amber-50 text-amber-800 border border-amber-200 px-2.5 py-1 rounded-xl text-xs shadow-2xs">
+             🏷️ ${v.visitorCode}
+           </span>
+           <span class="text-[10px] text-slate-400 font-normal">(ยังไม่พิมพ์ชื่อ)</span>
+         </div>`;
+
     return `
       <tr class="hover:bg-slate-50/70 transition">
         <td class="py-3 px-4">
-          <div class="flex items-center gap-2">
-            <span class="font-mono font-black bg-amber-50 text-amber-800 border border-amber-200 px-2.5 py-1 rounded-xl text-xs shadow-2xs">
-              🏷️ ${v.visitorCode}
-            </span>
-          </div>
+          ${nameDisplay}
         </td>
         <td class="py-3 px-4 text-slate-700">
           <div class="flex items-center gap-1.5 text-xs font-medium">
@@ -2064,6 +2078,7 @@ function filterVisitorList(query) {
 
   const filtered = currentAnalyticsData.visitors.filter(v => {
     return (v.visitorCode && v.visitorCode.toLowerCase().includes(q)) ||
+           (v.customerName && v.customerName.toLowerCase().includes(q)) ||
            (v.device && v.device.toLowerCase().includes(q));
   });
 
@@ -2084,7 +2099,13 @@ function openVisitorDetailModal(visitorId) {
   const daysCountEl = document.getElementById('modalVisitorDaysCount');
   const dailyListEl = document.getElementById('modalVisitorDailyList');
 
-  if (codeBadge) codeBadge.textContent = visitor.visitorCode || 'USR-XXXX';
+  if (codeBadge) {
+    if (visitor.customerName) {
+      codeBadge.textContent = `คุณ${visitor.customerName} (${visitor.visitorCode})`;
+    } else {
+      codeBadge.textContent = visitor.visitorCode || 'USR-XXXX';
+    }
+  }
   if (deviceEl) deviceEl.textContent = `อุปกรณ์: ${visitor.device || 'ไม่ระบุ'}`;
   if (totalVisitsEl) totalVisitsEl.textContent = `${visitor.totalVisits || 0} ครั้ง`;
   if (lastSeenEl) lastSeenEl.textContent = formatThaiDateTimeFull(visitor.lastSeen);
