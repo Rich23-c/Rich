@@ -136,9 +136,59 @@ function detectDeviceDetails() {
   };
 }
 
+// Visitor Analytics Tracking Helper (Generates anonymous ID & Code for visitor metrics)
+function getOrCreateVisitorInfo() {
+  let vid = localStorage.getItem('snack_maew_visitor_id');
+  let vcode = localStorage.getItem('snack_maew_visitor_code');
+  if (!vid) {
+    vid = 'v_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now().toString(36);
+    localStorage.setItem('snack_maew_visitor_id', vid);
+  }
+  if (!vcode) {
+    let hash = 0;
+    for (let i = 0; i < vid.length; i++) {
+      hash = ((hash << 5) - hash) + vid.charCodeAt(i);
+      hash |= 0;
+    }
+    const hex = Math.abs(hash).toString(16).toUpperCase().padStart(4, '0').slice(-4);
+    vcode = `USR-${hex}`;
+    localStorage.setItem('snack_maew_visitor_code', vcode);
+  }
+  return { visitorId: vid, visitorCode: vcode };
+}
+
+async function trackVisitorPresence() {
+  try {
+    const { visitorId, visitorCode } = getOrCreateVisitorInfo();
+    const dev = typeof detectDeviceDetails === 'function' ? detectDeviceDetails() : null;
+    const deviceSummary = dev ? (dev.summary || dev.deviceModel || 'ไม่ระบุ') : '';
+
+    // Check throttle to avoid counting consecutive quick refreshes within 3 minutes
+    const LAST_TRACK_KEY = 'snack_maew_last_track_timestamp';
+    const lastTrackTime = Number(sessionStorage.getItem(LAST_TRACK_KEY) || 0);
+    const now = Date.now();
+    if (now - lastTrackTime < 3 * 60 * 1000) {
+      return;
+    }
+    sessionStorage.setItem(LAST_TRACK_KEY, String(now));
+
+    fetch('/api/track-visit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        visitorId,
+        visitorCode,
+        deviceSummary,
+        path: window.location.pathname
+      })
+    }).catch(() => {});
+  } catch (e) {}
+}
+
 // Initialize on DOM ready
 document.addEventListener('DOMContentLoaded', async () => {
   if (window.lucide) lucide.createIcons();
+  trackVisitorPresence();
 
   // One-time self-healing cleanup for iPad/tablets that never placed an order
   if (isIPadOrTablet() && !localStorage.getItem(LOCAL_STORAGE_SUBMITTED_KEY)) {

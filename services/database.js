@@ -6,6 +6,7 @@ const SNACKS_FILE = path.join(DATA_DIR, 'snacks.json');
 const ORDERS_FILE = path.join(DATA_DIR, 'orders.json');
 const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
 const USED_SLIPS_FILE = path.join(DATA_DIR, 'used_slips.json');
+const VISITORS_FILE = path.join(DATA_DIR, 'visitors.json');
 
 // Ensure data directory exists
 if (!fs.existsSync(DATA_DIR)) {
@@ -18,6 +19,7 @@ let memoryCache = {
   orders: null,
   settings: null,
   usedSlips: null, // Permanent slip memory registry (never wiped on order reset)
+  visitors: null,  // Real-time visitor logs and analytics cache
   isSupabaseActive: false,
   lastSyncTime: null,
   syncError: null
@@ -93,6 +95,45 @@ function initLocalCache() {
     });
     if (migrated) {
       writeJson(USED_SLIPS_FILE, memoryCache.usedSlips);
+    }
+  }
+  if (!memoryCache.visitors) {
+    memoryCache.visitors = readJson(VISITORS_FILE, []);
+    // Auto-migrate historical visitor devices from past orders if visitors file is fresh
+    if (memoryCache.visitors.length === 0 && Array.isArray(memoryCache.orders) && memoryCache.orders.length > 0) {
+      const vMap = new Map();
+      memoryCache.orders.forEach(order => {
+        const devId = (order.deviceId || (order.customerPhone ? `dev_${order.customerPhone}` : '')).trim();
+        if (!devId) return;
+        const code = generateVisitorCode(devId);
+        const created = order.createdAt || new Date().toISOString();
+        const date = created.slice(0, 10);
+        if (!vMap.has(devId)) {
+          vMap.set(devId, {
+            visitorId: devId,
+            visitorCode: code,
+            device: order.deviceModel || (order.deviceInfo && order.deviceInfo.summary) || 'ไม่ระบุ',
+            firstSeen: created,
+            lastSeen: created,
+            totalVisits: 1,
+            visits: [{ timestamp: created, date, path: '/' }]
+          });
+        } else {
+          const existing = vMap.get(devId);
+          existing.visits.push({ timestamp: created, date, path: '/' });
+          existing.totalVisits = existing.visits.length;
+          if (new Date(created) > new Date(existing.lastSeen)) {
+            existing.lastSeen = created;
+          }
+          if (new Date(created) < new Date(existing.firstSeen)) {
+            existing.firstSeen = created;
+          }
+        }
+      });
+      if (vMap.size > 0) {
+        memoryCache.visitors = Array.from(vMap.values());
+        writeJson(VISITORS_FILE, memoryCache.visitors);
+      }
     }
   }
 }
@@ -250,6 +291,41 @@ async function initSupabaseSync() {
         writeJson(USED_SLIPS_FILE, memoryCache.usedSlips);
       } else {
         await supabase.from('settings').upsert({ id: 'used_slips_registry', data: memoryCache.usedSlips || [] });
+      }
+    } catch (e) {}
+
+    // 5. Sync Visitors Analytics
+    try {
+      const { data: visitorsRow, error: visitorsErr } = await supabase
+        .from('settings')
+        .select('*')
+        .eq('id', 'visitors_analytics')
+        .single();
+
+      if (!visitorsErr && visitorsRow && Array.isArray(visitorsRow.data)) {
+        const vMap = new Map();
+        (visitorsRow.data || []).forEach(v => {
+          if (v && v.visitorId) vMap.set(v.visitorId, v);
+        });
+        (memoryCache.visitors || []).forEach(v => {
+          if (v && v.visitorId) {
+            if (!vMap.has(v.visitorId)) {
+              vMap.set(v.visitorId, v);
+            } else {
+              const cloudV = vMap.get(v.visitorId);
+              const combined = [...(cloudV.visits || []), ...(v.visits || [])];
+              const uniqueVisits = Array.from(new Map(combined.map(item => [item.timestamp, item])).values())
+                .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+              cloudV.visits = uniqueVisits;
+              cloudV.totalVisits = uniqueVisits.length;
+              cloudV.lastSeen = uniqueVisits[0]?.timestamp || cloudV.lastSeen;
+            }
+          }
+        });
+        memoryCache.visitors = Array.from(vMap.values());
+        writeJson(VISITORS_FILE, memoryCache.visitors);
+      } else {
+        await supabase.from('settings').upsert({ id: 'visitors_analytics', data: memoryCache.visitors || [] });
       }
     } catch (e) {}
 
@@ -831,6 +907,199 @@ function getDatabaseStatus() {
   };
 }
 
+// ==========================================
+// VISITOR ANALYTICS API
+// ==========================================
+function generateVisitorCode(id) {
+  let hash = 0;
+  const str = String(id || Date.now());
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash) + str.charCodeAt(i);
+    hash |= 0;
+  }
+  const hex = Math.abs(hash).toString(16).toUpperCase().padStart(4, '0').slice(-4);
+  return `USR-${hex}`;
+}
+
+function parseDeviceFromUa(ua = '') {
+  ua = String(ua).toLowerCase();
+  if (/iphone/i.test(ua)) return 'iPhone (iOS)';
+  if (/ipad/i.test(ua)) return 'iPad (iPadOS)';
+  if (/android/i.test(ua)) {
+    if (/samsung/i.test(ua)) return 'Samsung (Android)';
+    if (/oppo/i.test(ua)) return 'OPPO (Android)';
+    if (/vivo/i.test(ua)) return 'Vivo (Android)';
+    if (/xiaomi|mi /i.test(ua)) return 'Xiaomi (Android)';
+    return 'มือถือ Android';
+  }
+  if (/windows/i.test(ua)) return 'คอมพิวเตอร์ / Laptop (Windows)';
+  if (/macintosh|mac os x/i.test(ua)) return 'Mac / MacBook (macOS)';
+  if (/linux/i.test(ua)) return 'Linux';
+  return 'อุปกรณ์ทั่วไป';
+}
+
+function trackVisitor({ visitorId, visitorCode, userAgent, path: reqPath, deviceSummary }) {
+  initLocalCache();
+  if (!visitorId) return null;
+
+  const now = new Date();
+  const dateStr = now.toISOString().slice(0, 10);
+  const nowIso = now.toISOString();
+
+  let visitors = memoryCache.visitors || [];
+  let visitor = visitors.find(v => v.visitorId === visitorId);
+
+  const device = deviceSummary || parseDeviceFromUa(userAgent);
+  const code = visitorCode || (visitor && visitor.visitorCode) || generateVisitorCode(visitorId);
+
+  if (!visitor) {
+    visitor = {
+      visitorId,
+      visitorCode: code,
+      device,
+      firstSeen: nowIso,
+      lastSeen: nowIso,
+      totalVisits: 1,
+      visits: [
+        {
+          timestamp: nowIso,
+          date: dateStr,
+          path: reqPath || '/'
+        }
+      ]
+    };
+    visitors.unshift(visitor);
+  } else {
+    if (code) visitor.visitorCode = code;
+    if (device && device !== 'ไม่ระบุ' && device !== 'อุปกรณ์ทั่วไป') {
+      visitor.device = device;
+    }
+
+    if (!Array.isArray(visitor.visits)) visitor.visits = [];
+    const lastVisit = visitor.visits[0];
+    const lastTime = lastVisit ? new Date(lastVisit.timestamp).getTime() : 0;
+    const isNewSession = (now.getTime() - lastTime) > (3 * 60 * 1000);
+
+    if (isNewSession || visitor.visits.length === 0) {
+      visitor.visits.unshift({
+        timestamp: nowIso,
+        date: dateStr,
+        path: reqPath || '/'
+      });
+      visitor.totalVisits = visitor.visits.length;
+    }
+    visitor.lastSeen = nowIso;
+  }
+
+  memoryCache.visitors = visitors;
+  writeJson(VISITORS_FILE, visitors);
+
+  if (supabase) {
+    safeSupabaseExec(
+      supabase.from('settings').upsert({
+        id: 'visitors_analytics',
+        data: visitors,
+        updatedAt: nowIso
+      }),
+      'Update visitors_analytics'
+    );
+  }
+
+  return visitor;
+}
+
+function getVisitorAnalytics() {
+  initLocalCache();
+  const visitors = memoryCache.visitors || [];
+  const now = new Date();
+  const todayStr = now.toISOString().slice(0, 10);
+
+  const dailyMap = new Map();
+  let totalVisitsCount = 0;
+
+  visitors.forEach(v => {
+    const visits = Array.isArray(v.visits) ? v.visits : [];
+    totalVisitsCount += (v.totalVisits || visits.length);
+
+    visits.forEach(vt => {
+      const d = vt.date || (vt.timestamp ? vt.timestamp.slice(0, 10) : 'ไม่ระบุ');
+      if (!dailyMap.has(d)) {
+        dailyMap.set(d, { date: d, uniqueVisitorsSet: new Set(), totalVisits: 0 });
+      }
+      const dayEntry = dailyMap.get(d);
+      dayEntry.totalVisits += 1;
+      dayEntry.uniqueVisitorsSet.add(v.visitorId);
+    });
+  });
+
+  const dailyStats = Array.from(dailyMap.values())
+    .map(d => ({
+      date: d.date,
+      uniqueVisitors: d.uniqueVisitorsSet.size,
+      totalVisits: d.totalVisits
+    }))
+    .sort((a, b) => b.date.localeCompare(a.date));
+
+  const todayStat = dailyStats.find(d => d.date === todayStr) || { date: todayStr, uniqueVisitors: 0, totalVisits: 0 };
+
+  const mappedVisitors = visitors.map(v => {
+    const vVisits = (Array.isArray(v.visits) ? v.visits : []).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    
+    const dayMap = new Map();
+    vVisits.forEach(vt => {
+      const d = vt.date || (vt.timestamp ? vt.timestamp.slice(0, 10) : 'ไม่ระบุ');
+      if (!dayMap.has(d)) {
+        dayMap.set(d, { date: d, count: 0, timestamps: [] });
+      }
+      const entry = dayMap.get(d);
+      entry.count += 1;
+      entry.timestamps.push(vt.timestamp);
+    });
+
+    const dailyBreakdown = Array.from(dayMap.values()).sort((a, b) => b.date.localeCompare(a.date));
+
+    return {
+      visitorId: v.visitorId,
+      visitorCode: v.visitorCode || generateVisitorCode(v.visitorId),
+      device: v.device || 'ไม่ระบุ',
+      firstSeen: v.firstSeen,
+      lastSeen: v.lastSeen,
+      totalVisits: vVisits.length,
+      dailyBreakdown,
+      visits: vVisits
+    };
+  }).sort((a, b) => new Date(b.lastSeen) - new Date(a.lastSeen));
+
+  return {
+    summary: {
+      totalUniqueVisitors: visitors.length,
+      totalVisits: totalVisitsCount,
+      todayUniqueVisitors: todayStat.uniqueVisitors,
+      todayVisits: todayStat.totalVisits
+    },
+    dailyStats,
+    visitors: mappedVisitors
+  };
+}
+
+function resetVisitorAnalytics() {
+  initLocalCache();
+  memoryCache.visitors = [];
+  writeJson(VISITORS_FILE, []);
+
+  if (supabase) {
+    safeSupabaseExec(
+      supabase.from('settings').upsert({
+        id: 'visitors_analytics',
+        data: [],
+        updatedAt: new Date().toISOString()
+      }),
+      'Reset visitors_analytics'
+    );
+  }
+  return true;
+}
+
 module.exports = {
   getSnacks,
   getSnackById,
@@ -849,5 +1118,8 @@ module.exports = {
   getSettings,
   updateSettings,
   verifyAdminPin,
-  getDatabaseStatus
+  getDatabaseStatus,
+  trackVisitor,
+  getVisitorAnalytics,
+  resetVisitorAnalytics
 };

@@ -228,6 +228,27 @@ app.get('/api/snacks', (req, res) => {
   }
 });
 
+// Track Storefront Visitor Presence
+app.post('/api/track-visit', (req, res) => {
+  try {
+    const { visitorId, visitorCode, path: pagePath, deviceSummary } = req.body || {};
+    const userAgent = req.headers['user-agent'] || '';
+    if (!visitorId) {
+      return res.status(400).json({ success: false, error: 'visitorId is required' });
+    }
+    const visitor = db.trackVisitor({
+      visitorId,
+      visitorCode,
+      userAgent,
+      path: pagePath || '/',
+      deviceSummary
+    });
+    res.json({ success: true, visitor });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Get shop settings (sanitized, no admin pin, no secret api keys)
 app.get('/api/settings', (req, res) => {
   try {

@@ -185,16 +185,18 @@ async function loadInitialData() {
   await Promise.all([
     loadAdminSnacks(),
     loadAdminOrders(true),
-    loadAdminSettings()
+    loadAdminSettings(),
+    loadAdminAnalytics()
   ]);
 }
 
 // Switch navigation tabs
 function switchTab(tab) {
   currentTab = tab;
-  ['snacks', 'orders', 'settings'].forEach(t => {
+  ['snacks', 'orders', 'settings', 'analytics'].forEach(t => {
     const btn = document.getElementById(`tabBtn-${t}`);
     const content = document.getElementById(`tabContent-${t}`);
+    if (!btn || !content) return;
     if (t === tab) {
       btn.className = 'tab-btn px-4 py-3 text-xs sm:text-sm font-bold border-b-2 border-orange-600 text-orange-600 flex items-center gap-2 transition whitespace-nowrap';
       content.classList.remove('hidden');
@@ -206,6 +208,8 @@ function switchTab(tab) {
 
   if (tab === 'orders') {
     loadAdminOrders(false);
+  } else if (tab === 'analytics') {
+    loadAdminAnalytics();
   }
 
   if (window.lucide) lucide.createIcons();
@@ -1854,5 +1858,307 @@ async function saveShopSettings() {
     }
   } catch (err) {
     console.error('Save settings error:', err);
+  }
+}
+
+// ==========================================
+// VISITOR ANALYTICS CONTROLLER (TAB 4)
+// ==========================================
+let currentAnalyticsData = null;
+
+function formatThaiDateOnly(isoString) {
+  if (!isoString) return '-';
+  try {
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return isoString;
+    return d.toLocaleDateString('th-TH', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric'
+    });
+  } catch (e) {
+    return isoString;
+  }
+}
+
+function formatThaiTimeOnly(isoString) {
+  if (!isoString) return '-';
+  try {
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return isoString;
+    return d.toLocaleTimeString('th-TH', {
+      hour: '2-digit',
+      minute: '2-digit'
+    }) + ' น.';
+  } catch (e) {
+    return isoString;
+  }
+}
+
+function formatThaiDateTimeFull(isoString) {
+  if (!isoString) return '-';
+  try {
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return isoString;
+    return d.toLocaleString('th-TH', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    }) + ' น.';
+  } catch (e) {
+    return isoString;
+  }
+}
+
+async function loadAdminAnalytics() {
+  try {
+    const res = await adminFetch(`/api/admin/analytics/visitors?_t=${Date.now()}`);
+    const result = await res.json();
+    if (!result.success || !result.data) return;
+
+    currentAnalyticsData = result.data;
+    renderAnalyticsUI(currentAnalyticsData);
+  } catch (err) {
+    console.error('Error loading analytics:', err);
+  }
+}
+
+function renderAnalyticsUI(data) {
+  if (!data) return;
+
+  const summary = data.summary || {};
+  const dailyStats = data.dailyStats || [];
+  const visitors = data.visitors || [];
+
+  // 1. Update KPI Cards & Header Badge
+  const badgeEl = document.getElementById('analyticsTotalBadge');
+  if (badgeEl) badgeEl.textContent = `${summary.totalUniqueVisitors || 0} คน`;
+
+  const statUniqueEl = document.getElementById('statAnalyticsTotalUnique');
+  if (statUniqueEl) statUniqueEl.textContent = Number(summary.totalUniqueVisitors || 0).toLocaleString();
+
+  const statVisitsEl = document.getElementById('statAnalyticsTotalVisits');
+  if (statVisitsEl) statVisitsEl.textContent = Number(summary.totalVisits || 0).toLocaleString();
+
+  const statTodayUniqueEl = document.getElementById('statAnalyticsTodayUnique');
+  if (statTodayUniqueEl) statTodayUniqueEl.textContent = Number(summary.todayUniqueVisitors || 0).toLocaleString();
+
+  const statTodayVisitsEl = document.getElementById('statAnalyticsTodayVisits');
+  if (statTodayVisitsEl) statTodayVisitsEl.textContent = Number(summary.todayVisits || 0).toLocaleString();
+
+  const dailyBadge = document.getElementById('dailyStatsCountBadge');
+  if (dailyBadge) dailyBadge.textContent = `${dailyStats.length} วัน`;
+
+  // 2. Render Daily Stats Table
+  renderDailyStatsTable(dailyStats);
+
+  // 3. Render Visitors Table
+  renderVisitorsTable(visitors);
+
+  if (window.lucide) lucide.createIcons();
+}
+
+function renderDailyStatsTable(dailyStats) {
+  const tbody = document.getElementById('dailyStatsTableBody');
+  if (!tbody) return;
+
+  if (!dailyStats || dailyStats.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="4" class="py-8 text-center text-slate-400">
+          ยังไม่มีข้อมูลคนเข้าชมเว็บในขณะนี้ เมื่อมีลูกค้าเปิดเว็บ ระบบจะบันทึกให้อัตโนมัติทันที
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  tbody.innerHTML = dailyStats.map(d => {
+    const avg = d.uniqueVisitors > 0 ? (d.totalVisits / d.uniqueVisitors).toFixed(1) : '1.0';
+    return `
+      <tr class="hover:bg-slate-50/70 transition">
+        <td class="py-3 px-4 font-bold text-slate-800">
+          📅 ${formatThaiDateOnly(d.date)}
+        </td>
+        <td class="py-3 px-4 text-center">
+          <span class="inline-flex items-center gap-1 bg-indigo-50 text-indigo-700 font-black px-2.5 py-0.5 rounded-full border border-indigo-200">
+            ${d.uniqueVisitors.toLocaleString()} คน
+          </span>
+        </td>
+        <td class="py-3 px-4 text-center">
+          <span class="inline-flex items-center gap-1 bg-orange-50 text-orange-700 font-black px-2.5 py-0.5 rounded-full border border-orange-200">
+            ${d.totalVisits.toLocaleString()} ครั้ง
+          </span>
+        </td>
+        <td class="py-3 px-4 text-right text-slate-500 font-medium">
+          เฉลี่ย ${avg} ครั้ง/คน
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function renderVisitorsTable(visitors) {
+  const tbody = document.getElementById('visitorsTableBody');
+  if (!tbody) return;
+
+  if (!visitors || visitors.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="5" class="py-8 text-center text-slate-400">
+          ยังไม่มีรายชื่อผู้เข้าชมในขณะนี้
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  tbody.innerHTML = visitors.map(v => {
+    return `
+      <tr class="hover:bg-slate-50/70 transition">
+        <td class="py-3 px-4">
+          <div class="flex items-center gap-2">
+            <span class="font-mono font-black bg-amber-50 text-amber-800 border border-amber-200 px-2.5 py-1 rounded-xl text-xs shadow-2xs">
+              🏷️ ${v.visitorCode}
+            </span>
+          </div>
+        </td>
+        <td class="py-3 px-4 text-slate-700">
+          <div class="flex items-center gap-1.5 text-xs font-medium">
+            <span>📱</span>
+            <span>${v.device || 'ไม่ระบุ'}</span>
+          </div>
+        </td>
+        <td class="py-3 px-4 text-center">
+          <span class="inline-flex items-center gap-1 bg-orange-100 text-orange-800 font-black px-2.5 py-0.5 rounded-full text-xs">
+            ${v.totalVisits.toLocaleString()} ครั้ง
+          </span>
+        </td>
+        <td class="py-3 px-4 text-center text-xs text-slate-500 font-medium">
+          ${formatThaiDateTimeFull(v.lastSeen)}
+        </td>
+        <td class="py-3 px-4 text-right">
+          <button
+            onclick="openVisitorDetailModal('${v.visitorId}')"
+            class="px-3 py-1.5 bg-orange-50 hover:bg-orange-100 text-orange-700 font-bold rounded-xl text-xs border border-orange-200 transition active:scale-95 inline-flex items-center gap-1 cursor-pointer"
+          >
+            <i data-lucide="search" class="w-3.5 h-3.5"></i>
+            <span>ดูประวัติ (${v.totalVisits} ครั้ง)</span>
+          </button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function filterVisitorList(query) {
+  if (!currentAnalyticsData || !Array.isArray(currentAnalyticsData.visitors)) return;
+  const q = (query || '').trim().toLowerCase();
+  if (!q) {
+    renderVisitorsTable(currentAnalyticsData.visitors);
+    return;
+  }
+
+  const filtered = currentAnalyticsData.visitors.filter(v => {
+    return (v.visitorCode && v.visitorCode.toLowerCase().includes(q)) ||
+           (v.device && v.device.toLowerCase().includes(q));
+  });
+
+  renderVisitorsTable(filtered);
+  if (window.lucide) lucide.createIcons();
+}
+
+function openVisitorDetailModal(visitorId) {
+  if (!currentAnalyticsData || !Array.isArray(currentAnalyticsData.visitors)) return;
+  const visitor = currentAnalyticsData.visitors.find(v => v.visitorId === visitorId);
+  if (!visitor) return;
+
+  const modal = document.getElementById('visitorDetailModal');
+  const codeBadge = document.getElementById('modalVisitorCodeBadge');
+  const deviceEl = document.getElementById('modalVisitorDeviceText');
+  const totalVisitsEl = document.getElementById('modalVisitorTotalVisits');
+  const lastSeenEl = document.getElementById('modalVisitorLastSeen');
+  const daysCountEl = document.getElementById('modalVisitorDaysCount');
+  const dailyListEl = document.getElementById('modalVisitorDailyList');
+
+  if (codeBadge) codeBadge.textContent = visitor.visitorCode || 'USR-XXXX';
+  if (deviceEl) deviceEl.textContent = `อุปกรณ์: ${visitor.device || 'ไม่ระบุ'}`;
+  if (totalVisitsEl) totalVisitsEl.textContent = `${visitor.totalVisits || 0} ครั้ง`;
+  if (lastSeenEl) lastSeenEl.textContent = formatThaiDateTimeFull(visitor.lastSeen);
+
+  const breakdowns = visitor.dailyBreakdown || [];
+  if (daysCountEl) daysCountEl.textContent = `เข้าชมทั้งหมด ${breakdowns.length} วัน`;
+
+  if (dailyListEl) {
+    if (breakdowns.length === 0) {
+      dailyListEl.innerHTML = '<div class="text-center py-4 text-xs text-slate-400">ไม่มีข้อมูลวันเข้าชม</div>';
+    } else {
+      dailyListEl.innerHTML = breakdowns.map(b => {
+        const timeBadges = (b.timestamps || []).map(ts => {
+          return `<span class="bg-white border border-slate-200 text-slate-700 text-[11px] font-medium px-2 py-0.5 rounded-md shadow-2xs">🕐 ${formatThaiTimeOnly(ts)}</span>`;
+        }).join('');
+
+        return `
+          <div class="bg-slate-50 border border-slate-200/80 rounded-2xl p-3 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-slate-800">
+                📅 ${formatThaiDateOnly(b.date)}
+              </span>
+              <span class="bg-orange-100 text-orange-800 text-[11px] font-black px-2 py-0.5 rounded-full">
+                เข้าชม ${b.count} ครั้ง
+              </span>
+            </div>
+            <div class="flex flex-wrap gap-1.5 pt-1 border-t border-slate-200/60">
+              ${timeBadges}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+  }
+
+  if (modal) {
+    modal.classList.remove('hidden');
+  }
+
+  if (window.lucide) lucide.createIcons();
+}
+
+function closeVisitorDetailModal() {
+  const modal = document.getElementById('visitorDetailModal');
+  if (modal) modal.classList.add('hidden');
+}
+
+async function confirmResetAnalytics() {
+  const result = await Swal.fire({
+    title: 'ยืนยันล้างข้อมูลสถิติ?',
+    text: 'ระบบจะล้างประวัติการเข้าชมทั้งหมด ยอดผู้เข้าชมจะถูกรีเซ็ตเป็น 0',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#ef4444',
+    cancelButtonColor: '#94a3b8',
+    confirmButtonText: 'ล้างสถิติทั้งหมด',
+    cancelButtonText: 'ยกเลิก'
+  });
+
+  if (result.isConfirmed) {
+    try {
+      const res = await adminFetch('/api/admin/analytics/visitors', { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) {
+        Swal.fire({
+          icon: 'success',
+          title: 'ล้างสถิติเรียบร้อย',
+          timer: 1200,
+          showConfirmButton: false
+        });
+        loadAdminAnalytics();
+      }
+    } catch (e) {
+      console.error(e);
+    }
   }
 }

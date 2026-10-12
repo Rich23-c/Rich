@@ -223,6 +223,16 @@
         <i data-lucide="settings" class="w-4 h-4"></i>
         <span>3. ตั้งค่าบัญชีรับเงิน (พร้อมเพย์/ธนาคาร)</span>
       </button>
+
+      <button
+        onclick="switchTab('analytics')"
+        id="tabBtn-analytics"
+        class="tab-btn px-4 py-3 text-xs sm:text-sm font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-800 flex items-center gap-2 transition whitespace-nowrap"
+      >
+        <i data-lucide="bar-chart-3" class="w-4 h-4"></i>
+        <span>4. สถิติคนเข้าชมเว็บ 📊</span>
+        <span id="analyticsTotalBadge" class="bg-slate-100 text-slate-700 text-xs px-2 py-0.5 rounded-full font-bold">0 คน</span>
+      </button>
     </div>
   </header>
 
@@ -655,7 +665,230 @@
       </div>
     </div>
 
+    <!-- ============================================== -->
+    <!-- TAB 4: VISITOR ANALYTICS (DAILY & PER-VISITOR) -->
+    <!-- ============================================== -->
+    <div id="tabContent-analytics" class="hidden space-y-6">
+
+      <!-- Header & Quick Action -->
+      <div class="bg-white p-5 sm:p-6 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="text-2xl">📊</span>
+            <h2 class="text-base sm:text-lg font-bold text-slate-900 font-heading">
+              สถิติคนเข้าชมเว็บไซต์ (Visitor Analytics)
+            </h2>
+          </div>
+          <p class="text-xs text-slate-500 mt-1">
+            ตรวจเช็คจำนวนคนเข้าดูรายวัน จำนวนครั้งที่เข้าชม และรหัสประจำตัวของผู้เข้าชมแต่ละคน (Code แทนชื่อจริง)
+          </p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button
+            onclick="loadAdminAnalytics()"
+            class="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition flex items-center gap-1.5 cursor-pointer active:scale-95"
+          >
+            <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+            <span>รีเฟรชข้อมูล</span>
+          </button>
+          <button
+            onclick="confirmResetAnalytics()"
+            class="px-3 py-2 rounded-xl text-xs font-semibold text-red-600 hover:bg-red-50 border border-red-200 transition flex items-center gap-1 cursor-pointer active:scale-95"
+            title="ล้างประวัติการเข้าชมทั้งหมด"
+          >
+            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+            <span class="hidden sm:inline">ล้างสถิติ</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 4 KPI Summary Cards -->
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+        <div class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex items-center gap-3">
+          <div class="w-11 h-11 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+            <i data-lucide="users" class="w-5 h-5"></i>
+          </div>
+          <div class="min-w-0">
+            <div class="text-[11px] text-slate-400 font-medium truncate">ผู้เข้าชมทั้งหมด (คน)</div>
+            <div id="statAnalyticsTotalUnique" class="text-xl sm:text-2xl font-black text-slate-900 font-heading">0</div>
+          </div>
+        </div>
+
+        <div class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex items-center gap-3">
+          <div class="w-11 h-11 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+            <i data-lucide="eye" class="w-5 h-5"></i>
+          </div>
+          <div class="min-w-0">
+            <div class="text-[11px] text-slate-400 font-medium truncate">เปิดดูรวมทั้งหมด (ครั้ง)</div>
+            <div id="statAnalyticsTotalVisits" class="text-xl sm:text-2xl font-black text-slate-900 font-heading">0</div>
+          </div>
+        </div>
+
+        <div class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex items-center gap-3">
+          <div class="w-11 h-11 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+            <i data-lucide="calendar" class="w-5 h-5"></i>
+          </div>
+          <div class="min-w-0">
+            <div class="text-[11px] text-slate-400 font-medium truncate">ผู้เข้าชมวันนี้ (คน)</div>
+            <div id="statAnalyticsTodayUnique" class="text-xl sm:text-2xl font-black text-emerald-600 font-heading">0</div>
+          </div>
+        </div>
+
+        <div class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex items-center gap-3">
+          <div class="w-11 h-11 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+            <i data-lucide="activity" class="w-5 h-5"></i>
+          </div>
+          <div class="min-w-0">
+            <div class="text-[11px] text-slate-400 font-medium truncate">เปิดดูวันนี้ (ครั้ง)</div>
+            <div id="statAnalyticsTodayVisits" class="text-xl sm:text-2xl font-black text-amber-600 font-heading">0</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section 1: Daily Breakdown (วันไหนมีคนเข้าเท่าไหร่) -->
+      <div class="bg-white p-5 sm:p-6 rounded-3xl border border-slate-200/80 shadow-xs space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+          <div class="flex items-center gap-2">
+            <i data-lucide="calendar-days" class="w-5 h-5 text-orange-600"></i>
+            <div>
+              <h3 class="text-sm sm:text-base font-bold text-slate-900 font-heading">
+                1. สถิติคนเข้าชมแยกตามวัน (วันไหนมีคนเข้ากี่คน / กี่ครั้ง)
+              </h3>
+              <p class="text-xs text-slate-500">ดูยอดคนเข้าชมและจำนวนครั้งที่เปิดดูในแต่ละวัน</p>
+            </div>
+          </div>
+          <span id="dailyStatsCountBadge" class="text-xs bg-slate-100 text-slate-600 font-bold px-2.5 py-0.5 rounded-full">
+            0 วัน
+          </span>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs sm:text-sm">
+            <thead>
+              <tr class="border-b border-slate-200 text-slate-500 font-semibold bg-slate-50/70">
+                <th class="py-3 px-4 rounded-l-xl">วันที่ (Date)</th>
+                <th class="py-3 px-4 text-center">ผู้เข้าชมไม่ซ้ำ (คน)</th>
+                <th class="py-3 px-4 text-center">จำนวนครั้งที่เปิดดู (ครั้ง)</th>
+                <th class="py-3 px-4 text-right rounded-r-xl">เฉลี่ยต่อคน</th>
+              </tr>
+            </thead>
+            <tbody id="dailyStatsTableBody" class="divide-y divide-slate-100">
+              <tr>
+                <td colspan="4" class="py-8 text-center text-slate-400">กำลังโหลดข้อมูลสถิติ...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Section 2: Visitor Codes & Visit Count (แต่ละคนเข้ากี่ครั้ง • รหัส Code แทนชื่อ) -->
+      <div class="bg-white p-5 sm:p-6 rounded-3xl border border-slate-200/80 shadow-xs space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <div class="flex items-center gap-2">
+            <i data-lucide="user-check" class="w-5 h-5 text-orange-600"></i>
+            <div>
+              <h3 class="text-sm sm:text-base font-bold text-slate-900 font-heading">
+                2. รายชื่อผู้เข้าชม (แต่ละคนเข้ากี่ครั้ง • รหัส Code แทนชื่อ)
+              </h3>
+              <p class="text-xs text-slate-500">
+                แตะที่ปุ่ม <span class="text-orange-600 font-bold">"🔍 ดูประวัติ"</span> เพื่อดูว่า <b>"เขาเข้าวันไหนบ้าง และแต่ละวันเข้ากี่ครั้ง"</b>
+              </p>
+            </div>
+          </div>
+          <div class="relative w-full sm:w-64">
+            <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-2.5"></i>
+            <input
+              type="text"
+              id="visitorSearchInput"
+              oninput="filterVisitorList(this.value)"
+              placeholder="ค้นหารหัส เช่น USR-..."
+              class="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-200 focus:ring-2 focus:ring-orange-500 focus:outline-none"
+            />
+          </div>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs sm:text-sm">
+            <thead>
+              <tr class="border-b border-slate-200 text-slate-500 font-semibold bg-slate-50/70">
+                <th class="py-3 px-4 rounded-l-xl">รหัสผู้เข้าชม (Code แทนชื่อ)</th>
+                <th class="py-3 px-4">อุปกรณ์ที่ใช้</th>
+                <th class="py-3 px-4 text-center">เข้าชมทั้งหมด</th>
+                <th class="py-3 px-4 text-center">เข้าชมล่าสุด</th>
+                <th class="py-3 px-4 text-right rounded-r-xl">ดูประวัติรายวัน</th>
+              </tr>
+            </thead>
+            <tbody id="visitorsTableBody" class="divide-y divide-slate-100">
+              <tr>
+                <td colspan="5" class="py-8 text-center text-slate-400">กำลังโหลดรายชื่อผู้เข้าชม...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
   </main>
+
+  <!-- ============================================== -->
+  <!-- MODAL: VISITOR VISIT HISTORY DRILLDOWN          -->
+  <!-- ============================================== -->
+  <div id="visitorDetailModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 space-y-5 shadow-2xl max-h-[92vh] overflow-y-auto">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+        <div class="flex items-center gap-2.5">
+          <span class="text-2xl">👤</span>
+          <div>
+            <h3 class="text-base font-bold text-slate-900 font-heading flex items-center gap-2">
+              <span>ประวัติการเข้าชม</span>
+              <span id="modalVisitorCodeBadge" class="font-mono bg-amber-100 text-amber-800 px-2.5 py-0.5 rounded-lg text-xs font-black">USR-XXXX</span>
+            </h3>
+            <p id="modalVisitorDeviceText" class="text-xs text-slate-500 mt-0.5"></p>
+          </div>
+        </div>
+        <button onclick="closeVisitorDetailModal()" class="text-slate-400 hover:text-slate-600 p-1.5 rounded-xl hover:bg-slate-100 transition cursor-pointer">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Quick Summary inside modal -->
+      <div class="grid grid-cols-2 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-200/80">
+        <div>
+          <div class="text-[11px] text-slate-400 font-medium">เข้าชมรวมทั้งหมด</div>
+          <div id="modalVisitorTotalVisits" class="text-xl font-black text-orange-600 font-heading">0 ครั้ง</div>
+        </div>
+        <div>
+          <div class="text-[11px] text-slate-400 font-medium">เข้าชมล่าสุดเมื่อ</div>
+          <div id="modalVisitorLastSeen" class="text-xs font-bold text-slate-700 mt-1">-</div>
+        </div>
+      </div>
+
+      <!-- Daily Breakdown: เขาเข้าวันไหน และแต่ละวันเข้ากี่ครั้ง -->
+      <div class="space-y-3">
+        <div class="flex items-center justify-between">
+          <h4 class="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+            <i data-lucide="calendar" class="w-4 h-4 text-orange-600"></i>
+            <span>สรุปว่าเขาเข้าวันไหนบ้าง & เข้ากี่ครั้ง</span>
+          </h4>
+          <span id="modalVisitorDaysCount" class="text-[11px] text-slate-500 font-semibold bg-slate-100 px-2 py-0.5 rounded-full"></span>
+        </div>
+
+        <div id="modalVisitorDailyList" class="space-y-2.5 max-h-72 overflow-y-auto pr-1">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+
+      <div class="pt-3 border-t border-slate-100 flex justify-end">
+        <button
+          onclick="closeVisitorDetailModal()"
+          class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-5 py-2.5 rounded-xl transition text-xs cursor-pointer active:scale-95"
+        >
+          ปิดหน้าต่าง
+        </button>
+      </div>
+    </div>
+  </div>
 
   <!-- ============================================== -->
   <!-- MODAL: ADD / EDIT SNACK                        -->
@@ -909,6 +1142,6 @@
     </div>
   </div>
 
-  <script src="/js/admin.js?v=2.9.1"></script>
+  <script src="/js/admin.js?v=2.9.3"></script>
 </body>
 </html>

@@ -266,4 +266,24 @@ router.get('/api/admin/database-status', requireAdmin, (req, res) => {
   }
 });
 
+// Admin get visitor analytics (daily counts, individual visitor visit history & codes)
+router.get('/api/admin/analytics/visitors', requireAdmin, (req, res) => {
+  try {
+    const analytics = db.getVisitorAnalytics();
+    res.json({ success: true, data: analytics });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Admin reset visitor analytics
+router.delete('/api/admin/analytics/visitors', requireAdmin, (req, res) => {
+  try {
+    const success = db.resetVisitorAnalytics();
+    res.json({ success: true, message: 'รีเซ็ตข้อมูลสถิติผู้เข้าชมเรียบร้อยแล้ว' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 module.exports = router;
