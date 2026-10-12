@@ -119,7 +119,8 @@ function getDefaultSettings() {
     laptopBannerText: "พื้นที่โฆษณาว่างสำหรับแสดงบนหน้าจอแล็ปท็อป/คอมพิวเตอร์ สนใจเช่าแบนเนอร์รายวัน/รายเดือน ติดต่อร้านขนมแม้ว",
     laptopBannerContact: "โทร 080-924-9673 หรือ LINE: @snackbymaew",
     laptopBannerImage: "",
-    laptopBannerLink: ""
+    laptopBannerLink: "",
+    geminiApiKeys: process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || ""
   };
 }
 
@@ -830,13 +831,23 @@ function resetOrders() {
 // ==========================================
 function getSettings() {
   initLocalCache();
-  return { ...getDefaultSettings(), ...(memoryCache.settings || {}) };
+  const def = getDefaultSettings();
+  const merged = { ...def, ...(memoryCache.settings || {}) };
+  if (!merged.geminiApiKeys && def.geminiApiKeys) {
+    merged.geminiApiKeys = def.geminiApiKeys;
+  }
+  return merged;
 }
 
 function updateSettings(updates) {
   initLocalCache();
   const current = getSettings();
-  const updated = { ...current, ...updates };
+  const cleanedUpdates = { ...updates };
+  // If geminiApiKeys is not provided or empty string, preserve current key
+  if (cleanedUpdates.geminiApiKeys === undefined || cleanedUpdates.geminiApiKeys === '') {
+    cleanedUpdates.geminiApiKeys = current.geminiApiKeys || getDefaultSettings().geminiApiKeys;
+  }
+  const updated = { ...current, ...cleanedUpdates, updatedAt: new Date().toISOString() };
   memoryCache.settings = updated;
   writeJson(SETTINGS_FILE, updated);
 

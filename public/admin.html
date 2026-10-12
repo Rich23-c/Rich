@@ -655,25 +655,49 @@
           </div>
 
           <!-- 4. Gemini AI Slip Verification API Keys -->
-          <div class="pt-4 border-t border-slate-100 space-y-2">
-            <div class="flex items-center justify-between">
-              <label class="block font-semibold text-slate-700 text-xs sm:text-sm flex items-center gap-1.5">
-                <span>🤖 AI ตรวจสลิป (Gemini API Keys)</span>
-                <span class="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full border border-emerald-200">ฟรี 100%</span>
+          <div class="pt-4 border-t border-slate-100 space-y-3">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+              <label class="block font-semibold text-slate-700 text-xs sm:text-sm flex items-center gap-2">
+                <span>🤖 AI ตรวจสลิป (Google Gemini API Keys)</span>
+                <span id="geminiKeyStatusBadge" class="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full border border-emerald-200">🟢 จำคีย์ในระบบแล้ว</span>
               </label>
               <a href="https://aistudio.google.com/app/apikey" target="_blank" class="text-[11px] text-orange-600 hover:underline inline-flex items-center gap-0.5 font-medium">
                 <span>ขอคีย์ฟรีที่ Google AI Studio</span> ↗
               </a>
             </div>
-            <textarea
-              id="settingGeminiKeys"
-              rows="2"
-              placeholder="วางคีย์ที่นี่ (หากมีหลายคีย์ คั่นด้วยเครื่องหมายจุลภาค , เช่น AIzaSyA...,AIzaSyB...)"
-              class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-orange-500 focus:outline-none font-mono text-xs text-slate-800 placeholder-slate-400"
-            ></textarea>
-            <p class="text-[11px] text-slate-500">
-              💡 1 บัญชี Google ตรวจสลิปฟรีได้ 1,500 ครั้ง/วัน หากใส่ 2 คีย์จะเพิ่มเป็น 3,000 ครั้ง/วัน โดยไม่ต้องเข้าไปแก้ใน Render!
-            </p>
+
+            <div class="space-y-2">
+              <textarea
+                id="settingGeminiKeys"
+                rows="2"
+                placeholder="วางคีย์ที่นี่ (หากมีหลายคีย์ คั่นด้วยเครื่องหมายจุลภาค , เช่น AIzaSyA...,AQ.Ab8RN...)"
+                class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-orange-500 focus:outline-none font-mono text-xs text-slate-800 placeholder-slate-400 bg-slate-50/50"
+              ></textarea>
+              
+              <div class="flex flex-wrap items-center justify-between gap-2 pt-1">
+                <p class="text-[11px] text-slate-500 flex items-center gap-1">
+                  <span>💡 ระบบจำคีย์ถาวรในระบบและเบราว์เซอร์ ตรวจสลิปได้ฟรี 1,500 ครั้ง/วัน</span>
+                </p>
+                <div class="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onclick="testGeminiApiKey()"
+                    id="btnTestGeminiKey"
+                    class="px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 transition flex items-center gap-1 active:scale-95 cursor-pointer shadow-2xs"
+                  >
+                    <span>⚡ ทดสอบคีย์ AI</span>
+                  </button>
+                  <button
+                    type="button"
+                    onclick="saveGeminiApiKeysOnly()"
+                    id="btnSaveGeminiKeyOnly"
+                    class="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-900 hover:bg-slate-800 text-white transition flex items-center gap-1 active:scale-95 cursor-pointer shadow-2xs"
+                  >
+                    <span>💾 บันทึกคีย์นี้</span>
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div class="pt-4 border-t border-slate-100 flex justify-end">
@@ -1225,6 +1249,6 @@
     </div>
   </div>
 
-  <script src="/js/admin.js?v=2.9.5"></script>
+  <script src="/js/admin.js?v=2.9.6"></script>
 </body>
 </html>

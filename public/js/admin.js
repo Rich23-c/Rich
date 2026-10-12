@@ -1649,9 +1649,28 @@ async function loadAdminSettings() {
       updateLaptopBannerBadge(s.laptopBannerEnabled !== false);
       updateAdminBannerPreview();
 
-      // Gemini AI Slip Verification keys
+      // Gemini AI Slip Verification keys (Dual-Layer Persistence)
       const geminiEl = document.getElementById('settingGeminiKeys');
-      if (geminiEl) geminiEl.value = s.geminiApiKeys || s.geminiApiKey || '';
+      let effectiveKeys = s.geminiApiKeys || s.geminiApiKey || '';
+
+      if (effectiveKeys) {
+        try { localStorage.setItem('cached_gemini_api_keys', effectiveKeys); } catch (e) {}
+      } else {
+        try {
+          const cached = localStorage.getItem('cached_gemini_api_keys');
+          if (cached) {
+            effectiveKeys = cached;
+            adminFetch('/api/admin/save-gemini-keys', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ geminiApiKeys: cached })
+            }).catch(() => {});
+          }
+        } catch (e) {}
+      }
+
+      if (geminiEl) geminiEl.value = effectiveKeys;
+      updateGeminiKeyBadge(effectiveKeys);
 
       // Update UI for store status in header and settings tab
       updateStoreStatusUi(s.isOpen);
@@ -1837,7 +1856,16 @@ async function saveShopSettings() {
     laptopBannerLink: bannerLinkEl ? bannerLinkEl.value.trim() : '',
 
     // Gemini AI Slip Verification keys
-    geminiApiKeys: document.getElementById('settingGeminiKeys') ? document.getElementById('settingGeminiKeys').value.trim() : ''
+    geminiApiKeys: (function() {
+      const el = document.getElementById('settingGeminiKeys');
+      const val = el ? el.value.trim() : '';
+      if (val) return val;
+      try {
+        const cached = localStorage.getItem('cached_gemini_api_keys');
+        if (cached) return cached;
+      } catch (e) {}
+      return (currentAdminSettings && currentAdminSettings.geminiApiKeys) || '';
+    })()
   };
 
   try {
@@ -1849,10 +1877,14 @@ async function saveShopSettings() {
     const data = await res.json();
 
     if (data.success) {
+      if (updates.geminiApiKeys) {
+        try { localStorage.setItem('cached_gemini_api_keys', updates.geminiApiKeys); } catch (e) {}
+        updateGeminiKeyBadge(updates.geminiApiKeys);
+      }
       Swal.fire({
         icon: 'success',
         title: 'บันทึกสำเร็จ 🎉',
-        text: 'การตั้งค่าร้านและแบนเนอร์ถูกอัปเดตเรียบร้อยแล้ว',
+        text: 'การตั้งค่าร้าน ข้อมูลพร้อมเพย์ และคีย์ AI ถูกอัปเดตเรียบร้อยแล้ว',
         confirmButtonColor: '#f97316'
       });
     }
@@ -2359,6 +2391,143 @@ async function handleChangeAdminPin() {
       icon: 'error',
       title: 'เกิดข้อผิดพลาด',
       text: err.message || 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้',
+      confirmButtonColor: '#ea580c'
+    });
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+// ==========================================
+// GEMINI AI API KEY MANAGEMENT & TEST
+// ==========================================
+function updateGeminiKeyBadge(keys) {
+  const badge = document.getElementById('geminiKeyStatusBadge');
+  if (!badge) return;
+  const count = (keys || '').split(',').map(k => k.trim()).filter(Boolean).length;
+  if (count > 0) {
+    badge.className = 'text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full border border-emerald-200';
+    badge.innerText = `🟢 จำคีย์ในระบบแล้ว (${count} คีย์พร้อมใช้งาน)`;
+  } else {
+    badge.className = 'text-[10px] bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded-full border border-amber-200';
+    badge.innerText = '⚠️ ยังไม่มีคีย์ในระบบ';
+  }
+}
+
+async function testGeminiApiKey() {
+  const geminiEl = document.getElementById('settingGeminiKeys');
+  const btn = document.getElementById('btnTestGeminiKey');
+  const apiKey = geminiEl ? geminiEl.value.trim() : '';
+
+  if (!apiKey) {
+    Swal.fire({
+      icon: 'warning',
+      title: 'กรุณากรอกคีย์ก่อนทดสอบ',
+      text: 'กรุณาวาง Gemini API Key ในช่องก่อนกดปุ่มทดสอบ',
+      confirmButtonColor: '#ea580c'
+    });
+    return;
+  }
+
+  const origHtml = btn ? btn.innerHTML : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span>⏳ กำลังทดสอบ...</span>';
+  }
+
+  try {
+    const res = await adminFetch('/api/admin/test-gemini-key', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiKey })
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      try { localStorage.setItem('cached_gemini_api_keys', apiKey); } catch (e) {}
+      updateGeminiKeyBadge(apiKey);
+
+      Swal.fire({
+        icon: 'success',
+        title: 'คีย์ AI ใช้งานได้สมบูรณ์ 🎉',
+        html: `<div class="text-xs sm:text-sm text-slate-700 text-left space-y-2">
+          <p>✅ <b>เชื่อมต่อกับ Google Gemini สำเร็จ 100%</b></p>
+          <p>🤖 ระบบพร้อมใช้งานสำหรับตรวจสลิปโอนเงินอัตโนมัติแล้ว</p>
+          <p class="text-slate-500 font-mono text-[11px] bg-slate-50 p-2 rounded-lg border border-slate-200">สถานะ: ${data.message}</p>
+        </div>`,
+        confirmButtonColor: '#10b981'
+      });
+    } else {
+      Swal.fire({
+        icon: 'error',
+        title: 'การเชื่อมต่อไม่สำเร็จ',
+        html: `<div class="text-xs sm:text-sm text-red-600 text-left">${data.error || 'คีย์ไม่ถูกต้อง หรือไม่มีสิทธิ์ใช้งาน'}</div>`,
+        confirmButtonColor: '#ea580c'
+      });
+    }
+  } catch (err) {
+    Swal.fire({
+      icon: 'error',
+      title: 'เกิดข้อผิดพลาดในการทดสอบ',
+      text: err.message || 'ไม่สามารถติดต่อเซิร์ฟเวอร์ได้',
+      confirmButtonColor: '#ea580c'
+    });
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = origHtml;
+    }
+  }
+}
+
+async function saveGeminiApiKeysOnly() {
+  const geminiEl = document.getElementById('settingGeminiKeys');
+  const btn = document.getElementById('btnSaveGeminiKeyOnly');
+  const geminiApiKeys = geminiEl ? geminiEl.value.trim() : '';
+
+  if (!geminiApiKeys) {
+    Swal.fire({
+      icon: 'warning',
+      title: 'กรุณากรอกคีย์ Gemini API',
+      text: 'ไม่สามารถบันทึกค่าว่างได้',
+      confirmButtonColor: '#ea580c'
+    });
+    return;
+  }
+
+  if (btn) btn.disabled = true;
+
+  try {
+    const res = await adminFetch('/api/admin/save-gemini-keys', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ geminiApiKeys })
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      try { localStorage.setItem('cached_gemini_api_keys', geminiApiKeys); } catch (e) {}
+      updateGeminiKeyBadge(geminiApiKeys);
+
+      Swal.fire({
+        icon: 'success',
+        title: 'บันทึกคีย์ AI สำเร็จ 🎉',
+        text: 'ระบบได้จดจำคีย์ Gemini API ลงฐานข้อมูลและเบราว์เซอร์เรียบร้อยแล้ว ไม่ลืมแน่นอนครับ',
+        confirmButtonColor: '#10b981'
+      });
+    } else {
+      Swal.fire({
+        icon: 'error',
+        title: 'บันทึกไม่สำเร็จ',
+        text: data.error || 'เกิดข้อผิดพลาดในการบันทึก',
+        confirmButtonColor: '#ea580c'
+      });
+    }
+  } catch (err) {
+    Swal.fire({
+      icon: 'error',
+      title: 'เกิดข้อผิดพลาด',
+      text: err.message || 'ไม่สามารถติดต่อเซิร์ฟเวอร์ได้',
       confirmButtonColor: '#ea580c'
     });
   } finally {

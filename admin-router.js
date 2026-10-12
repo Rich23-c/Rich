@@ -260,6 +260,41 @@ router.put('/api/admin/settings', requireAdmin, (req, res) => {
   }
 });
 
+// Admin test Gemini API key
+router.post('/api/admin/test-gemini-key', requireAdmin, async (req, res) => {
+  try {
+    const key = (req.body.apiKey || '').trim() || (db.getSettings().geminiApiKeys || '').split(',')[0].trim();
+    if (!key) {
+      return res.status(400).json({ success: false, error: 'ไม่พบคีย์ Gemini API กรุณากรอกคีย์ก่อนทดสอบ' });
+    }
+    const testUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${key}`;
+    const testRes = await fetch(testUrl);
+    const data = await testRes.json();
+    if (!testRes.ok || data.error) {
+      return res.status(400).json({ success: false, error: data.error?.message || 'คีย์ไม่ถูกต้อง หรือไม่มีสิทธิ์ใช้งาน' });
+    }
+    const count = data.models ? data.models.length : 0;
+    res.json({ success: true, message: `เชื่อมต่อ Google Gemini สำเร็จ! (พบ ${count} โมเดล AI)`, count });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Admin save Gemini API keys directly
+router.post('/api/admin/save-gemini-keys', requireAdmin, (req, res) => {
+  try {
+    const { geminiApiKeys } = req.body;
+    const trimmed = (geminiApiKeys || '').trim();
+    if (!trimmed) {
+      return res.status(400).json({ success: false, error: 'กรุณากรอกคีย์ Gemini API' });
+    }
+    const updated = db.updateSettings({ geminiApiKeys: trimmed });
+    res.json({ success: true, message: 'บันทึกคีย์ Gemini API เรียบร้อยแล้ว', geminiApiKeys: updated.geminiApiKeys });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Admin quick toggle open/close
 router.post('/api/admin/toggle-open', requireAdmin, (req, res) => {
   try {
