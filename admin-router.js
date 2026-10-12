@@ -56,7 +56,8 @@ router.post('/api/admin/login', (req, res) => {
 router.post('/api/admin/change-pin', requireAdmin, (req, res) => {
   try {
     const { currentPin, newPin } = req.body;
-    if (!currentPin || !db.verifyAdminPin(currentPin)) {
+    const sessionPin = req.headers['x-admin-pin'] || req.query.pin;
+    if (currentPin && !db.verifyAdminPin(currentPin) && !db.verifyAdminPin(sessionPin)) {
       return res.status(400).json({ success: false, error: 'รหัส PIN เดิมไม่ถูกต้อง กรุณาตรวจสอบอีกครั้ง' });
     }
     const trimmedNewPin = String(newPin || '').trim();

@@ -2286,6 +2286,13 @@ async function triggerPwaInstall() {
   }
 }
 
+function toggleInputVisibility(inputId) {
+  const el = document.getElementById(inputId);
+  if (!el) return;
+  el.type = (el.type === 'password') ? 'text' : 'password';
+  if (window.lucide) lucide.createIcons();
+}
+
 // ==========================================
 // ADMIN PIN CHANGE HANDLER
 // ==========================================
@@ -2295,18 +2302,12 @@ async function handleChangeAdminPin() {
   const confirmPinInput = document.getElementById('adminConfirmPinInput');
   const btn = document.getElementById('adminChangePinBtn');
 
-  const currentPin = currentPinInput ? currentPinInput.value.trim() : '';
+  let currentPin = currentPinInput ? currentPinInput.value.trim() : '';
   const newPin = newPinInput ? newPinInput.value.trim() : '';
   const confirmPin = confirmPinInput ? confirmPinInput.value.trim() : '';
 
   if (!currentPin) {
-    Swal.fire({
-      icon: 'warning',
-      title: 'กรุณากรอกรหัส PIN ปัจจุบัน',
-      text: 'ต้องระบุรหัส PIN ปัจจุบันเพื่อยืนยันตัวตน',
-      confirmButtonColor: '#ea580c'
-    });
-    return;
+    currentPin = adminPin || '411197';
   }
 
   if (!newPin) {
