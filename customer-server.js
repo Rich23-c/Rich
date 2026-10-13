@@ -21,7 +21,13 @@ const {
   slipVerifyRateLimit,
   orderCreateRateLimit,
   isHoneypotTriggered,
-  sanitizeText
+  sanitizeText,
+  acquireSlipLock,
+  releaseSlipLock,
+  generateSlipVerificationToken,
+  verifySlipVerificationToken,
+  verifyAdminSessionToken,
+  sanitizeOrderForCustomer
 } = require('./services/security');
 
 const app = express();
@@ -282,11 +288,19 @@ app.post('/api/track-visit', (req, res) => {
   }
 });
 
-// Get shop settings (sanitized, no admin pin, no secret api keys)
+// Get shop settings (sanitized, no admin pin, no secret api keys or tokens)
 app.get('/api/settings', (req, res) => {
   try {
     const settings = db.getSettings();
-    const { adminPin, geminiApiKeys, geminiApiKey, ...publicSettings } = settings;
+    const {
+      adminPin,
+      geminiApiKeys,
+      geminiApiKey,
+      emailPassword,
+      lineToken,
+      lineNotifyToken,
+      ...publicSettings
+    } = settings;
     res.setHeader('Cache-Control', 'public, max-age=15, stale-while-revalidate=60');
     res.json({ success: true, data: publicSettings });
   } catch (err) {
@@ -349,17 +363,28 @@ app.post('/api/verify-slip', slipVerifyRateLimit, uploadSlip.single('slip'), asy
     const compressed = await compressSlipImage(filePath, mimeType);
     const slipBase64 = compressed?.dataUrl || null;
 
+    // Generate cryptographic HMAC verification token to prevent client spoofing/parameter tampering
+    const verificationToken = generateSlipVerificationToken({
+      fileHash: verificationResult?.fileHash,
+      qrData: verificationResult?.qrData,
+      detectedAmount: verificationResult?.detectedAmount,
+      slipFilename,
+      isDateToday: verificationResult?.isDateToday
+    });
+
     const enrichedVerification = {
       ...(verificationResult || {}),
       slipBase64,
-      slipFilename
+      slipFilename,
+      verificationToken
     };
 
     res.json({
       success: true,
       slipUrl,
       slipBase64,
-      verification: enrichedVerification
+      verification: enrichedVerification,
+      verificationToken
     });
   } catch (err) {
     console.error('Error in /api/verify-slip:', err);
@@ -370,8 +395,9 @@ app.post('/api/verify-slip', slipVerifyRateLimit, uploadSlip.single('slip'), asy
 const emailNotifier = require('./services/emailNotifier');
 const lineNotifier = require('./services/lineNotifier');
 
-// Submit customer order (Protected with Rate Limiter & Input Sanitization)
+// Submit customer order (Protected with Rate Limiter, Anti-Price-Tampering, Slip Mutex & Cryptographic HMAC Token)
 app.post('/api/orders', orderCreateRateLimit, uploadSlip.single('slip'), async (req, res) => {
+  let lockKey = null;
   try {
     const settings = db.getSettings();
     if (settings.isOpen === false) {
@@ -381,121 +407,184 @@ app.post('/api/orders', orderCreateRateLimit, uploadSlip.single('slip'), async (
       });
     }
 
-    const body = req.body;
+    const body = req.body || {};
 
     // Security: Honeypot Anti-Bot Trap (Silently stops automated spambots)
     if (isHoneypotTriggered(req, 'customer_website_hp')) {
       return res.status(400).json({ success: false, error: 'คำขอไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง' });
     }
 
-    let items = [];
+    let rawItems = [];
     try {
-      items = typeof body.items === 'string' ? JSON.parse(body.items) : (body.items || []);
+      rawItems = typeof body.items === 'string' ? JSON.parse(body.items) : (body.items || []);
     } catch {
-      items = [];
+      rawItems = [];
     }
 
-    if (!items.length) {
-      return res.status(400).json({ success: false, error: 'กรุณาเลือกขนมอย่างน้อย 1 รายการ' });
+    if (!Array.isArray(rawItems) || !rawItems.length || rawItems.length > 50) {
+      return res.status(400).json({ success: false, error: 'กรุณาเลือกขนมอย่างน้อย 1 รายการ (สูงสุด 50 รายการ)' });
     }
 
     if (!body.customerName || !body.customerName.trim()) {
       return res.status(400).json({ success: false, error: 'กรุณาระบุชื่อลูกค้า' });
     }
 
-    // Calculate server-side total price and cost snapshot at this exact order moment
+    // ==========================================
+    // 🛡️ SECURITY LAYER 1: STRICT SERVER-SIDE PRICE VALIDATION (ANTI-PRICE TAMPERING)
+    // Every item MUST exist in shop's DB, be active, and take price strictly from DB.
+    // Client-supplied prices and amounts are 100% ignored.
+    // ==========================================
     const allSnacks = db.getSnacks(true);
     let calculatedTotal = 0;
     let totalOrderCost = 0;
+    const verifiedItems = [];
 
-    const verifiedItems = items.map(item => {
-      const originalSnack = allSnacks.find(s => s.id === item.snackId) || {};
-      const unitPrice = originalSnack.price !== undefined ? originalSnack.price : (Number(item.price) || 0);
-      const unitCost = (originalSnack.cost !== undefined && Number(originalSnack.cost) >= 0) ? Number(originalSnack.cost) : 0;
-      const qty = Math.max(1, parseInt(item.quantity) || 1);
-      const subtotal = unitPrice * qty;
-      const totalItemCost = unitCost * qty;
-      const itemProfit = subtotal - totalItemCost;
+    for (const item of rawItems) {
+      if (!item || typeof item !== 'object') {
+        return res.status(400).json({ success: false, error: 'ข้อมูลสินค้าในตะกร้าไม่ถูกต้อง' });
+      }
+
+      const snackId = String(item.snackId || '').trim();
+      const originalSnack = allSnacks.find(s => s.id === snackId);
+
+      if (!originalSnack) {
+        return res.status(400).json({
+          success: false,
+          error: `ไม่พบรายการขนมรหัส "${sanitizeText(snackId, 30)}" ในระบบ กรุณารีเฟรชหน้าเว็บและเลือกใหม่`
+        });
+      }
+
+      if (originalSnack.isAvailable === false) {
+        return res.status(400).json({
+          success: false,
+          error: `ขออภัย ขนม "${originalSnack.name}" หมดชั่วคราว`
+        });
+      }
+
+      const unitPrice = Number(originalSnack.price);
+      if (typeof unitPrice !== 'number' || isNaN(unitPrice) || unitPrice <= 0) {
+        return res.status(400).json({
+          success: false,
+          error: `ราคาของขนม "${originalSnack.name}" ในระบบไม่ถูกต้อง`
+        });
+      }
+
+      const qty = parseInt(item.quantity, 10);
+      if (!Number.isInteger(qty) || qty < 1 || qty > 100) {
+        return res.status(400).json({
+          success: false,
+          error: `จำนวนของขนม "${originalSnack.name}" ต้องอยู่ระหว่าง 1 ถึง 100 ชิ้น`
+        });
+      }
+
+      const unitCost = (typeof originalSnack.cost === 'number' && originalSnack.cost >= 0) ? Number(originalSnack.cost) : 0;
+      const subtotal = Math.round(unitPrice * qty * 100) / 100;
+      const totalItemCost = Math.round(unitCost * qty * 100) / 100;
+      const itemProfit = Math.round((subtotal - totalItemCost) * 100) / 100;
 
       calculatedTotal += subtotal;
       totalOrderCost += totalItemCost;
 
-      return {
-        snackId: item.snackId,
-        name: originalSnack.name || item.name || 'ขนม',
-        price: unitPrice,
-        cost: unitCost,            // Locked cost at this exact order moment!
+      verifiedItems.push({
+        snackId: originalSnack.id,
+        name: originalSnack.name,
+        price: unitPrice,           // Server database verified price
+        cost: unitCost,            // Locked cost snapshot at order moment
         quantity: qty,
-        unit: originalSnack.unit || item.unit || 'ชิ้น',
+        unit: originalSnack.unit || 'ชิ้น',
         subtotal,
-        totalCost: totalItemCost,  // Locked total cost for this item
-        profit: itemProfit         // Locked profit for this item
-      };
-    });
-
-    const totalOrderProfit = calculatedTotal - totalOrderCost;
-    const profitMargin = calculatedTotal > 0 ? Math.round((totalOrderProfit / calculatedTotal) * 100) : 0;
-
-    let slipImage = '';
-    if (req.file) {
-      slipImage = `/uploads/slips/${req.file.filename}`;
-    } else if (body.existingSlipUrl) {
-      slipImage = body.existingSlipUrl;
+        totalCost: totalItemCost,
+        profit: itemProfit
+      });
     }
 
-    if (!slipImage) {
+    calculatedTotal = Math.round(calculatedTotal * 100) / 100;
+    totalOrderCost = Math.round(totalOrderCost * 100) / 100;
+
+    if (calculatedTotal <= 0) {
+      return res.status(400).json({ success: false, error: 'ยอดรวมคำสั่งซื้อต้องมากกว่า 0 บาท' });
+    }
+
+    const totalOrderProfit = Math.round((calculatedTotal - totalOrderCost) * 100) / 100;
+    const profitMargin = calculatedTotal > 0 ? Math.round((totalOrderProfit / calculatedTotal) * 100) : 0;
+
+    // ==========================================
+    // 🛡️ SECURITY LAYER 2: SLIP IMAGE RESOLUTION & FILE CHECK
+    // ==========================================
+    let slipImage = '';
+    let slipFilename = '';
+    let fullSlipPath = '';
+
+    if (req.file) {
+      slipFilename = req.file.filename;
+      slipImage = `/uploads/slips/${slipFilename}`;
+      fullSlipPath = req.file.path;
+    } else if (body.existingSlipUrl) {
+      const safeFilename = path.basename(body.existingSlipUrl);
+      slipFilename = safeFilename;
+      slipImage = `/uploads/slips/${safeFilename}`;
+      fullSlipPath = path.join(slipsUploadDir, safeFilename);
+    }
+
+    if (!slipImage || !fullSlipPath || !fs.existsSync(fullSlipPath)) {
       return res.status(400).json({
         success: false,
         error: 'กรุณาแนบสลิปการโอนเงินเพื่อยืนยันคำสั่งซื้อ'
       });
     }
 
-    // Extract AI slip verification if sent or run in background
+    // ==========================================
+    // 🛡️ SECURITY LAYER 3: CRYPTOGRAPHIC SLIP VERIFICATION & SPOOFING CHECK
+    // ==========================================
+    const expectedReceiver = settings.promptpayName || 'พัชญ์ชามญชุ์ กฤติณัฐธนชัย';
     let slipVerification = null;
+
     if (body.existingVerification) {
       try {
-        slipVerification = typeof body.existingVerification === 'string'
+        const clientV = typeof body.existingVerification === 'string'
           ? JSON.parse(body.existingVerification)
           : body.existingVerification;
+
+        const token = clientV.verificationToken || body.verificationToken;
+        // Verify server's HMAC signature on the pre-verified slip data
+        const verifiedPayload = verifySlipVerificationToken(token, calculatedTotal);
+
+        if (verifiedPayload && verifiedPayload.slipFilename === slipFilename) {
+          slipVerification = clientV;
+          slipVerification.fileHash = verifiedPayload.fileHash;
+          slipVerification.qrData = verifiedPayload.qrData;
+          slipVerification.isDateToday = verifiedPayload.isDateToday;
+        }
       } catch (e) {}
     }
 
-    // Optional background QR code scanner for admin reference
-    let qrMetadata = null;
-    if (req.file) {
+    // If verification token is invalid, missing, or amount changed: Re-verify on server
+    if (!slipVerification) {
       try {
-        const { scanSlipQrCode } = require('./services/slipQrScanner');
-        qrMetadata = await scanSlipQrCode(req.file.path).catch(() => null);
-      } catch {
-        // Non-critical background scan
+        slipVerification = await verifySlip(fullSlipPath, 'image/jpeg', calculatedTotal, expectedReceiver);
+      } catch (err) {
+        console.error('Server slip verification error:', err);
       }
     }
 
-    // If client didn't pre-verify via AI, run verifySlip on uploaded file
-    if (!slipVerification && req.file) {
-      try {
-        const expectedReceiver = settings.promptpayName || 'พัชญ์ชามญชุ์ กฤติณัฐธนชัย';
-        slipVerification = await verifySlip(req.file.path, req.file.mimetype, calculatedTotal, expectedReceiver).catch(() => null);
-      } catch (e) {}
-    }
-
     // RULE: "ตรวจสอบสลิปจาก QR code เท่านั้น"
-    if (slipVerification && (!slipVerification.hasQrCode || slipVerification.status === 'NO_QR_CODE')) {
+    if (!slipVerification || !slipVerification.hasQrCode || slipVerification.status === 'NO_QR_CODE') {
       return res.status(400).json({
         success: false,
         error: 'สลิปนี้ไม่มี QR Code หรือสแกน QR ไม่พบ (ระบบกำหนดให้ต้องตรวจสอบจาก QR Code บนสลิปเท่านั้น กรุณาแนบรูปสลิปที่มี Mini QR Code ธนาคาร)'
       });
     }
 
-    if (slipVerification && slipVerification.isDuplicateSlip) {
+    // RULE: Enforce Date Freshness (Reject stale/old slips from previous months/years)
+    if (slipVerification.isDateToday === false || slipVerification.status === 'DATE_MISMATCHED') {
       return res.status(400).json({
         success: false,
-        error: '🚨 ตรวจพบ QR Code ซ้ำในระบบ! สลิปนี้เคยถูกใช้งานสั่งซื้อไปแล้ว ไม่สามารถใช้ซ้ำได้'
+        error: `⚠️ วันที่ในสลิป (${slipVerification.transferDate || 'ไม่ระบุ'}) ไม่ใช่วันที่ปัจจุบัน ระบบรับเฉพาะสลิปที่โอนเงินภายในวันนี้เท่านั้น เพื่อป้องกันการนำสลิปเก่ามาใช้ซ้ำ`
       });
     }
 
     // RULE: Enforce amount matching if amount is detected on slip
-    if (slipVerification && slipVerification.detectedAmount !== null && slipVerification.isAmountMatched === false) {
+    if (slipVerification.detectedAmount !== null && slipVerification.isAmountMatched === false) {
       const detectedAmt = Number(slipVerification.detectedAmount).toFixed(2);
       const targetAmt = Number(calculatedTotal).toFixed(2);
       const diff = Math.round((slipVerification.detectedAmount - calculatedTotal) * 100) / 100;
@@ -505,12 +594,42 @@ app.post('/api/orders', orderCreateRateLimit, uploadSlip.single('slip'), async (
       });
     }
 
+    // ==========================================
+    // 🛡️ SECURITY LAYER 4: IN-FLIGHT SLIP MUTEX (ANTI-RACE CONDITION / ANTI-DOUBLE SPENDING)
+    // Prevents automated bots from sending 10 requests at the exact same millisecond using one slip
+    // ==========================================
+    const { getFileHash } = require('./services/slipQrScanner');
+    const slipFileHash = slipVerification.fileHash || getFileHash(fullSlipPath);
+    const slipQrData = (slipVerification.qrData || '').trim();
+    const slipTxRef = (slipVerification.transactionRef || '').trim();
+
+    lockKey = slipFileHash || slipQrData || slipTxRef || slipFilename;
+    if (!acquireSlipLock(lockKey)) {
+      return res.status(409).json({
+        success: false,
+        error: '🚨 คำขอสั่งซื้อด้วยสลิปนี้กำลังอยู่ในระหว่างประมวลผล กรุณารอสักครู่และอย่ากดยืนยันซ้ำพร้อมกันครับ'
+      });
+    }
+
+    // Check duplicate slip across completed orders and permanent registry
+    const { checkDuplicateSlip } = require('./services/slipDuplicateChecker');
+    const dupCheck = checkDuplicateSlip({
+      fileHash: slipFileHash,
+      qrData: slipQrData,
+      transactionRef: slipTxRef
+    });
+
+    if (dupCheck.isDuplicate) {
+      return res.status(400).json({
+        success: false,
+        error: dupCheck.message || '🚨 ตรวจพบ QR Code ซ้ำในระบบ! สลิปนี้เคยถูกใช้งานสั่งซื้อไปแล้ว ไม่สามารถใช้ซ้ำได้'
+      });
+    }
+
     // Device ID from client (enables persistent cloud tracking across browser restarts)
     const deviceId = (body.deviceId || req.headers['x-device-id'] || '').trim() || null;
 
     let slipBase64 = body.slipBase64 || null;
-    let slipFilename = req.file ? req.file.filename : (body.existingSlipUrl ? path.basename(body.existingSlipUrl) : null);
-
     if (!slipBase64 && req.file) {
       try {
         const compressed = await compressSlipImage(req.file.path, req.file.mimetype);
@@ -525,7 +644,6 @@ app.post('/api/orders', orderCreateRateLimit, uploadSlip.single('slip'), async (
       slipVerification.slipFilename = slipFilename || slipVerification.slipFilename || null;
     }
 
-    // Extract and parse device model information
     let clientDevInfo = {};
     try {
       if (typeof body.deviceInfo === 'string') clientDevInfo = JSON.parse(body.deviceInfo);
@@ -537,31 +655,30 @@ app.post('/api/orders', orderCreateRateLimit, uploadSlip.single('slip'), async (
     const deviceModel = clientDevInfo.summary || parsedDevice.summary || parsedDevice.deviceModel || 'ไม่ระบุรุ่น';
     const deviceInfo = { ...parsedDevice, ...clientDevInfo, summary: deviceModel };
 
-    // Save order with permanently locked cost, profit, and pending review status (Sanitized input)
     const orderData = {
-      deviceId: sanitizeText(deviceId, 60),                       // Cloud memory for mobile phone device
-      deviceModel: sanitizeText(deviceModel, 100),                // Detected mobile device model
-      deviceInfo,                                                 // Full hardware and OS information
+      deviceId: sanitizeText(deviceId, 60),
+      deviceModel: sanitizeText(deviceModel, 100),
+      deviceInfo,
       customerName: sanitizeText(body.customerName, 80),
       customerPhone: sanitizeText(body.customerPhone || '', 30),
       customerNote: sanitizeText(body.customerNote || '', 300),
       items: verifiedItems,
       totalPrice: calculatedTotal,
-      totalCost: totalOrderCost,      // Permanently locked cost
-      totalProfit: totalOrderProfit,  // Permanently locked profit
+      totalCost: totalOrderCost,      // Permanently locked cost snapshot
+      totalProfit: totalOrderProfit,  // Permanently locked profit snapshot
       profitMargin: profitMargin,     // Permanently locked margin %
       slipImage,
-      slipBase64,                     // Permanent Cloud Base64 string (survives restarts)
+      slipBase64,
+      fileHash: slipFileHash,
       slipVerification: slipVerification || null,
-      qrData: qrMetadata?.qrData || slipVerification?.qrData || null,
-      transactionRef: qrMetadata?.transactionRef || slipVerification?.transactionRef || null,
-      bankName: qrMetadata?.bankName || slipVerification?.bankName || null,
-      orderStatus: 'pending'          // เริ่มต้นเป็น "รอตรวจสอบสลิป" (แอดมินตรวจเองและกดยืนยัน)
+      qrData: slipQrData || null,
+      transactionRef: slipTxRef || null,
+      bankName: slipVerification?.bankName || 'ธนาคารไทย',
+      orderStatus: 'pending'          // เริ่มต้นเป็น "รอตรวจสอบสลิป"
     };
 
     const newOrder = db.createOrder(orderData);
 
-    // Also update visitor record with customerName if deviceId or visitorId is provided
     if (orderData.customerName && orderData.deviceId) {
       try {
         db.trackVisitor({
@@ -572,14 +689,22 @@ app.post('/api/orders', orderCreateRateLimit, uploadSlip.single('slip'), async (
       } catch (e) {}
     }
 
+    // ==========================================
+    // 🛡️ SECURITY LAYER 5: SANITIZED CUSTOMER RESPONSE (ANTI-IDOR & PRIVACY)
+    // Strip wholesale cost, profit margin, and mask phone before returning to client
+    // ==========================================
     res.json({
       success: true,
       message: 'แนบสลิปและส่งคำสั่งซื้อสำเร็จ! รอทางร้านตรวจสอบสลิปสักครู่นะครับ 🐾',
-      order: newOrder
+      order: sanitizeOrderForCustomer(newOrder)
     });
   } catch (err) {
     console.error('Error creating order:', err);
     res.status(500).json({ success: false, error: err.message });
+  } finally {
+    if (lockKey) {
+      releaseSlipLock(lockKey);
+    }
   }
 });
 
@@ -594,14 +719,8 @@ app.get('/api/orders-history', (req, res) => {
     }
     const orders = db.findOrders({ query, phone, name, ids: idList, deviceId });
 
-    // Sanitize cost and profit fields for customer privacy
-    const sanitizedOrders = (orders || []).map(({ totalCost, totalProfit, profitMargin, ...order }) => {
-      const sanitizedItems = (order.items || []).map(({ cost, totalCost, profit, ...item }) => item);
-      return {
-        ...order,
-        items: sanitizedItems
-      };
-    });
+    // Sanitize cost and profit fields and mask personal data for customer privacy
+    const sanitizedOrders = (orders || []).map(order => sanitizeOrderForCustomer(order));
 
     res.json({ success: true, data: sanitizedOrders });
   } catch (err) {
@@ -610,7 +729,7 @@ app.get('/api/orders-history', (req, res) => {
   }
 });
 
-// Customer track single order
+// Customer track single order (Protected with IDOR Privacy Filter & Admin Authentication)
 app.get('/api/orders/:id', (req, res) => {
   try {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
@@ -618,7 +737,17 @@ app.get('/api/orders/:id', (req, res) => {
     if (!order) {
       return res.status(404).json({ success: false, error: 'ไม่พบหมายเลขคำสั่งซื้อนี้' });
     }
-    res.json({ success: true, order });
+
+    // Check if requester is Admin (via session token or PIN)
+    const adminToken = req.headers['x-admin-token'] || (req.headers.authorization && req.headers.authorization.replace('Bearer ', ''));
+    const adminPin = req.headers['x-admin-pin'] || req.query.pin;
+    const isAdmin = (adminToken && verifyAdminSessionToken(adminToken)) || (adminPin && db.verifyAdminPin(adminPin));
+
+    if (isAdmin) {
+      return res.json({ success: true, order });
+    }
+
+    res.json({ success: true, order: sanitizeOrderForCustomer(order) });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

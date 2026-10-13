@@ -47,12 +47,19 @@ function getTodayDateInfo() {
   // Calculate yesterday date string for timezone/midnight tolerance
   const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
   const yesterdayIso = new Intl.DateTimeFormat('en-CA', options).format(yesterday);
+  const yesterdayParts = yesterdayIso.split('-');
+  const yesterdayDay = parseInt(yesterdayParts[2], 10);
+  const yesterdayMonth = parseInt(yesterdayParts[1], 10);
 
   return {
     isoDate,
     yesterdayIso,
     day,
     month,
+    yesterdayDay,
+    yesterdayMonth,
+    yesterdayMonthShort: thaiMonthsShort[yesterdayMonth],
+    yesterdayMonthFull: thaiMonthsFull[yesterdayMonth],
     thaiMonthShort: thaiMonthsShort[month],
     thaiMonthFull: thaiMonthsFull[month],
     yearCE,
@@ -374,17 +381,21 @@ async function verifySlip(filePath, mimeType, expectedAmount, expectedReceiver =
     isMatched = Math.abs(diff) <= 0.05;
   }
 
-  // 2. Date Verification
+  // 2. Date Verification (Strict 24-48h freshness: today or yesterday only)
   let isDateValid = true;
   if (qrTransferDate) {
     isDateValid = (qrTransferDate === today.isoDate || qrTransferDate === today.yesterdayIso);
   } else if (parsedDate) {
     const pDate = parsedDate.trim();
-    // Accept today or current month/year patterns
     const hasTodayDay = pDate.includes(String(today.day));
+    const hasYesterdayDay = pDate.includes(String(today.yesterdayDay));
     const hasTodayMonth = pDate.includes(today.thaiMonthShort) || pDate.includes(String(today.month)) || pDate.includes(today.thaiMonthFull);
-    const hasTodayYear = pDate.includes(String(today.yearBE)) || pDate.includes(String(today.yearCE)) || pDate.includes(String(today.yearBE_short));
-    isDateValid = hasTodayDay && (hasTodayMonth || hasTodayYear);
+    const hasYesterdayMonth = pDate.includes(today.yesterdayMonthShort) || pDate.includes(String(today.yesterdayMonth)) || pDate.includes(today.yesterdayMonthFull);
+    const hasYear = pDate.includes(String(today.yearBE)) || pDate.includes(String(today.yearCE)) || pDate.includes(String(today.yearBE_short));
+
+    const isToday = hasTodayDay && (hasTodayMonth || hasYear);
+    const isYesterday = hasYesterdayDay && (hasYesterdayMonth || hasYear);
+    isDateValid = isToday || isYesterday;
   }
 
   // 3. Receiver Verification

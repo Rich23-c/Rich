@@ -437,6 +437,123 @@ function slipFileFilter(req, file, cb) {
   cb(null, true);
 }
 
+// ==========================================
+// 11. IN-FLIGHT SLIP MUTEX (ANTI-RACE CONDITION / ANTI-DOUBLE SPENDING)
+// Prevents concurrent requests with identical slip/QR from being submitted simultaneously
+// ==========================================
+const inFlightSlips = new Map(); // slipKey -> timestamp
+
+function acquireSlipLock(key, ttlMs = 30000) {
+  if (!key) return true;
+  const cleanKey = String(key).trim().toLowerCase();
+  if (!cleanKey) return true;
+
+  const now = Date.now();
+  const existing = inFlightSlips.get(cleanKey);
+  if (existing && now - existing < ttlMs) {
+    recordSecurityEvent('RACE_CONDITION_LOCK_HIT', { lockKey: cleanKey.slice(0, 32) });
+    return false; // Already locked by another concurrent in-flight request
+  }
+
+  inFlightSlips.set(cleanKey, now);
+  return true;
+}
+
+function releaseSlipLock(key) {
+  if (!key) return;
+  const cleanKey = String(key).trim().toLowerCase();
+  inFlightSlips.delete(cleanKey);
+}
+
+// Periodic cleanup of expired locks (every 1 minute)
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, timestamp] of inFlightSlips.entries()) {
+    if (now - timestamp > 60000) inFlightSlips.delete(key);
+  }
+}, 60000).unref();
+
+// ==========================================
+// 12. CRYPTOGRAPHIC SLIP VERIFICATION TOKEN
+// Digitally signs AI/QR slip verification results to prevent client parameter tampering/forgery
+// ==========================================
+function generateSlipVerificationToken({ fileHash, qrData, detectedAmount, slipFilename, isDateToday }) {
+  const payload = {
+    fileHash: fileHash || '',
+    qrData: qrData || '',
+    detectedAmount: (detectedAmount !== null && detectedAmount !== undefined) ? Number(detectedAmount) : null,
+    slipFilename: slipFilename || '',
+    isDateToday: isDateToday !== false,
+    iat: Date.now()
+  };
+  const payloadB64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const hmac = crypto.createHmac('sha256', SESSION_SECRET).update(payloadB64).digest('base64url');
+  return `${payloadB64}.${hmac}`;
+}
+
+function verifySlipVerificationToken(token, expectedAmount = null) {
+  if (!token || typeof token !== 'string') return null;
+  const parts = token.split('.');
+  if (parts.length !== 2) return null;
+
+  const [payloadB64, signature] = parts;
+  const expectedHmac = crypto.createHmac('sha256', SESSION_SECRET).update(payloadB64).digest('base64url');
+
+  const sigBuf = Buffer.from(signature, 'utf8');
+  const expBuf = Buffer.from(expectedHmac, 'utf8');
+  if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+    return null;
+  }
+
+  try {
+    const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
+    // Token valid for 15 minutes max
+    if (Date.now() - payload.iat > 15 * 60 * 1000) {
+      return null;
+    }
+    // Amount matching check (tolerance 0.05 THB)
+    if (expectedAmount !== null && payload.detectedAmount !== null && payload.detectedAmount !== undefined) {
+      const diff = Math.abs(Number(payload.detectedAmount) - Number(expectedAmount));
+      if (diff > 0.05) {
+        return null;
+      }
+    }
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+// ==========================================
+// 13. IDOR & CUSTOMER PRIVACY PROTECTION
+// Masks sensitive personal data and strips internal profit/wholesale costs for public requests
+// ==========================================
+function maskPhoneNumber(phone) {
+  if (!phone) return '';
+  const str = String(phone).trim();
+  const digits = str.replace(/\D/g, '');
+  if (digits.length === 10) {
+    return `${digits.slice(0, 3)}-***-${digits.slice(-4)}`;
+  } else if (digits.length === 9) {
+    return `${digits.slice(0, 2)}-***-${digits.slice(-4)}`;
+  } else if (str.length >= 6) {
+    return `${str.slice(0, 2)}****${str.slice(-2)}`;
+  }
+  return str;
+}
+
+function sanitizeOrderForCustomer(order) {
+  if (!order || typeof order !== 'object') return null;
+  const { totalCost, totalProfit, profitMargin, ...safeOrder } = order;
+  if (Array.isArray(safeOrder.items)) {
+    safeOrder.items = safeOrder.items.map(({ cost, totalCost, profit, ...it }) => it);
+  }
+  if (safeOrder.customerPhone) {
+    safeOrder.customerPhone = maskPhoneNumber(safeOrder.customerPhone);
+  }
+  return safeOrder;
+}
+
 module.exports = {
   getClientIp,
   intrusionDetectionMiddleware,
@@ -455,5 +572,12 @@ module.exports = {
   securityHeadersMiddleware,
   slipFileFilter,
   getSecurityAuditLogs,
-  bannedIps
+  bannedIps,
+  acquireSlipLock,
+  releaseSlipLock,
+  generateSlipVerificationToken,
+  verifySlipVerificationToken,
+  maskPhoneNumber,
+  sanitizeOrderForCustomer
 };
+
