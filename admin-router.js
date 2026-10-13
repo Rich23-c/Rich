@@ -10,6 +10,10 @@ const {
   checkLoginRateLimit,
   recordLoginFailure,
   recordLoginSuccess,
+  generateAdminSessionToken,
+  verifyAdminSessionToken,
+  getClientIp,
+  getSecurityAuditLogs,
   slipFileFilter
 } = require('./services/security');
 
@@ -36,21 +40,30 @@ const uploadSnackImage = multer({
   limits: { fileSize: 10 * 1024 * 1024 }
 });
 
-// Middleware for Admin PIN Verification (strictly no caching on admin data)
+// Middleware for Admin Authentication (Supports Cryptographic HMAC Session Tokens & Direct PIN)
 function requireAdmin(req, res, next) {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-  const pin = req.headers['x-admin-pin'] || req.query.pin;
-  if (!pin || !db.verifyAdminPin(pin)) {
-    return res.status(401).json({ success: false, error: 'รหัสผ่าน Admin ไม่ถูกต้อง กรุณาเข้าสู่ระบบใหม่' });
+
+  // 1. Verify Cryptographic HMAC Token
+  const token = req.headers['x-admin-token'] || (req.headers.authorization && req.headers.authorization.replace('Bearer ', ''));
+  if (token && verifyAdminSessionToken(token)) {
+    return next();
   }
-  next();
+
+  // 2. Fallback to PIN Header
+  const pin = req.headers['x-admin-pin'] || req.query.pin;
+  if (pin && db.verifyAdminPin(pin)) {
+    return next();
+  }
+
+  return res.status(401).json({ success: false, error: 'สิทธิ์การเข้าใช้งานไม่ถูกต้องหรือหมดอายุ กรุณาเข้าสู่ระบบใหม่' });
 }
 
 // ==========================================
 // ADMIN EXCLUSIVE APIs
 // ==========================================
 
-// Admin login verification with Brute-Force Rate Limiting & Lockout
+// Admin login verification with Brute-Force Rate Limiting, Lockout & Cryptographic Session Token
 router.post('/api/admin/login', async (req, res) => {
   try {
     const rateCheck = checkLoginRateLimit(req);
@@ -61,7 +74,14 @@ router.post('/api/admin/login', async (req, res) => {
     const { pin } = req.body || {};
     if (db.verifyAdminPin(pin)) {
       recordLoginSuccess(req);
-      return res.json({ success: true, message: 'เข้าสู่ระบบสำเร็จ' });
+      const clientIp = getClientIp(req);
+      const token = generateAdminSessionToken(clientIp);
+      return res.json({
+        success: true,
+        message: 'เข้าสู่ระบบสำเร็จ',
+        token,
+        expiresIn: '8 hours'
+      });
     }
 
     const failInfo = await recordLoginFailure(req);
@@ -364,6 +384,16 @@ router.delete('/api/admin/analytics/visitors', requireAdmin, (req, res) => {
   try {
     const success = db.resetVisitorAnalytics();
     res.json({ success: true, message: 'รีเซ็ตข้อมูลสถิติผู้เข้าชมเรียบร้อยแล้ว' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Admin get live security audit logs (failed logins, blocked probes, banned IPs)
+router.get('/api/admin/security-logs', requireAdmin, (req, res) => {
+  try {
+    const logs = getSecurityAuditLogs();
+    res.json({ success: true, count: logs.length, logs });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

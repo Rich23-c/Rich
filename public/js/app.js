@@ -1125,6 +1125,10 @@ async function confirmAndSaveOrder() {
   formData.append('customerName', customerName);
   formData.append('customerPhone', customerPhone);
   formData.append('items', JSON.stringify(items));
+  const hpEl = document.getElementById('customer_website_hp');
+  if (hpEl && hpEl.value) {
+    formData.append('customer_website_hp', hpEl.value);
+  }
 
   try {
     const res = await fetch('/api/orders', {

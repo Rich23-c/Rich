@@ -15,19 +15,25 @@ const { verifySlip } = require('./services/slipVerifier');
 const { compressSlipImage, resolveSlipImage } = require('./services/slipImageService');
 const {
   securityHeadersMiddleware,
+  intrusionDetectionMiddleware,
+  prototypePollutionGuard,
   slipFileFilter,
   slipVerifyRateLimit,
   orderCreateRateLimit,
+  isHoneypotTriggered,
   sanitizeText
 } = require('./services/security');
 
 const app = express();
 const PORT = process.env.PORT || process.env.CUSTOMER_PORT || 3000;
 
-// Security: Disable Express fingerprinting
+// Security 1: Disable Express fingerprinting
 app.disable('x-powered-by');
 
-// Security: Enforce strict HTTP security headers (nosniff, SAMEORIGIN, HSTS, XSS)
+// Security 2: Intrusion Detection System & Auto-Ban 24-hr blacklist for malicious bot probing
+app.use(intrusionDetectionMiddleware);
+
+// Security 3: Enforce strict HTTP security headers & CSP (nosniff, SAMEORIGIN, HSTS, XSS)
 app.use(securityHeadersMiddleware);
 
 // Gzip & Brotli HTTP Compression (reduces payload size by 75-80% for 10x higher concurrent throughput)
@@ -43,6 +49,9 @@ app.use(compression({
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
+
+// Security 4: Prototype Pollution Guard (Rejects malicious payloads with __proto__ or constructor injection)
+app.use(prototypePollutionGuard);
 
 // Ensure upload directories exist
 const uploadDir = path.join(__dirname, 'uploads');
@@ -373,6 +382,12 @@ app.post('/api/orders', orderCreateRateLimit, uploadSlip.single('slip'), async (
     }
 
     const body = req.body;
+
+    // Security: Honeypot Anti-Bot Trap (Silently stops automated spambots)
+    if (isHoneypotTriggered(req, 'customer_website_hp')) {
+      return res.status(400).json({ success: false, error: 'คำขอไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง' });
+    }
+
     let items = [];
     try {
       items = typeof body.items === 'string' ? JSON.parse(body.items) : (body.items || []);

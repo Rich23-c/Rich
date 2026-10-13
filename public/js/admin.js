@@ -5,10 +5,34 @@ try {
 } catch (e) {}
 
 let adminPin = '';
+let adminSessionToken = '';
 let currentTab = 'snacks';
 let allOrders = [];
 let allAdminSnacks = [];
 let currentActiveOrderId = null;
+
+// Security: Inactivity Auto-Logout Timer (15 minutes idle timeout)
+let idleTimer = null;
+const IDLE_TIMEOUT_MS = 15 * 60 * 1000;
+
+function resetIdleTimer() {
+  if (!adminPin && !adminSessionToken) return;
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => {
+    logoutAdmin();
+    Swal.fire({
+      icon: 'info',
+      title: 'เซสชันหมดอายุอัตโนมัติ 🔒',
+      text: 'ไม่มีการใช้งานหน้าจอเป็นเวลา 15 นาที ระบบได้ล็อกหน้าจออัตโนมัติเพื่อความปลอดภัยของร้าน',
+      confirmButtonColor: '#0f172a'
+    });
+  }, IDLE_TIMEOUT_MS);
+}
+
+// Track user interactions to keep session active
+['mousemove', 'keydown', 'touchstart', 'scroll', 'click'].forEach(evt => {
+  window.addEventListener(evt, resetIdleTimer, { passive: true });
+});
 
 // Security: Robust XSS sanitizer for all user-supplied data
 function escapeHtml(str) {
@@ -50,9 +74,9 @@ async function verifyPinWithServer(pin) {
       body: JSON.stringify({ pin: (pin || '').trim() })
     });
     const data = await res.json();
-    return !!(data && data.success);
+    return data;
   } catch (err) {
-    return false;
+    return { success: false, error: 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้' };
   }
 }
 
@@ -134,9 +158,11 @@ async function submitAdminPin() {
   if (btn) btn.disabled = true;
 
   try {
-    const isValid = await verifyPinWithServer(enteredPin);
-    if (isValid) {
+    const loginResult = await verifyPinWithServer(enteredPin);
+    if (loginResult && loginResult.success) {
       adminPin = enteredPin;
+      adminSessionToken = loginResult.token || '';
+      resetIdleTimer();
       hideLoginOverlay();
       await loadInitialData();
       Swal.fire({
@@ -147,8 +173,9 @@ async function submitAdminPin() {
         showConfirmButton: false
       });
     } else {
+      const errMsg = (loginResult && loginResult.error) ? loginResult.error : '❌ รหัสผ่าน PIN ไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง';
       if (err) {
-        err.innerText = '❌ รหัสผ่าน PIN ไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง';
+        err.innerText = errMsg;
         err.classList.remove('hidden');
       }
       if (input) {
@@ -166,17 +193,24 @@ async function submitAdminPin() {
 
 function logoutAdmin() {
   adminPin = '';
+  adminSessionToken = '';
+  clearTimeout(idleTimer);
   showLoginOverlay();
 }
 
-// Helper for authenticated requests
+// Helper for authenticated requests (Uses Cryptographic Session Token + PIN Fallback)
 async function adminFetch(url, options = {}) {
   const headers = options.headers || {};
+  if (adminSessionToken) {
+    headers['x-admin-token'] = adminSessionToken;
+  }
   headers['x-admin-pin'] = adminPin || '';
   headers['Cache-Control'] = 'no-cache, no-store, must-revalidate';
   headers['Pragma'] = 'no-cache';
   options.headers = headers;
   options.cache = 'no-store';
+
+  resetIdleTimer(); // Refresh idle timeout on active admin activity
 
   const res = await fetch(url, options);
   if (res.status === 401) {
