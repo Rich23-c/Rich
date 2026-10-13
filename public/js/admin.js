@@ -10,6 +10,17 @@ let allOrders = [];
 let allAdminSnacks = [];
 let currentActiveOrderId = null;
 
+// Security: Robust XSS sanitizer for all user-supplied data
+function escapeHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // Initialize on DOM Ready: ALWAYS show login prompt
 document.addEventListener('DOMContentLoaded', () => {
   if (window.lucide) lucide.createIcons();
@@ -952,10 +963,10 @@ function renderKitchenShoppingList() {
 
     // Order breakdown tags
     const breakdownHtml = item.orders.map(o => `
-      <span class="inline-flex items-center gap-1 bg-white/90 border border-slate-200/90 px-2 py-0.5 rounded-lg text-[10px] text-slate-700 shadow-2xs" title="ลูกค้า: ${o.customerName}">
-        <span class="font-mono font-bold text-orange-600">${o.orderId.replace('MW-', '')}</span>
+      <span class="inline-flex items-center gap-1 bg-white/90 border border-slate-200/90 px-2 py-0.5 rounded-lg text-[10px] text-slate-700 shadow-2xs" title="ลูกค้า: ${escapeHtml(o.customerName)}">
+        <span class="font-mono font-bold text-orange-600">${escapeHtml(o.orderId.replace('MW-', ''))}</span>
         <span class="font-extrabold text-slate-900">×${o.quantity}</span>
-        <span class="text-slate-400">(${o.customerName || 'ลูกค้า'})</span>
+        <span class="text-slate-400">(${escapeHtml(o.customerName || 'ลูกค้า')})</span>
       </span>
     `).join('');
 
@@ -1172,15 +1183,15 @@ function renderOrdersTable() {
 
     tr.innerHTML = `
       <td class="p-3.5">
-        <div class="font-mono font-bold text-orange-600 text-xs">${order.id}</div>
-        <div class="text-[11px] text-slate-400 mt-0.5">${dateStr}</div>
+        <div class="font-mono font-bold text-orange-600 text-xs">${escapeHtml(order.id)}</div>
+        <div class="text-[11px] text-slate-400 mt-0.5">${escapeHtml(dateStr)}</div>
       </td>
       <td class="p-3.5">
-        <div class="font-bold text-slate-900 text-xs">${order.customerName}</div>
-        <div class="text-[11px] text-slate-500">${order.customerPhone || 'ไม่ระบุเบอร์'}</div>
-        <div class="inline-flex items-center gap-1 text-[10px] text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md mt-1 font-medium" title="${order.deviceModel || 'ไม่ระบุรุ่น'}">
+        <div class="font-bold text-slate-900 text-xs">${escapeHtml(order.customerName)}</div>
+        <div class="text-[11px] text-slate-500">${escapeHtml(order.customerPhone || 'ไม่ระบุเบอร์')}</div>
+        <div class="inline-flex items-center gap-1 text-[10px] text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md mt-1 font-medium" title="${escapeHtml(order.deviceModel || 'ไม่ระบุรุ่น')}">
           <span>📱</span>
-          <span>${order.deviceModel || 'อุปกรณ์มือถือ'}</span>
+          <span>${escapeHtml(order.deviceModel || 'อุปกรณ์มือถือ')}</span>
         </div>
       </td>
       <td class="p-3.5 space-y-1">
@@ -1298,8 +1309,8 @@ function renderOrdersTable() {
           <!-- Card Header -->
           <div class="flex items-center justify-between border-b border-slate-100 pb-2.5">
             <div>
-              <div class="font-mono font-bold text-orange-600 text-xs">${order.id}</div>
-              <div class="text-[10px] text-slate-400 mt-0.5">${dateStr}</div>
+              <div class="font-mono font-bold text-orange-600 text-xs">${escapeHtml(order.id)}</div>
+              <div class="text-[10px] text-slate-400 mt-0.5">${escapeHtml(dateStr)}</div>
             </div>
             <div>${statusBadge}</div>
           </div>
@@ -1308,10 +1319,10 @@ function renderOrdersTable() {
           <div class="flex items-center justify-between text-xs">
             <div>
               <span class="text-slate-400 text-[10px]">ลูกค้า:</span>
-              <span class="font-bold text-slate-800 ml-1">${order.customerName}</span>
+              <span class="font-bold text-slate-800 ml-1">${escapeHtml(order.customerName)}</span>
               <div class="inline-flex items-center gap-1 text-[10px] text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded mt-0.5 font-medium">
                 <span>📱</span>
-                <span>${order.deviceModel || 'อุปกรณ์มือถือ'}</span>
+                <span>${escapeHtml(order.deviceModel || 'อุปกรณ์มือถือ')}</span>
               </div>
             </div>
             <div>${phoneCallBtn}</div>
@@ -2054,15 +2065,15 @@ function renderVisitorsTable(visitors) {
       ? `<div class="flex flex-col">
            <span class="font-bold text-slate-900 text-sm flex items-center gap-1.5">
              <span class="text-amber-500">👤</span>
-             <span class="text-orange-950 font-extrabold">${v.customerName}</span>
+             <span class="text-orange-950 font-extrabold">${escapeHtml(v.customerName)}</span>
            </span>
            <span class="font-mono text-[10px] text-slate-400 font-semibold mt-0.5">
-             รหัส: ${v.visitorCode}
+             รหัส: ${escapeHtml(v.visitorCode)}
            </span>
          </div>`
       : `<div class="flex items-center gap-1.5">
            <span class="font-mono font-black bg-amber-50 text-amber-800 border border-amber-200 px-2.5 py-1 rounded-xl text-xs shadow-2xs">
-             🏷️ ${v.visitorCode}
+             🏷️ ${escapeHtml(v.visitorCode)}
            </span>
            <span class="text-[10px] text-slate-400 font-normal">(ยังไม่พิมพ์ชื่อ)</span>
          </div>`;
@@ -2075,7 +2086,7 @@ function renderVisitorsTable(visitors) {
         <td class="py-3 px-4 text-slate-700">
           <div class="flex items-center gap-1.5 text-xs font-medium">
             <span>📱</span>
-            <span>${v.device || 'ไม่ระบุ'}</span>
+            <span>${escapeHtml(v.device || 'ไม่ระบุ')}</span>
           </div>
         </td>
         <td class="py-3 px-4 text-center">

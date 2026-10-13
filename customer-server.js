@@ -13,9 +13,22 @@ const compression = require('compression');
 const db = require('./services/database');
 const { verifySlip } = require('./services/slipVerifier');
 const { compressSlipImage, resolveSlipImage } = require('./services/slipImageService');
+const {
+  securityHeadersMiddleware,
+  slipFileFilter,
+  slipVerifyRateLimit,
+  orderCreateRateLimit,
+  sanitizeText
+} = require('./services/security');
 
 const app = express();
 const PORT = process.env.PORT || process.env.CUSTOMER_PORT || 3000;
+
+// Security: Disable Express fingerprinting
+app.disable('x-powered-by');
+
+// Security: Enforce strict HTTP security headers (nosniff, SAMEORIGIN, HSTS, XSS)
+app.use(securityHeadersMiddleware);
 
 // Gzip & Brotli HTTP Compression (reduces payload size by 75-80% for 10x higher concurrent throughput)
 app.use(compression({
@@ -28,8 +41,8 @@ app.use(compression({
 
 // Middleware
 app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 
 // Ensure upload directories exist
 const uploadDir = path.join(__dirname, 'uploads');
@@ -145,10 +158,16 @@ app.get('/uploads/slips/:filename', (req, res, next) => {
   next();
 });
 
-app.use('/uploads', express.static(uploadDir, {
+app.use('/uploads', (req, res, next) => {
+  // Security: Isolate uploaded files in a restricted sandbox (never execute scripts or HTML)
+  res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox");
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  next();
+}, express.static(uploadDir, {
   maxAge: '7d',
   setHeaders: (res) => {
     res.setHeader('Cache-Control', 'public, max-age=604800, s-maxage=2592000, immutable');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
   }
 }));
 
@@ -198,16 +217,19 @@ app.get('/admin', (req, res) => {
 const adminRouter = require('./admin-router');
 app.use(adminRouter);
 
-// Multer Storage for Slips
+// Multer Storage for Slips (Secured with strict whitelist and random file hashing)
+const crypto = require('crypto');
 const slipStorage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, slipsUploadDir),
   filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname) || '.jpg';
-    cb(null, `slip-${Date.now()}-${Math.round(Math.random() * 1e4)}${ext}`);
+    const ext = (path.extname(file.originalname) || '.jpg').toLowerCase();
+    const randHex = crypto.randomBytes(16).toString('hex');
+    cb(null, `slip-${Date.now()}-${randHex}${ext}`);
   }
 });
 const uploadSlip = multer({
   storage: slipStorage,
+  fileFilter: slipFileFilter,
   limits: { fileSize: 15 * 1024 * 1024 }
 });
 
@@ -236,13 +258,14 @@ app.post('/api/track-visit', (req, res) => {
     if (!visitorId) {
       return res.status(400).json({ success: false, error: 'visitorId is required' });
     }
+    const cleanCustomerName = customerName ? sanitizeText(customerName, 80) : '';
     const visitor = db.trackVisitor({
-      visitorId,
-      visitorCode,
-      userAgent,
+      visitorId: sanitizeText(visitorId, 60),
+      visitorCode: sanitizeText(visitorCode, 20),
+      userAgent: sanitizeText(userAgent, 200),
       path: pagePath || '/',
-      deviceSummary,
-      customerName
+      deviceSummary: sanitizeText(deviceSummary, 100),
+      customerName: cleanCustomerName
     });
     res.json({ success: true, visitor });
   } catch (err) {
@@ -292,8 +315,8 @@ app.get('/api/promptpay-qr', async (req, res) => {
   }
 });
 
-// Pre-verify slip with AI against expected amount
-app.post('/api/verify-slip', uploadSlip.single('slip'), async (req, res) => {
+// Pre-verify slip with AI against expected amount (Protected with Rate Limiter)
+app.post('/api/verify-slip', slipVerifyRateLimit, uploadSlip.single('slip'), async (req, res) => {
   try {
     const settings = db.getSettings();
     if (settings.isOpen === false) {
@@ -338,8 +361,8 @@ app.post('/api/verify-slip', uploadSlip.single('slip'), async (req, res) => {
 const emailNotifier = require('./services/emailNotifier');
 const lineNotifier = require('./services/lineNotifier');
 
-// Submit customer order
-app.post('/api/orders', uploadSlip.single('slip'), async (req, res) => {
+// Submit customer order (Protected with Rate Limiter & Input Sanitization)
+app.post('/api/orders', orderCreateRateLimit, uploadSlip.single('slip'), async (req, res) => {
   try {
     const settings = db.getSettings();
     if (settings.isOpen === false) {
@@ -499,14 +522,14 @@ app.post('/api/orders', uploadSlip.single('slip'), async (req, res) => {
     const deviceModel = clientDevInfo.summary || parsedDevice.summary || parsedDevice.deviceModel || 'ไม่ระบุรุ่น';
     const deviceInfo = { ...parsedDevice, ...clientDevInfo, summary: deviceModel };
 
-    // Save order with permanently locked cost, profit, and pending review status
+    // Save order with permanently locked cost, profit, and pending review status (Sanitized input)
     const orderData = {
-      deviceId,                       // Cloud memory for mobile phone device
-      deviceModel,                    // Detected mobile device model (e.g. iPhone 15 Pro, Samsung Galaxy S23)
-      deviceInfo,                     // Full hardware and OS information
-      customerName: body.customerName,
-      customerPhone: body.customerPhone || '',
-      customerNote: body.customerNote || '',
+      deviceId: sanitizeText(deviceId, 60),                       // Cloud memory for mobile phone device
+      deviceModel: sanitizeText(deviceModel, 100),                // Detected mobile device model
+      deviceInfo,                                                 // Full hardware and OS information
+      customerName: sanitizeText(body.customerName, 80),
+      customerPhone: sanitizeText(body.customerPhone || '', 30),
+      customerNote: sanitizeText(body.customerNote || '', 300),
       items: verifiedItems,
       totalPrice: calculatedTotal,
       totalCost: totalOrderCost,      // Permanently locked cost

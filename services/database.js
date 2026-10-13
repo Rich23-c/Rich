@@ -868,7 +868,13 @@ function updateSettings(updates) {
 
 function verifyAdminPin(pin) {
   const settings = getSettings();
-  return String(settings.adminPin || '0958174540') === String(pin).trim();
+  const secret = String(settings.adminPin || '0958174540');
+  try {
+    const { safeComparePin } = require('./security');
+    return safeComparePin(String(pin || ''), secret);
+  } catch (e) {
+    return secret === String(pin || '').trim();
+  }
 }
 
 // Database Diagnostics for /health and Monitoring

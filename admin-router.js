@@ -6,6 +6,12 @@ const fs = require('fs');
 const db = require('./services/database');
 const emailNotifier = require('./services/emailNotifier');
 const lineNotifier = require('./services/lineNotifier');
+const {
+  checkLoginRateLimit,
+  recordLoginFailure,
+  recordLoginSuccess,
+  slipFileFilter
+} = require('./services/security');
 
 const router = express.Router();
 
@@ -16,16 +22,17 @@ if (!fs.existsSync(snacksUploadDir)) {
   fs.mkdirSync(snacksUploadDir, { recursive: true });
 }
 
-// Multer Storage for Snacks
+// Multer Storage for Snacks (Safe image filter applied)
 const snackStorage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, snacksUploadDir),
   filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname) || '.jpg';
+    const ext = (path.extname(file.originalname) || '.jpg').toLowerCase();
     cb(null, `snack-${Date.now()}-${Math.round(Math.random() * 1e4)}${ext}`);
   }
 });
 const uploadSnackImage = multer({
   storage: snackStorage,
+  fileFilter: slipFileFilter,
   limits: { fileSize: 10 * 1024 * 1024 }
 });
 
@@ -43,13 +50,35 @@ function requireAdmin(req, res, next) {
 // ADMIN EXCLUSIVE APIs
 // ==========================================
 
-// Admin login verification
-router.post('/api/admin/login', (req, res) => {
-  const { pin } = req.body;
-  if (db.verifyAdminPin(pin)) {
-    return res.json({ success: true, message: 'เข้าสู่ระบบสำเร็จ' });
+// Admin login verification with Brute-Force Rate Limiting & Lockout
+router.post('/api/admin/login', async (req, res) => {
+  try {
+    const rateCheck = checkLoginRateLimit(req);
+    if (!rateCheck.allowed) {
+      return res.status(429).json({ success: false, error: rateCheck.error });
+    }
+
+    const { pin } = req.body || {};
+    if (db.verifyAdminPin(pin)) {
+      recordLoginSuccess(req);
+      return res.json({ success: true, message: 'เข้าสู่ระบบสำเร็จ' });
+    }
+
+    const failInfo = await recordLoginFailure(req);
+    if (failInfo.isLocked) {
+      return res.status(429).json({
+        success: false,
+        error: `🛑 คุณใส่รหัสผ่านผิดครบ 5 ครั้งแล้ว! ระบบระงับการล็อกอิน 15 นาที เพื่อป้องกันการแฮ็ก`
+      });
+    }
+
+    return res.status(401).json({
+      success: false,
+      error: `รหัสผ่าน Admin ไม่ถูกต้อง (สามารถลองได้อีก ${failInfo.remainingAttempts} ครั้ง ก่อนระบบล็อก)`
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: 'ระบบตรวจสอบรหัสผ่านขัดข้อง' });
   }
-  return res.status(401).json({ success: false, error: 'รหัสผ่าน Admin ไม่ถูกต้อง' });
 });
 
 // Admin change PIN
