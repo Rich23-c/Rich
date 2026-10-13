@@ -189,17 +189,6 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Diagnostic route to read admin settings
-app.get('/api/system/pin-recovery', (req, res) => {
-  const settings = db.getSettings();
-  res.json({
-    success: true,
-    adminPin: settings.adminPin || '411197',
-    supabaseUrl: process.env.SUPABASE_URL || null,
-    supabaseKey: process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY || null
-  });
-});
-
 // Route to Admin Dashboard (allows accessing admin from the main public tunnel URL /admin)
 app.get('/admin', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
