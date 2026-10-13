@@ -133,14 +133,24 @@ router.get('/api/admin/snacks', requireAdmin, (req, res) => {
 // Admin add new snack (with image file or image URL)
 router.post('/api/admin/snacks', requireAdmin, uploadSnackImage.single('imageFile'), (req, res) => {
   try {
+    const name = String(req.body.name || '').trim();
+    if (!name) {
+      return res.status(400).json({ success: false, error: 'กรุณากรอกชื่อขนม' });
+    }
+
+    const price = Number(req.body.price);
+    if (isNaN(price) || price <= 0) {
+      return res.status(400).json({ success: false, error: 'กรุณากรอกราคาขนมที่ถูกต้อง (> 0 บาท)' });
+    }
+
     let imageUrl = req.body.imageUrl || '';
     if (req.file) {
       imageUrl = `/uploads/snacks/${req.file.filename}`;
     }
 
     const snackData = {
-      name: req.body.name,
-      price: req.body.price,
+      name,
+      price,
       cost: req.body.cost !== undefined && req.body.cost !== '' ? Number(req.body.cost) : 0,
       unit: req.body.unit || 'ชิ้น',
       description: req.body.description || '',
@@ -178,9 +188,20 @@ router.put('/api/admin/snacks/:id', requireAdmin, uploadSnackImage.single('image
     }
 
     const updates = {};
-    if (req.body.name !== undefined) updates.name = req.body.name;
-    if (req.body.price !== undefined && req.body.price !== '') updates.price = Number(req.body.price);
-    if (req.body.cost !== undefined && req.body.cost !== '') updates.cost = Number(req.body.cost);
+    if (req.body.name !== undefined) {
+      const name = String(req.body.name || '').trim();
+      if (!name) return res.status(400).json({ success: false, error: 'ชื่อขนมต้องไม่ว่างเปล่า' });
+      updates.name = name;
+    }
+    if (req.body.price !== undefined && req.body.price !== '') {
+      const price = Number(req.body.price);
+      if (isNaN(price) || price <= 0) return res.status(400).json({ success: false, error: 'ราคาขนมต้องมากกว่า 0 บาท' });
+      updates.price = price;
+    }
+    if (req.body.cost !== undefined && req.body.cost !== '') {
+      const cost = Number(req.body.cost);
+      updates.cost = !isNaN(cost) && cost >= 0 ? cost : 0;
+    }
     if (req.body.unit !== undefined) updates.unit = req.body.unit;
     if (req.body.description !== undefined) updates.description = req.body.description;
     if (req.body.isAvailable !== undefined) {
@@ -241,9 +262,14 @@ router.get('/api/admin/orders', requireAdmin, (req, res) => {
 });
 
 // Admin update order status
+const ALLOWED_ORDER_STATUSES = new Set(['pending', 'verified', 'preparing', 'prepared', 'delivered', 'cancelled']);
+
 router.patch('/api/admin/orders/:id/status', requireAdmin, (req, res) => {
   try {
     const { status, adminNotes } = req.body;
+    if (!status || !ALLOWED_ORDER_STATUSES.has(status)) {
+      return res.status(400).json({ success: false, error: 'สถานะคำสั่งซื้อไม่ถูกต้อง' });
+    }
     const updated = db.updateOrderStatus(req.params.id, status, adminNotes);
     if (!updated) {
       return res.status(404).json({ success: false, error: 'ไม่พบคำสั่งซื้อนี้' });

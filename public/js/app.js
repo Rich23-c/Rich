@@ -986,7 +986,7 @@ async function autoVerifySlip(file) {
         const summary = document.getElementById('verificationSummary');
         const iconContainer = document.getElementById('statusIconContainer');
         if (title) title.innerText = '⚠️ การตรวจสอบเบื้องต้นไม่สำเร็จ';
-        if (summary) summary.innerText = data.error || 'ไม่สามารถวิเคราะห์ข้อมูลจากภาพสลิปได้ แต่คุณยังสามารถกดยืนยันออเดอร์เพื่อให้เจ้าของร้านตรวจเช็คได้';
+        if (summary) summary.innerText = data.error || 'ระบบตรวจสลิปจาก Mini QR Code ของธนาคาร กรุณาแนบรูปสลิปที่มี QR Code ชัดเจนครับ';
         if (iconContainer) {
           iconContainer.className = 'w-8 h-8 rounded-full bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm';
           iconContainer.innerHTML = '<i data-lucide="alert-circle" class="w-5 h-5"></i>';
@@ -1000,7 +1000,7 @@ async function autoVerifySlip(file) {
       const title = document.getElementById('verificationTitle');
       const summary = document.getElementById('verificationSummary');
       if (title) title.innerText = '⚠️ ระบบตรวจสลิปขัดข้องชั่วคราว';
-      if (summary) summary.innerText = 'คุณยังสามารถกดปุ่ม "ยืนยันการสั่งซื้อ" ได้ตามปกติ เจ้าของร้านจะทำการตรวจสลิปด้วยตนเองครับ';
+      if (summary) summary.innerText = 'ระบบตรวจสลิปขัดข้องชั่วคราว กรุณากดปุ่ม "ตรวจสลิปอีกครั้ง" หรือตรวจสอบความชัดของรูปสลิปครับ';
     }
   } finally {
     if (loadingCard) loadingCard.classList.add('hidden');
@@ -1777,9 +1777,43 @@ function showReceiptModal(order) {
 
   document.getElementById('receiptModal').classList.remove('hidden');
   if (window.lucide) lucide.createIcons();
+
+  startReceiptPolling();
+}
+
+let receiptPollInterval = null;
+
+function startReceiptPolling() {
+  if (receiptPollInterval) clearInterval(receiptPollInterval);
+  receiptPollInterval = setInterval(async () => {
+    if (!currentActiveReceiptOrderId) {
+      stopReceiptPolling();
+      return;
+    }
+    const modal = document.getElementById('receiptModal');
+    if (!modal || modal.classList.contains('hidden')) {
+      stopReceiptPolling();
+      return;
+    }
+    try {
+      const res = await fetch(`/api/orders/${currentActiveReceiptOrderId}`);
+      const data = await res.json();
+      if (data.success && data.order) {
+        renderReceiptStatus(data.order);
+      }
+    } catch (e) {}
+  }, 4000);
+}
+
+function stopReceiptPolling() {
+  if (receiptPollInterval) {
+    clearInterval(receiptPollInterval);
+    receiptPollInterval = null;
+  }
 }
 
 function closeReceiptModal() {
+  stopReceiptPolling();
   document.getElementById('receiptModal').classList.add('hidden');
 }
 

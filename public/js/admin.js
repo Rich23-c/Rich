@@ -52,7 +52,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Auto-refresh orders every 5 seconds when authenticated
   setInterval(() => {
-    if (adminPin) {
+    if (adminPin || adminSessionToken) {
       loadAdminOrders(false);
     }
   }, 5000);
@@ -106,7 +106,7 @@ function hideLoginOverlay() {
 function keypadPress(digit) {
   const input = document.getElementById('adminPinInput');
   if (!input) return;
-  if (input.value.length < 10) {
+  if (input.value.length < 20) {
     input.value += digit;
   }
   const err = document.getElementById('pinErrorMessage');
@@ -149,7 +149,7 @@ async function submitAdminPin() {
 
   if (!enteredPin) {
     if (err) {
-      err.innerText = 'กรุณากรอกรหัสผ่าน PIN 6 หลักก่อนเข้าใช้งาน';
+      err.innerText = 'กรุณากรอกรหัสผ่าน PIN ก่อนเข้าใช้งาน';
       err.classList.remove('hidden');
     }
     return;
