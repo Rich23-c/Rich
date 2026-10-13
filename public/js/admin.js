@@ -2307,7 +2307,7 @@ async function handleChangeAdminPin() {
   const confirmPin = confirmPinInput ? confirmPinInput.value.trim() : '';
 
   if (!currentPin) {
-    currentPin = adminPin || '411197';
+    currentPin = adminPin || '0958174540';
   }
 
   if (!newPin) {

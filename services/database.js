@@ -111,7 +111,7 @@ function getDefaultSettings() {
     bankName: "Thai QR Payment (พร้อมเพย์)",
     bankAccountNumber: "สแกน Thai QR พร้อมเพย์",
     promptpayQrImage: "/images/shop-qr.png",
-    adminPin: "411197",
+    adminPin: "0958174540",
     isOpen: true,
     closedMessage: "ขณะนี้ร้านแม้วปิดรับออเดอร์ชั่วคราว แล้วพบกันใหม่รอบหน้านะจ๊ะ 🐱",
     laptopBannerEnabled: true,
@@ -868,7 +868,7 @@ function updateSettings(updates) {
 
 function verifyAdminPin(pin) {
   const settings = getSettings();
-  return String(settings.adminPin || '411197') === String(pin).trim();
+  return String(settings.adminPin || '0958174540') === String(pin).trim();
 }
 
 // Database Diagnostics for /health and Monitoring
