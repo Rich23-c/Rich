@@ -105,8 +105,10 @@ function intrusionDetectionMiddleware(req, res, next) {
   const now = Date.now();
 
   // 1. Check if IP is currently in 24-hour Auto-Ban blacklist
+  // (Exempt admin login so legitimate owner can always unban themselves with the PIN)
+  const isAuthRoute = req.path === '/api/admin/login' || req.path === '/admin';
   const unbanAt = bannedIps.get(ip);
-  if (unbanAt && now < unbanAt) {
+  if (unbanAt && now < unbanAt && !isAuthRoute) {
     const remainingHrs = Math.ceil((unbanAt - now) / 3600000);
     return res.status(403).json({
       success: false,
@@ -270,6 +272,7 @@ async function recordLoginFailure(req) {
 function recordLoginSuccess(req) {
   const ip = getClientIp(req);
   loginAttempts.delete(ip);
+  bannedIps.delete(ip); // Instantly unban admin IP upon legitimate authentication
   recordSecurityEvent('SUCCESSFUL_ADMIN_LOGIN', {
     ip,
     userAgent: (req.headers['user-agent'] || '').slice(0, 100)
