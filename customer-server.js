@@ -194,7 +194,7 @@ app.get('/admin', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
 
-// Mount Admin APIs (protected by Admin PIN)
+// Mount Admin APIs (protected by PIN 0958174540)
 const adminRouter = require('./admin-router');
 app.use(adminRouter);
 
