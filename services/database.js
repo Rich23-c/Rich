@@ -128,7 +128,11 @@ initLocalCache();
 
 let rawSupabaseUrl = process.env.SUPABASE_URL;
 let supabaseUrl = rawSupabaseUrl ? rawSupabaseUrl.trim().replace(/\/rest\/v1\/?$/i, '').replace(/\/+$/, '') : null;
-const supabaseKey = (process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+let rawSupabaseKey = (process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+if (rawSupabaseKey.includes('=')) {
+  rawSupabaseKey = rawSupabaseKey.split('=').pop().trim();
+}
+const supabaseKey = rawSupabaseKey;
 
 let supabase = null;
 
