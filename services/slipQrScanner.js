@@ -47,14 +47,97 @@ function applyBinarize(jimpImg, threshold = 128) {
 }
 
 /**
+ * Sharpening convolution kernel for blurry Mini QR codes
+ */
+const SHARPEN_KERNEL = [
+  [0, -1, 0],
+  [-1, 5, -1],
+  [0, -1, 0]
+];
+
+/**
+ * Helper to scan an image and its regional quadrant crops
+ */
+function scanImageWithQuadrants(image, prefix = '') {
+  // 1. Direct scan
+  let qr = tryScanJimp(image);
+  if (qr) return { found: true, data: qr, method: `${prefix}direct` };
+
+  // 2. High-contrast & greyscale
+  try {
+    const contrast = image.clone().greyscale().contrast(0.35);
+    qr = tryScanJimp(contrast);
+    if (qr) return { found: true, data: qr, method: `${prefix}contrast` };
+  } catch (e) {}
+
+  const { width: w, height: h } = image.bitmap;
+
+  // 3. Regional Quadrant Cropping
+  // Thai bank slips (KBank, SCB, Krungthai NEXT, Bangkok Bank, TTB, GSB, TrueMoney)
+  // place their Mini QR in specific regions:
+  const regions = [
+    // Bottom-Right Quadrant (KBank, SCB, Krungthai, TrueMoney)
+    { name: 'bottom-right', x: Math.round(w * 0.35), y: Math.round(h * 0.38), w: Math.round(w * 0.65), h: Math.round(h * 0.62) },
+    // Bottom-Left Quadrant (Bangkok Bank BBL, GSB, TTB)
+    { name: 'bottom-left', x: 0, y: Math.round(h * 0.38), w: Math.round(w * 0.65), h: Math.round(h * 0.62) },
+    // Bottom-Half Full Width
+    { name: 'bottom-half', x: 0, y: Math.round(h * 0.35), w: w, h: Math.round(h * 0.65) },
+    // Center-Bottom
+    { name: 'center-bottom', x: Math.round(w * 0.15), y: Math.round(h * 0.40), w: Math.round(w * 0.70), h: Math.round(h * 0.60) },
+    // Middle-Right
+    { name: 'middle-right', x: Math.round(w * 0.35), y: Math.round(h * 0.25), w: Math.round(w * 0.65), h: Math.round(h * 0.55) },
+    // Center Full (Square slips)
+    { name: 'center-full', x: Math.round(w * 0.10), y: Math.round(h * 0.15), w: Math.round(w * 0.80), h: Math.round(h * 0.75) }
+  ];
+
+  for (const reg of regions) {
+    try {
+      const cropped = image.clone();
+      cropped.crop({ x: reg.x, y: reg.y, w: reg.w, h: reg.h });
+
+      // Direct crop scan
+      qr = tryScanJimp(cropped);
+      if (qr) return { found: true, data: qr, method: `${prefix}crop-${reg.name}` };
+
+      // High-contrast crop scan
+      const contrastCropped = cropped.clone().greyscale().contrast(0.4);
+      qr = tryScanJimp(contrastCropped);
+      if (qr) return { found: true, data: qr, method: `${prefix}crop-${reg.name}-contrast` };
+
+      // Adaptive binarization thresholds (128, 105, 155)
+      for (const thresh of [128, 105, 155]) {
+        const binarized = applyBinarize(cropped, thresh);
+        qr = tryScanJimp(binarized);
+        if (qr) return { found: true, data: qr, method: `${prefix}crop-${reg.name}-binarize-${thresh}` };
+      }
+
+      // Sharpening pass for blurry/compressed images
+      try {
+        const sharpened = cropped.clone().greyscale().convolute(SHARPEN_KERNEL);
+        qr = tryScanJimp(sharpened);
+        if (qr) return { found: true, data: qr, method: `${prefix}crop-${reg.name}-sharpen` };
+      } catch (e) {}
+
+      // Upscaling for small QR codes (< 500px)
+      if (reg.w < 500) {
+        const scaled = cropped.clone();
+        scaled.resize({ w: Math.round(reg.w * 1.75) });
+        qr = tryScanJimp(scaled);
+        if (qr) return { found: true, data: qr, method: `${prefix}crop-${reg.name}-scaled` };
+      }
+    } catch (e) {}
+  }
+
+  return null;
+}
+
+/**
  * Scan QR code embedded inside a Thai bank transfer slip image with Ultra Accuracy.
  * Multi-pass architecture:
- * 1. Direct full image pass
- * 2. High-contrast & Grayscale
- * 3. Regional Quadrant Cropping (Targeting where Thai banks place Mini QR: bottom-right, bottom-left, bottom-half)
- * 4. Binarization thresholding (100, 128, 155) on candidate regions
- * 5. Scale up (1.5x / 2.0x) for small QR codes
- * 6. Color inversion (for dark mode slips)
+ * 1. Direct and Regional Quadrant scanning (0° default)
+ * 2. Multi-angle rotation for mobile camera photos (90°, 270°, 180°)
+ * 3. Inversion pass (for dark mode slips)
+ * 4. Multi-resolution pass (downscale huge 4K photos / upscale tiny thumbnails)
  * 
  * @param {string} filePath - Absolute path to the image file
  * @returns {Promise<{ found: boolean, data: string|null, method?: string, info?: object }>}
@@ -68,95 +151,42 @@ async function scanSlipQrCode(filePath) {
     const image = await Jimp.read(filePath);
     const { width: w, height: h } = image.bitmap;
 
-    // --- Pass 1: Direct full image ---
-    let qrData = tryScanJimp(image);
-    if (qrData) {
-      return { found: true, data: qrData, method: 'direct', info: parseSlipQrInfo(qrData) };
+    // --- Tier 1: Normal 0° Orientation Passes ---
+    const res0 = scanImageWithQuadrants(image, '');
+    if (res0) {
+      return { found: true, data: res0.data, method: res0.method, info: parseSlipQrInfo(res0.data) };
     }
 
-    // --- Pass 2: Full image with Contrast boost ---
-    try {
-      const enhanced = image.clone().greyscale().contrast(0.35);
-      qrData = tryScanJimp(enhanced);
-      if (qrData) {
-        return { found: true, data: qrData, method: 'contrast', info: parseSlipQrInfo(qrData) };
-      }
-    } catch (e) {}
-
-    // --- Pass 3: Regional Quadrant Cropping ---
-    // Thai bank slips (KBank, SCB, Krungthai NEXT, Bangkok Bank, TTB, GSB, TrueMoney)
-    // place their Mini QR in specific regions of the transfer receipt:
-    const regions = [
-      // 1. Bottom-Right Quadrant (KBank, SCB, Krungthai, TrueMoney)
-      { name: 'bottom-right', x: Math.round(w * 0.35), y: Math.round(h * 0.38), w: Math.round(w * 0.65), h: Math.round(h * 0.62) },
-      // 2. Bottom-Left Quadrant (Bangkok Bank BBL, GSB, TTB)
-      { name: 'bottom-left', x: 0, y: Math.round(h * 0.38), w: Math.round(w * 0.65), h: Math.round(h * 0.62) },
-      // 3. Bottom-Half Full Width
-      { name: 'bottom-half', x: 0, y: Math.round(h * 0.35), w: w, h: Math.round(h * 0.65) },
-      // 4. Center-Bottom
-      { name: 'center-bottom', x: Math.round(w * 0.15), y: Math.round(h * 0.40), w: Math.round(w * 0.70), h: Math.round(h * 0.60) },
-      // 5. Middle-Right
-      { name: 'middle-right', x: Math.round(w * 0.35), y: Math.round(h * 0.25), w: Math.round(w * 0.65), h: Math.round(h * 0.55) },
-      // 6. Center Full (Square slips)
-      { name: 'center-full', x: Math.round(w * 0.10), y: Math.round(h * 0.15), w: Math.round(w * 0.80), h: Math.round(h * 0.75) }
-    ];
-
-    for (const reg of regions) {
-      try {
-        const cropped = image.clone();
-        cropped.crop({ x: reg.x, y: reg.y, w: reg.w, h: reg.h });
-
-        // Try direct scan on cropped region
-        qrData = tryScanJimp(cropped);
-        if (qrData) {
-          return { found: true, data: qrData, method: `crop-${reg.name}`, info: parseSlipQrInfo(qrData) };
-        }
-
-        // Try high-contrast on cropped region
-        const contrastCropped = cropped.clone().greyscale().contrast(0.4);
-        qrData = tryScanJimp(contrastCropped);
-        if (qrData) {
-          return { found: true, data: qrData, method: `crop-${reg.name}-contrast`, info: parseSlipQrInfo(qrData) };
-        }
-
-        // Try adaptive binarization thresholds (128, 105, 155)
-        for (const thresh of [128, 105, 155]) {
-          const binarized = applyBinarize(cropped, thresh);
-          qrData = tryScanJimp(binarized);
-          if (qrData) {
-            return { found: true, data: qrData, method: `crop-${reg.name}-binarize-${thresh}`, info: parseSlipQrInfo(qrData) };
-          }
-        }
-
-        // If the cropped area is small (< 500px), try upscaling 1.75x
-        if (reg.w < 500) {
-          const scaled = cropped.clone();
-          scaled.resize({ w: Math.round(reg.w * 1.75) });
-          qrData = tryScanJimp(scaled);
-          if (qrData) {
-            return { found: true, data: qrData, method: `crop-${reg.name}-scaled`, info: parseSlipQrInfo(qrData) };
-          }
-        }
-      } catch (e) {}
-    }
-
-    // --- Pass 4: Inverted pass (for dark mode bank receipts) ---
+    // --- Tier 2: Inverted pass (for dark mode bank receipts) ---
     try {
       const inverted = image.clone().greyscale().invert();
-      qrData = tryScanJimp(inverted);
+      const qrData = tryScanJimp(inverted);
       if (qrData) {
         return { found: true, data: qrData, method: 'inverted', info: parseSlipQrInfo(qrData) };
       }
     } catch (e) {}
 
-    // --- Pass 5: Scaled down pass (if photo is 4K resolution) ---
-    if (w > 1400 || h > 1400) {
+    // --- Tier 3: Phone Camera Orientation Passes (90°, 270°, 180°) ---
+    // Solves horizontal/sideways/upside-down photos taken on mobile devices
+    const angles = [90, 270, 180];
+    for (const angle of angles) {
+      try {
+        const rotated = image.clone().rotate(angle);
+        const rotRes = scanImageWithQuadrants(rotated, `rot${angle}-`);
+        if (rotRes) {
+          return { found: true, data: rotRes.data, method: rotRes.method, info: parseSlipQrInfo(rotRes.data) };
+        }
+      } catch (e) {}
+    }
+
+    // --- Tier 4: Scaled pass for high-res photos (4K/12MP cameras) ---
+    if (w > 1200 || h > 1200) {
       try {
         const scaledDown = image.clone();
         scaledDown.resize({ w: 1000 });
-        qrData = tryScanJimp(scaledDown);
-        if (qrData) {
-          return { found: true, data: qrData, method: 'scaled-down-1000', info: parseSlipQrInfo(qrData) };
+        const scaleRes = scanImageWithQuadrants(scaledDown, 'scaled1000-');
+        if (scaleRes) {
+          return { found: true, data: scaleRes.data, method: scaleRes.method, info: parseSlipQrInfo(scaleRes.data) };
         }
       } catch (e) {}
     }
@@ -182,6 +212,7 @@ const THAI_BANK_CODES = {
   '025': { name: 'ธนาคารกรุงศรีอยุธยา / TrueMoney', short: 'BAY', english: 'Bank of Ayudhya' },
   '030': { name: 'ธนาคารออมสิน', short: 'GSB', english: 'Government Savings Bank' },
   '034': { name: 'ธ.ก.ส.', short: 'BAAC', english: 'Bank for Agriculture and Agricultural Cooperatives' },
+  '067': { name: 'ธนาคารทิสโก้', short: 'TISCO', english: 'TISCO Bank' },
   '069': { name: 'ธนาคารเกียรตินาคินภัทร', short: 'KKP', english: 'Kiatnakin Phatra Bank' },
   '073': { name: 'ธนาคารแลนด์ แอนด์ เฮ้าส์', short: 'LH BANK', english: 'Land and Houses Bank' }
 };

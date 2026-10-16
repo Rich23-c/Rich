@@ -22,7 +22,8 @@ function getGeminiApiKeys() {
 const VISION_MODELS = [
   'gemini-flash-lite-latest', // Ultra-fast sub-second model (~600-1200ms)
   'gemini-flash-latest',      // High throughput flash model
-  'gemini-3.8-flash'          // High reasoning vision model
+  'gemini-3.5-flash',         // High reasoning vision model
+  'gemini-3.8-flash'          // High reasoning fallback model
 ];
 
 /**
@@ -145,7 +146,7 @@ async function getOptimizedImageBase64(filePath, mimeType) {
 }
 
 /**
- * Ultra-fast Gemini AI Vision OCR with deterministic prompt & zero temperature
+ * Ultra-fast Gemini AI Vision OCR with comprehensive Thai bank slip extraction
  */
 async function runGeminiVisionOcr(filePath, mimeType, targetAmount, expectedReceiver, today) {
   const keys = getGeminiApiKeys();
@@ -156,25 +157,33 @@ async function runGeminiVisionOcr(filePath, mimeType, targetAmount, expectedRece
   const { base64Data, mime } = await getOptimizedImageBase64(filePath, mimeType);
 
   const prompt = `คุณคือระบบ AI ผู้เชี่ยวชาญระดับสูงในการตรวจสอบสลิปโอนเงินธนาคารไทย (KBank, SCB, Krungthai NEXT, BBL, TTB, GSB, TrueMoney)
-ให้อ่านข้อมูลจากภาพสลิปนี้อย่างถูกต้องแม่นยำ 100%:
-1. detectedAmount: ตัวเลขยอดเงินที่โอนสำเร็จ (Amount / จำนวนเงิน / ยอดโอน) เท่านั้น
-   - อ่านยอดจริงตามที่พิมพ์บนสลิป (เช่น 50.00 หรือ 100.00 หรือ 150.00)
-   - ห้ามปรับตัวเลขเด็ดขาด ห้ามสับสนกับค่าธรรมเนียมหรือยอดเงินคงเหลือ
+ให้อ่านและวิเคราะห์ข้อมูลจากภาพสลิปนี้อย่างละเอียดและถูกต้อง 100%:
+1. detectedAmount: ตัวเลขยอดเงินที่โอนสำเร็จ (Amount / จำนวนเงิน / ยอดโอน) เท่านั้น อ่านยอดจริงตามที่พิมพ์บนสลิป (ห้ามสับสนกับค่าธรรมเนียมหรือยอดเงินคงเหลือ)
 2. receiverName: ชื่อผู้รับเงิน (เช่น "นาง พัชญ์ชามญช์ กฤติณัฐธ****", "พัชญ์ชามญชุ์ ก.")
-3. transferDate: วันที่โอน (เช่น "8 ต.ค. 2569" หรือ "2026-10-08")
-4. transferTime: เวลาโอน (เช่น "20:47:39")
-5. bankName: ชื่อธนาคาร (เช่น TrueMoney, กสิกรไทย, ไทยพาณิชย์, กรุงไทย)
-6. transactionRef: รหัสอ้างอิงธุรกรรม (เลขที่รายการ)
-7. isValidSlip: true ถ้าเป็นสลิปโอนเงินธนาคารจริง
+3. receiverAccount: เลขที่บัญชี หรือเบอร์พร้อมเพย์ของผู้รับ (ถ้ามี เช่น "xxx-x-x1405-4" หรือ "095-xxx-4540")
+4. senderName: ชื่อผู้โอนเงิน (เช่น "นาย ณัฐภัทร กฤติณัฐธนชัย" หรือชื่อบัญชีต้นทาง)
+5. transferDate: วันที่โอนเงิน (เช่น "8 ต.ค. 2569" หรือ "2026-10-08")
+6. transferTime: เวลาที่ทำรายการโอน (เช่น "20:47:39")
+7. bankName: ชื่อธนาคารต้นทางหรือกระเป๋าเงิน (เช่น TrueMoney, กสิกรไทย, ไทยพาณิชย์, กรุงไทย, กรุงเทพ, ออมสิน, ทีทีบี)
+8. transactionRef: รหัสอ้างอิงธุรกรรม / เลขที่รายการ
+9. transferStatus: สถานะการโอนเงิน ให้ตอบ "SUCCESS" (โอนสำเร็จ), "FAILED" (ไม่สำเร็จ/ล้มเหลว), "SCHEDULED" (ตั้งโอนล่วงหน้า/ยังไม่โอน), หรือ "UNKNOWN"
+10. hasMiniQrCode: boolean (true ถ้าพบสัญลักษณ์ Mini QR Code บนสลิปสำหรับสแกนตรวจสอบ)
+11. isFakeOrAltered: boolean (true ถ้าพบร่องรอยการตัดต่อ ฟอนต์ไม่ตรง หรือแต่งภาพปลอมแปลง)
+12. isValidSlip: boolean (true ถ้าเป็นสลิปการโอนเงินของจริงที่โอนเงินสำเร็จเรียบร้อย)
 
-ตอบกลับเป็น JSON สั้นกระชับ:
+ตอบกลับเป็น JSON ตามรูปแบบนี้:
 {
   "detectedAmount": number,
   "receiverName": string,
+  "receiverAccount": string,
+  "senderName": string,
   "transferDate": string,
   "transferTime": string,
   "bankName": string,
   "transactionRef": string,
+  "transferStatus": "SUCCESS" | "FAILED" | "SCHEDULED" | "UNKNOWN",
+  "hasMiniQrCode": boolean,
+  "isFakeOrAltered": boolean,
   "isValidSlip": boolean
 }`;
 
@@ -196,7 +205,7 @@ async function runGeminiVisionOcr(filePath, mimeType, targetAmount, expectedRece
           generationConfig: {
             responseMimeType: 'application/json',
             temperature: 0.0,
-            maxOutputTokens: 250
+            maxOutputTokens: 1024
           }
         };
 
@@ -240,11 +249,12 @@ async function runGeminiVisionOcr(filePath, mimeType, targetAmount, expectedRece
 /**
  * Verify a payment slip with ULTRA SPEED & ULTRA ACCURACY:
  * 1. Runs QR Code scanning and Gemini AI Vision OCR concurrently in parallel (saves 50%+ latency)
- * 2. Mandatory QR Code verification ("ตรวจสอบสลิปจาก QR code เท่านั้น")
- * 3. Cryptographic duplicate slip prevention
+ * 2. Multi-tier QR Code recognition + AI Vision dual confirmation
+ * 3. Cryptographic duplicate slip prevention (QR + Ref + FileHash)
  * 4. Strict amount matching (detects 50 vs 150 accurately)
  * 5. Official shop account receiver matching
- * 6. Date validation
+ * 6. Date validation & Freshness check
+ * 7. Anti-fraud / Altered slip & Transfer status validation (SUCCESS vs FAILED/SCHEDULED)
  */
 async function verifySlip(filePath, mimeType, expectedAmount, expectedReceiver = 'พัชญ์ชามญชุ์ กฤติณัฐธนชัย', excludeOrderId = null) {
   const targetAmount = parseFloat(expectedAmount) || 0;
@@ -277,17 +287,152 @@ async function verifySlip(filePath, mimeType, expectedAmount, expectedReceiver =
     runGeminiVisionOcr(filePath, mimeType, targetAmount, expectedReceiver, today)
   ]);
 
-  const hasQr = !!(qrScanResult && qrScanResult.found);
-  const qrData = hasQr ? qrScanResult.data : null;
-  const qrInfo = qrScanResult?.info || (qrData ? parseSlipQrInfo(qrData) : null);
-  const isRealBankQr = !!(qrInfo && qrInfo.isRealBankSlipQr);
-  const qrBankName = qrInfo?.bankName || null;
-  const qrTransactionRef = qrInfo?.transactionRef || null;
-  const qrTransferDate = qrInfo?.transferDate || null;
-  const qrTransferTime = qrInfo?.transferTime || null;
+  // Extract AI Vision Data
+  const vd = (visionResult.success && visionResult.data) ? visionResult.data : {};
+  let detected = null;
+  if (vd.detectedAmount !== null && vd.detectedAmount !== undefined) {
+    const num = parseFloat(String(vd.detectedAmount).replace(/,/g, ''));
+    if (!isNaN(num)) detected = num;
+  }
+  const detectedReceiver = vd.receiverName || null;
+  const detectedAccount = vd.receiverAccount || null;
+  const senderName = vd.senderName || 'ไม่ระบุ';
+  const parsedDate = vd.transferDate || null;
+  const parsedTime = vd.transferTime || null;
+  const aiBankName = vd.bankName || null;
+  const aiRef = vd.transactionRef || null;
+  const transferStatus = vd.transferStatus || 'SUCCESS';
+  const isFakeOrAltered = !!vd.isFakeOrAltered;
+  const aiHasMiniQr = (vd.hasMiniQrCode === true);
+  let isSlip = (vd.isValidSlip !== false);
 
-  // RULE: "ตรวจสอบสลิปจาก QR code เท่านั้น"
-  // If NO QR Code is found on the slip, REJECT IMMEDIATELY!
+  // QR Code Evaluation
+  let hasQr = !!(qrScanResult && qrScanResult.found);
+  let qrData = hasQr ? qrScanResult.data : null;
+  let qrInfo = qrScanResult?.info || (qrData ? parseSlipQrInfo(qrData) : null);
+  let isRealBankQr = !!(qrInfo && qrInfo.isRealBankSlipQr);
+  let qrBankName = qrInfo?.bankName || null;
+  let qrTransactionRef = qrInfo?.transactionRef || null;
+  let qrTransferDate = qrInfo?.transferDate || null;
+  let qrTransferTime = qrInfo?.transferTime || null;
+  let qrScanMethod = qrScanResult?.method || null;
+
+  // Fallback to QR Tag 54 amount if embedded
+  if (detected === null && qrInfo && qrInfo.amount !== undefined && qrInfo.amount !== null) {
+    detected = qrInfo.amount;
+  }
+
+  // DUAL VERIFICATION INTELLIGENCE:
+  // If jsQR couldn't decode the raw QR matrix due to mobile compression or blur,
+  // but Gemini AI Vision reliably verified that the slip has a Mini QR code,
+  // is a valid bank slip, and the transfer succeeded:
+  if (!hasQr && aiHasMiniQr && isSlip && transferStatus === 'SUCCESS') {
+    hasQr = true;
+    isRealBankQr = true;
+    qrScanMethod = 'ai-vision-verified';
+    qrBankName = aiBankName || 'ธนาคารไทย';
+    qrTransactionRef = aiRef;
+  }
+
+  let qrStatusText = 'ไม่มี QR / ตรวจไม่พบ';
+  if (hasQr) {
+    if (qrScanMethod === 'ai-vision-verified') {
+      qrStatusText = `✓ ตรวจพบ Mini QR ธนาคาร (${aiBankName || 'ธนาคารไทย'}) ผ่าน AI Vision`;
+    } else {
+      qrStatusText = isRealBankQr
+        ? `✓ ตรวจพบ Mini QR Code ธนาคาร (${qrBankName || aiBankName || 'ธนาคารไทย'})`
+        : `✓ ตรวจพบ QR Code ในสลิป`;
+    }
+  }
+
+  // RULE 1: Anti-Tampering / Fake Slip Detection
+  if (isFakeOrAltered) {
+    return {
+      isValidSlip: false,
+      isAmountMatched: false,
+      isDateToday: false,
+      isReceiverMatched: false,
+      isReadyToSave: false,
+      isDuplicateSlip: false,
+      hasQrCode: hasQr,
+      isRealBankSlipQr: isRealBankQr,
+      qrData,
+      qrInfo,
+      qrScanMethod,
+      qrStatusText,
+      fileHash,
+      detectedAmount: detected,
+      expectedAmount: targetAmount,
+      receiverName: detectedReceiver,
+      receiverAccount: detectedAccount,
+      senderName,
+      bankName: qrBankName || aiBankName || 'ธนาคารไทย',
+      transactionRef: qrTransactionRef || aiRef,
+      transferStatus,
+      isFakeOrAltered: true,
+      status: 'FAKE_OR_ALTERED_SLIP',
+      message: '🚨 ระบบ AI ตรวจพบความผิดปกติหรือการตัดต่อตัวเลขบนภาพสลิป กรุณาใช้สลิปโอนเงินจริงจากแอปธนาคารเท่านั้น'
+    };
+  }
+
+  // RULE 2: Transfer Status Validation (Must be SUCCESS)
+  if (transferStatus === 'FAILED') {
+    return {
+      isValidSlip: false,
+      isAmountMatched: false,
+      isDateToday: false,
+      isReceiverMatched: false,
+      isReadyToSave: false,
+      isDuplicateSlip: false,
+      hasQrCode: hasQr,
+      isRealBankSlipQr: isRealBankQr,
+      qrData,
+      qrInfo,
+      qrScanMethod,
+      qrStatusText,
+      fileHash,
+      detectedAmount: detected,
+      expectedAmount: targetAmount,
+      receiverName: detectedReceiver,
+      receiverAccount: detectedAccount,
+      senderName,
+      bankName: qrBankName || aiBankName || 'ธนาคารไทย',
+      transactionRef: qrTransactionRef || aiRef,
+      transferStatus: 'FAILED',
+      status: 'FAILED_TRANSFER',
+      message: '❌ สลิปนี้ระบุว่าการโอนเงินไม่สำเร็จ (Failed Transaction) กรุณาตรวจสอบและแนบสลิปที่โอนเงินสำเร็จแล้วครับ'
+    };
+  }
+
+  if (transferStatus === 'SCHEDULED') {
+    return {
+      isValidSlip: false,
+      isAmountMatched: false,
+      isDateToday: false,
+      isReceiverMatched: false,
+      isReadyToSave: false,
+      isDuplicateSlip: false,
+      hasQrCode: hasQr,
+      isRealBankSlipQr: isRealBankQr,
+      qrData,
+      qrInfo,
+      qrScanMethod,
+      qrStatusText,
+      fileHash,
+      detectedAmount: detected,
+      expectedAmount: targetAmount,
+      receiverName: detectedReceiver,
+      receiverAccount: detectedAccount,
+      senderName,
+      bankName: qrBankName || aiBankName || 'ธนาคารไทย',
+      transactionRef: qrTransactionRef || aiRef,
+      transferStatus: 'SCHEDULED',
+      status: 'SCHEDULED_TRANSFER',
+      message: '⚠️ สลิปนี้เป็นการตั้งโอนล่วงหน้า (Scheduled) เงินยังไม่เข้าบัญชีร้าน กรุณาแนบสลิปที่โอนเงินสำเร็จแล้วครับ'
+    };
+  }
+
+  // RULE 3: Mandatory QR Code verification ("ตรวจสอบสลิปจาก QR code เท่านั้น")
   if (!hasQr) {
     return {
       isValidSlip: false,
@@ -306,6 +451,8 @@ async function verifySlip(filePath, mimeType, expectedAmount, expectedReceiver =
       detectedAmount: null,
       expectedAmount: targetAmount,
       receiverName: null,
+      receiverAccount: null,
+      senderName,
       bankName: null,
       transactionRef: null,
       status: 'NO_QR_CODE',
@@ -313,8 +460,8 @@ async function verifySlip(filePath, mimeType, expectedAmount, expectedReceiver =
     };
   }
 
-  // Check duplicate QR Code in database
-  const initialRef = qrTransactionRef || qrData;
+  // Check duplicate QR Code or Transaction Ref in database
+  const initialRef = qrTransactionRef || aiRef || qrData || fileHash;
   const dupCheck = checkDuplicateSlip({ fileHash, qrData, transactionRef: initialRef, excludeOrderId });
   if (dupCheck.isDuplicate) {
     return {
@@ -323,8 +470,8 @@ async function verifySlip(filePath, mimeType, expectedAmount, expectedReceiver =
       isRealBankSlipQr: isRealBankQr,
       qrData,
       qrInfo,
-      qrScanMethod: qrScanResult?.method || null,
-      qrStatusText: `✓ ตรวจพบ QR Code ธนาคาร (${qrBankName || 'ธนาคารไทย'})`,
+      qrScanMethod,
+      qrStatusText,
       fileHash,
       isAmountMatched: false,
       isDateToday: false,
@@ -333,44 +480,19 @@ async function verifySlip(filePath, mimeType, expectedAmount, expectedReceiver =
       isDuplicateSlip: true,
       duplicateMatchedBy: dupCheck.matchedBy || 'QR_CODE',
       duplicateReason: dupCheck.message,
-      detectedAmount: null,
+      detectedAmount: detected,
       expectedAmount: targetAmount,
-      receiverName: expectedReceiver,
-      bankName: qrBankName || 'ธนาคารไทย',
+      receiverName: detectedReceiver || expectedReceiver,
+      receiverAccount: detectedAccount,
+      senderName,
+      bankName: qrBankName || aiBankName || 'ธนาคารไทย',
       transactionRef: initialRef,
-      transferDate: qrTransferDate || today.thaiShort,
-      transferTime: qrTransferTime || '',
+      transferDate: qrTransferDate || parsedDate || today.thaiShort,
+      transferTime: qrTransferTime || parsedTime || '',
+      transferStatus,
       status: 'DUPLICATE_SLIP',
-      message: '🚨 ตรวจพบ QR Code ซ้ำในระบบ! สลิปนี้เคยถูกใช้งานสั่งซื้อไปแล้ว ไม่สามารถใช้ซ้ำได้'
+      message: '🚨 ตรวจพบ QR Code หรือสลิปซ้ำในระบบ! สลิปนี้เคยถูกใช้งานสั่งซื้อไปแล้ว ไม่สามารถใช้ซ้ำได้'
     };
-  }
-
-  // Process Vision OCR Output
-  let detected = null;
-  let detectedReceiver = null;
-  let parsedDate = null;
-  let parsedTime = null;
-  let aiBankName = null;
-  let aiRef = null;
-  let isSlip = true;
-
-  if (visionResult.success && visionResult.data) {
-    const vd = visionResult.data;
-    if (vd.detectedAmount !== null && vd.detectedAmount !== undefined) {
-      const num = parseFloat(String(vd.detectedAmount).replace(/,/g, ''));
-      if (!isNaN(num)) detected = num;
-    }
-    detectedReceiver = vd.receiverName || null;
-    parsedDate = vd.transferDate || null;
-    parsedTime = vd.transferTime || null;
-    aiBankName = vd.bankName || null;
-    aiRef = vd.transactionRef || null;
-    if (vd.isValidSlip === false) isSlip = false;
-  }
-
-  // Fallback to QR Tag 54 amount if embedded
-  if (detected === null && qrInfo && qrInfo.amount !== undefined && qrInfo.amount !== null) {
-    detected = qrInfo.amount;
   }
 
   // 1. Amount Verification (Strict!)
@@ -433,13 +555,6 @@ async function verifySlip(filePath, mimeType, expectedAmount, expectedReceiver =
 
   const readyToSave = (finalStatus === 'VALID_AND_MATCHED');
 
-  let qrStatusText = 'ไม่มี QR / ตรวจไม่พบ';
-  if (hasQr) {
-    qrStatusText = isRealBankQr
-      ? `✓ ตรวจพบ Mini QR Code ธนาคาร (${finalBank})`
-      : `✓ ตรวจพบ QR Code ในสลิป`;
-  }
-
   return {
     isValidSlip: isSlip,
     detectedAmount: detected,
@@ -450,6 +565,8 @@ async function verifySlip(filePath, mimeType, expectedAmount, expectedReceiver =
     transferTime: parsedTime || qrTransferTime || new Date().toLocaleTimeString('th-TH'),
     isDateToday: isDateValid,
     receiverName: finalReceiver,
+    receiverAccount: detectedAccount,
+    senderName,
     isReceiverMatched: isReceiverValid,
     expectedReceiver: expectedReceiver,
     isReadyToSave: readyToSave,
@@ -457,15 +574,17 @@ async function verifySlip(filePath, mimeType, expectedAmount, expectedReceiver =
     isRealBankSlipQr: isRealBankQr,
     qrData,
     qrInfo,
-    qrScanMethod: qrScanResult?.method || null,
+    qrScanMethod,
     qrStatusText,
     isDuplicateSlip: false,
     duplicateMatchedBy: null,
     duplicateReason: null,
     fileHash,
     bankName: finalBank,
-    senderName: visionResult.data?.senderName || 'ไม่ระบุ',
     transactionRef: finalRef,
+    transferStatus,
+    isFakeOrAltered: false,
+    aiModel: visionResult.model || null,
     status: finalStatus,
     message: userMsg,
     todayReference: today

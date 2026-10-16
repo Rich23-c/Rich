@@ -567,7 +567,38 @@ app.post('/api/orders', orderCreateRateLimit, uploadSlip.single('slip'), async (
       }
     }
 
-    // RULE: "ตรวจสอบสลิปจาก QR code เท่านั้น"
+    // RULE 1: Anti-Tampering / Fake Slip Detection
+    if (slipVerification.isFakeOrAltered || slipVerification.status === 'FAKE_OR_ALTERED_SLIP') {
+      return res.status(400).json({
+        success: false,
+        error: slipVerification.message || '🚨 ระบบตรวจพบความผิดปกติหรือการดัดแปลงภาพสลิป กรุณาใช้สลิปโอนเงินจริงจากแอปธนาคารเท่านั้น'
+      });
+    }
+
+    // RULE 2: Transfer Status Validation
+    if (slipVerification.status === 'FAILED_TRANSFER' || slipVerification.transferStatus === 'FAILED') {
+      return res.status(400).json({
+        success: false,
+        error: slipVerification.message || '❌ สลิปนี้ระบุว่าการโอนเงินไม่สำเร็จ (Failed Transaction) กรุณาตรวจสอบและแนบสลิปที่โอนเงินสำเร็จแล้วครับ'
+      });
+    }
+
+    if (slipVerification.status === 'SCHEDULED_TRANSFER' || slipVerification.transferStatus === 'SCHEDULED') {
+      return res.status(400).json({
+        success: false,
+        error: slipVerification.message || '⚠️ สลิปนี้เป็นการตั้งโอนล่วงหน้า (Scheduled) เงินยังไม่เข้าบัญชีร้าน กรุณาแนบสลิปที่โอนเงินสำเร็จแล้วครับ'
+      });
+    }
+
+    // RULE 3: Shop Receiver Account Matching
+    if (slipVerification.isReceiverMatched === false || slipVerification.status === 'RECEIVER_MISMATCHED') {
+      return res.status(400).json({
+        success: false,
+        error: slipVerification.message || '❌ สลิปนี้ไม่ได้โอนเข้าบัญชีของทางร้าน กรุณาตรวจสอบชื่อบัญชีผู้รับเงิน'
+      });
+    }
+
+    // RULE 4: Mandatory QR Code verification ("ตรวจสอบสลิปจาก QR code เท่านั้น")
     if (!slipVerification || !slipVerification.hasQrCode || slipVerification.status === 'NO_QR_CODE') {
       return res.status(400).json({
         success: false,
@@ -575,7 +606,7 @@ app.post('/api/orders', orderCreateRateLimit, uploadSlip.single('slip'), async (
       });
     }
 
-    // RULE: Enforce Date Freshness (Reject stale/old slips from previous months/years)
+    // RULE 5: Enforce Date Freshness (Reject stale/old slips from previous months/years)
     if (slipVerification.isDateToday === false || slipVerification.status === 'DATE_MISMATCHED') {
       return res.status(400).json({
         success: false,

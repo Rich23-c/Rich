@@ -1232,6 +1232,7 @@ function displayVerificationResult(v, expectedAmount) {
   const detectedTimeText = document.getElementById('detectedTimeText');
   const detectedRefText = document.getElementById('detectedRefText');
   const detectedReceiverText = document.getElementById('detectedReceiverText');
+  const detectedSenderText = document.getElementById('detectedSenderText');
 
   card.classList.remove('hidden', 'bg-emerald-50', 'border-emerald-200', 'bg-amber-50', 'border-amber-200', 'bg-red-50', 'border-red-200', 'bg-blue-50', 'border-blue-200');
 
@@ -1240,6 +1241,10 @@ function displayVerificationResult(v, expectedAmount) {
   detectedBankText.innerText = v.bankName || '-';
   detectedTimeText.innerText = `${v.transferDate || ''} ${v.transferTime || ''}`.trim() || '-';
   detectedRefText.innerText = v.transactionRef || '-';
+
+  if (detectedSenderText) {
+    detectedSenderText.innerText = v.senderName || '-';
+  }
 
   // Handle QR indicator and duplicate warning
   const detectedQrBox = document.getElementById('detectedQrBox');
@@ -1278,7 +1283,52 @@ function displayVerificationResult(v, expectedAmount) {
     }
   }
 
-  if (!v.hasQrCode || v.status === 'NO_QR_CODE') {
+  if (v.isFakeOrAltered || v.status === 'FAKE_OR_ALTERED_SLIP') {
+    // Fake / Altered slip detected
+    card.classList.add('bg-red-50', 'border-red-300');
+    iconContainer.className = 'w-8 h-8 rounded-full bg-red-600 text-white flex items-center justify-center shrink-0 shadow-sm';
+    iconContainer.innerHTML = '<i data-lucide="shield-alert" class="w-5 h-5"></i>';
+    title.className = 'text-sm font-bold text-red-900';
+    title.innerText = '🚨 ตรวจพบความผิดปกติหรือการตัดต่อภาพสลิป';
+    summary.className = 'text-xs text-red-700 font-bold';
+    summary.innerText = v.message || 'ระบบตรวจพบความผิดปกติหรือการดัดแปลงภาพสลิป กรุณาใช้สลิปโอนเงินจริงจากแอปธนาคารเท่านั้น';
+
+    if (confirmBtn) {
+      confirmBtn.disabled = true;
+      confirmBtn.classList.add('opacity-50', 'cursor-not-allowed');
+      confirmBtn.innerHTML = '<i data-lucide="alert-triangle" class="w-5 h-5"></i><span>⚠️ สลิปไม่ถูกต้อง (ถูกปฏิเสธ)</span>';
+    }
+  } else if (v.status === 'FAILED_TRANSFER' || v.transferStatus === 'FAILED') {
+    // Failed transfer
+    card.classList.add('bg-red-50', 'border-red-300');
+    iconContainer.className = 'w-8 h-8 rounded-full bg-red-600 text-white flex items-center justify-center shrink-0 shadow-sm';
+    iconContainer.innerHTML = '<i data-lucide="x-circle" class="w-5 h-5"></i>';
+    title.className = 'text-sm font-bold text-red-900';
+    title.innerText = '❌ รายการโอนเงินในสลิปไม่สำเร็จ';
+    summary.className = 'text-xs text-red-700 font-bold';
+    summary.innerText = v.message || 'สลิปนี้ระบุว่าการโอนเงินไม่สำเร็จ (Failed Transaction) กรุณาตรวจสอบและแนบสลิปที่โอนเงินสำเร็จแล้วครับ';
+
+    if (confirmBtn) {
+      confirmBtn.disabled = true;
+      confirmBtn.classList.add('opacity-50', 'cursor-not-allowed');
+      confirmBtn.innerHTML = '<i data-lucide="alert-triangle" class="w-5 h-5"></i><span>⚠️ การโอนเงินไม่สำเร็จ</span>';
+    }
+  } else if (v.status === 'SCHEDULED_TRANSFER' || v.transferStatus === 'SCHEDULED') {
+    // Scheduled transfer
+    card.classList.add('bg-amber-50', 'border-amber-300');
+    iconContainer.className = 'w-8 h-8 rounded-full bg-amber-600 text-white flex items-center justify-center shrink-0 shadow-sm';
+    iconContainer.innerHTML = '<i data-lucide="clock" class="w-5 h-5"></i>';
+    title.className = 'text-sm font-bold text-amber-900';
+    title.innerText = '⚠️ สลิปเป็นการตั้งโอนล่วงหน้า';
+    summary.className = 'text-xs text-amber-800 font-bold';
+    summary.innerText = v.message || 'สลิปนี้เป็นการตั้งโอนล่วงหน้า (ยังไม่โอนเงินจริง)';
+
+    if (confirmBtn) {
+      confirmBtn.disabled = true;
+      confirmBtn.classList.add('opacity-50', 'cursor-not-allowed');
+      confirmBtn.innerHTML = '<i data-lucide="alert-triangle" class="w-5 h-5"></i><span>⚠️ สลิปตั้งโอนล่วงหน้า</span>';
+    }
+  } else if (!v.hasQrCode || v.status === 'NO_QR_CODE') {
     // Missing QR Code!
     card.classList.add('bg-red-50', 'border-red-300');
     iconContainer.className = 'w-8 h-8 rounded-full bg-red-600 text-white flex items-center justify-center shrink-0 shadow-sm';
@@ -1299,14 +1349,14 @@ function displayVerificationResult(v, expectedAmount) {
     iconContainer.className = 'w-8 h-8 rounded-full bg-red-600 text-white flex items-center justify-center shrink-0 shadow-sm';
     iconContainer.innerHTML = '<i data-lucide="shield-alert" class="w-5 h-5"></i>';
     title.className = 'text-sm font-bold text-red-900';
-    title.innerText = '🚫 สลิปนี้ซ้ำ! QR Code นี้เคยถูกใช้งานในระบบแล้ว';
+    title.innerText = '🚫 สลิปนี้ซ้ำ! QR Code หรือสลิปนี้เคยถูกใช้งานแล้ว';
     summary.className = 'text-xs text-red-700 font-medium';
-    summary.innerText = v.message || 'ตรวจพบว่า QR Code นี้เคยถูกใช้สั่งซื้อไปแล้ว กรุณาใช้สลิปการโอนเงินใหม่';
+    summary.innerText = v.message || 'ตรวจพบว่าสลิปนี้เคยถูกใช้สั่งซื้อไปแล้ว กรุณาใช้สลิปการโอนเงินใหม่';
 
     if (confirmBtn) {
       confirmBtn.disabled = true;
       confirmBtn.classList.add('opacity-50', 'cursor-not-allowed');
-      confirmBtn.innerHTML = '<i data-lucide="alert-triangle" class="w-5 h-5"></i><span>⚠️ QR Code นี้ถูกใช้ไปแล้ว</span>';
+      confirmBtn.innerHTML = '<i data-lucide="alert-triangle" class="w-5 h-5"></i><span>⚠️ สลิปนี้ถูกใช้ไปแล้ว</span>';
     }
   } else if (v.status === 'VALID_AND_MATCHED' || v.isReadyToSave) {
     // Exact Match, Valid Date & Valid Shop Receiver!
@@ -1334,9 +1384,9 @@ function displayVerificationResult(v, expectedAmount) {
     summary.innerText = v.message || `ชื่อผู้รับในสลิป (${v.receiverName || 'ไม่ระบุ'}) ไม่ตรงกับบัญชีของร้าน`;
 
     if (confirmBtn) {
-      confirmBtn.disabled = false;
-      confirmBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-      confirmBtn.innerHTML = '<i data-lucide="check-circle" class="w-5 h-5"></i><span>✅ กดยืนยันการสั่งซื้อขนม (ส่งออเดอร์) 🐾</span>';
+      confirmBtn.disabled = true;
+      confirmBtn.classList.add('opacity-50', 'cursor-not-allowed');
+      confirmBtn.innerHTML = '<i data-lucide="alert-triangle" class="w-5 h-5"></i><span>⚠️ บัญชีผู้รับไม่ตรงกับทางร้าน</span>';
     }
   } else if (v.status === 'AMOUNT_MISMATCHED' || (!v.isAmountMatched && v.detectedAmount !== null)) {
     // Amount Mismatch - Strict Block!
