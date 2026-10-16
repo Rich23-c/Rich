@@ -124,6 +124,30 @@ function getDefaultSettings() {
   };
 }
 
+/**
+ * Self-healing sanitizer for shop settings
+ * Auto-corrects any question mark strings ("???") or non-UTF8 corruption to genuine shop values
+ */
+function sanitizeShopSettings(s) {
+  if (!s || typeof s !== 'object') return getDefaultSettings();
+  const def = getDefaultSettings();
+  const cleaned = { ...s };
+
+  if (!cleaned.shopName || /\?{2,}/.test(cleaned.shopName)) {
+    cleaned.shopName = def.shopName;
+  }
+  if (!cleaned.promptpayName || /\?{2,}/.test(cleaned.promptpayName)) {
+    cleaned.promptpayName = def.promptpayName;
+  }
+  if (!cleaned.bankName || /\?{2,}/.test(cleaned.bankName)) {
+    cleaned.bankName = def.bankName;
+  }
+  if (!cleaned.promptpayId || /\?{2,}/.test(cleaned.promptpayId)) {
+    cleaned.promptpayId = def.promptpayId;
+  }
+  return cleaned;
+}
+
 initLocalCache();
 
 let rawSupabaseUrl = process.env.SUPABASE_URL;
@@ -162,8 +186,13 @@ async function initSupabaseSync() {
       .single();
 
     if (!settingsErr && settingsData && settingsData.data) {
-      memoryCache.settings = { ...getDefaultSettings(), ...memoryCache.settings, ...settingsData.data };
+      const sanitizedCloud = sanitizeShopSettings(settingsData.data);
+      memoryCache.settings = { ...getDefaultSettings(), ...memoryCache.settings, ...sanitizedCloud };
       writeJson(SETTINGS_FILE, memoryCache.settings);
+      // Auto-heal cloud database if it had corrupted question marks
+      if (/\?{2,}/.test(settingsData.data.promptpayName || '') || /\?{2,}/.test(settingsData.data.shopName || '')) {
+        supabase.from('settings').upsert({ id: 'current', data: memoryCache.settings }).then(() => {});
+      }
     } else if (settingsErr && settingsErr.code === 'PGRST116') {
       // Row doesn't exist yet -> seed local settings to cloud
       await supabase.from('settings').upsert({ id: 'current', data: memoryCache.settings });
@@ -853,7 +882,8 @@ function deleteOrder(orderId) {
 function getSettings() {
   initLocalCache();
   const def = getDefaultSettings();
-  const merged = { ...def, ...(memoryCache.settings || {}) };
+  const sanitized = sanitizeShopSettings(memoryCache.settings || {});
+  const merged = { ...def, ...sanitized };
   if (!merged.geminiApiKeys && def.geminiApiKeys) {
     merged.geminiApiKeys = def.geminiApiKeys;
   }
@@ -868,7 +898,13 @@ function updateSettings(updates) {
   if (cleanedUpdates.geminiApiKeys === undefined || cleanedUpdates.geminiApiKeys === '') {
     cleanedUpdates.geminiApiKeys = current.geminiApiKeys || getDefaultSettings().geminiApiKeys;
   }
-  const updated = { ...current, ...cleanedUpdates, updatedAt: new Date().toISOString() };
+  // Prevent saving question mark corruptions into settings
+  if (cleanedUpdates.shopName && /\?{2,}/.test(cleanedUpdates.shopName)) delete cleanedUpdates.shopName;
+  if (cleanedUpdates.promptpayName && /\?{2,}/.test(cleanedUpdates.promptpayName)) delete cleanedUpdates.promptpayName;
+  if (cleanedUpdates.bankName && /\?{2,}/.test(cleanedUpdates.bankName)) delete cleanedUpdates.bankName;
+  if (cleanedUpdates.promptpayId && /\?{2,}/.test(cleanedUpdates.promptpayId)) delete cleanedUpdates.promptpayId;
+
+  const updated = sanitizeShopSettings({ ...current, ...cleanedUpdates, updatedAt: new Date().toISOString() });
   memoryCache.settings = updated;
   writeJson(SETTINGS_FILE, updated);
 

@@ -948,6 +948,26 @@ function handleSlipSelected(file) {
   reader.readAsDataURL(file);
 }
 
+// Hardware-accelerated client-side QR detector (Uses browser native BarcodeDetector API)
+let clientDecodedQrData = null;
+
+async function detectQrOnClient(file) {
+  try {
+    if (!('BarcodeDetector' in window)) return null;
+    const detector = new BarcodeDetector({ formats: ['qr_code'] });
+    const imgBitmap = await createImageBitmap(file);
+    const codes = await detector.detect(imgBitmap);
+    if (codes && codes.length > 0 && codes[0].rawValue) {
+      const raw = codes[0].rawValue.trim();
+      console.log('⚡ [Client BarcodeDetector] QR decoded on hardware:', raw);
+      return raw;
+    }
+  } catch (e) {
+    // Graceful fallback to server scan
+  }
+  return null;
+}
+
 // Automatically pre-verify slip with AI and QR Code recognition
 async function autoVerifySlip(file) {
   if (!file) return;
@@ -964,9 +984,17 @@ async function autoVerifySlip(file) {
   if (reverifyBtn) reverifyBtn.disabled = true;
 
   try {
+    // Try hardware-accelerated on-device BarcodeDetector (instant < 30ms)
+    if (!clientDecodedQrData) {
+      clientDecodedQrData = await detectQrOnClient(file);
+    }
+
     const formData = new FormData();
     formData.append('slip', file);
     formData.append('expectedAmount', total);
+    if (clientDecodedQrData) {
+      formData.append('clientQrData', clientDecodedQrData);
+    }
 
     const res = await fetch('/api/verify-slip', {
       method: 'POST',
@@ -1118,6 +1146,9 @@ async function confirmAndSaveOrder() {
       formData.append('slipBase64', currentSlipVerification.slipBase64);
     }
   }
+  if (clientDecodedQrData) {
+    formData.append('clientQrData', clientDecodedQrData);
+  }
   const devDetails = detectDeviceDetails();
   formData.append('deviceId', getDeviceId());
   formData.append('deviceInfo', JSON.stringify(devDetails));
@@ -1195,6 +1226,7 @@ function removeSlip() {
   currentSlipFile = null;
   uploadedSlipUrl = null;
   currentSlipVerification = null;
+  clientDecodedQrData = null;
   const slipInput = document.getElementById('slipInput');
   if (slipInput) slipInput.value = '';
   document.getElementById('slipDropZone').classList.remove('hidden');

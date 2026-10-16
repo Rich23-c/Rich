@@ -353,9 +353,10 @@ app.post('/api/verify-slip', slipVerifyRateLimit, uploadSlip.single('slip'), asy
     const expectedAmount = parseFloat(req.body.expectedAmount) || 0;
     const filePath = req.file.path;
     const mimeType = req.file.mimetype;
+    const clientQrData = (req.body.clientQrData || '').trim() || null;
 
     const expectedReceiver = settings.promptpayName || 'พัชญ์ชามญชุ์ กฤติณัฐธนชัย';
-    const verificationResult = await verifySlip(filePath, mimeType, expectedAmount, expectedReceiver);
+    const verificationResult = await verifySlip(filePath, mimeType, expectedAmount, expectedReceiver, null, { clientQrData });
     const slipFilename = req.file.filename;
     const slipUrl = `/uploads/slips/${slipFilename}`;
 
@@ -561,7 +562,8 @@ app.post('/api/orders', orderCreateRateLimit, uploadSlip.single('slip'), async (
     // If verification token is invalid, missing, or amount changed: Re-verify on server
     if (!slipVerification) {
       try {
-        slipVerification = await verifySlip(fullSlipPath, 'image/jpeg', calculatedTotal, expectedReceiver);
+        const clientQrData = (body.clientQrData || body.qrData || '').trim() || null;
+        slipVerification = await verifySlip(fullSlipPath, 'image/jpeg', calculatedTotal, expectedReceiver, null, { clientQrData });
       } catch (err) {
         console.error('Server slip verification error:', err);
       }

@@ -32,6 +32,21 @@ function tryScanJimp(jimpImg) {
 }
 
 /**
+ * Add solid white Quiet Zone border around an image (Essential for jsQR finder pattern detection!)
+ */
+function addQuietZone(jimpImg, pad = 24) {
+  try {
+    const w = jimpImg.bitmap.width;
+    const h = jimpImg.bitmap.height;
+    const bordered = new Jimp({ width: w + pad * 2, height: h + pad * 2, color: 0xFFFFFFFF });
+    bordered.composite(jimpImg, pad, pad);
+    return bordered;
+  } catch (e) {
+    return jimpImg;
+  }
+}
+
+/**
  * High-precision binarization filter (Black & White thresholding)
  */
 function applyBinarize(jimpImg, threshold = 128) {
@@ -47,6 +62,102 @@ function applyBinarize(jimpImg, threshold = 128) {
 }
 
 /**
+ * Calculate dynamic optimal threshold using Otsu's Algorithm
+ */
+function getOtsuThreshold(jimpImg) {
+  try {
+    const d = jimpImg.bitmap.data;
+    const hist = new Int32Array(256);
+    let total = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      const lum = ((d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000) | 0;
+      hist[lum]++;
+      total++;
+    }
+    let sum = 0;
+    for (let i = 0; i < 256; i++) sum += i * hist[i];
+    let sumB = 0;
+    let wB = 0;
+    let varMax = 0;
+    let threshold = 128;
+    for (let t = 0; t < 256; t++) {
+      wB += hist[t];
+      if (wB === 0) continue;
+      const wF = total - wB;
+      if (wF === 0) break;
+      sumB += t * hist[t];
+      const mB = sumB / wB;
+      const mF = (sum - sumB) / wF;
+      const varBetween = wB * wF * (mB - mF) * (mB - mF);
+      if (varBetween > varMax) {
+        varMax = varBetween;
+        threshold = t;
+      }
+    }
+    return threshold;
+  } catch (e) {
+    return 128;
+  }
+}
+
+/**
+ * Bradley-Roth Adaptive Thresholding using Integral Image
+ * Handles uneven shadows, flash glare, and colored gradient slip backgrounds
+ */
+function applyAdaptiveThreshold(jimpImg) {
+  try {
+    const w = jimpImg.bitmap.width;
+    const h = jimpImg.bitmap.height;
+    const cloned = jimpImg.clone().greyscale();
+    const d = cloned.bitmap.data;
+
+    const S = Math.max(8, Math.round(w / 16));
+    const s2 = Math.round(S / 2);
+    const T = 0.15; // 15% delta
+
+    // 1. Calculate integral image
+    const integral = new Float64Array(w * h);
+    for (let i = 0; i < w; i++) {
+      let sum = 0;
+      for (let j = 0; j < h; j++) {
+        const idx = (j * w + i) * 4;
+        sum += d[idx];
+        if (i === 0) {
+          integral[j * w + i] = sum;
+        } else {
+          integral[j * w + i] = integral[j * w + i - 1] + sum;
+        }
+      }
+    }
+
+    // 2. Adaptive threshold based on local window mean
+    for (let i = 0; i < w; i++) {
+      for (let j = 0; j < h; j++) {
+        const x1 = Math.max(i - s2, 0);
+        const x2 = Math.min(i + s2, w - 1);
+        const y1 = Math.max(j - s2, 0);
+        const y2 = Math.min(j + s2, h - 1);
+
+        const count = (x2 - x1 + 1) * (y2 - y1 + 1);
+        const sum = integral[y2 * w + x2]
+          - (y1 > 0 ? integral[(y1 - 1) * w + x2] : 0)
+          - (x1 > 0 ? integral[y2 * w + (x1 - 1)] : 0)
+          + (x1 > 0 && y1 > 0 ? integral[(y1 - 1) * w + (x1 - 1)] : 0);
+
+        const pixelIdx = (j * w + i) * 4;
+        const val = (d[pixelIdx] * count < sum * (1.0 - T)) ? 0 : 255;
+        d[pixelIdx] = val;
+        d[pixelIdx + 1] = val;
+        d[pixelIdx + 2] = val;
+      }
+    }
+    return cloned;
+  } catch (e) {
+    return jimpImg;
+  }
+}
+
+/**
  * Sharpening convolution kernel for blurry Mini QR codes
  */
 const SHARPEN_KERNEL = [
@@ -56,18 +167,34 @@ const SHARPEN_KERNEL = [
 ];
 
 /**
- * Helper to scan an image and its regional quadrant crops
+ * Helper to scan an image and its regional quadrant crops with Ultra Accuracy
  */
 function scanImageWithQuadrants(image, prefix = '') {
   // 1. Direct scan
   let qr = tryScanJimp(image);
   if (qr) return { found: true, data: qr, method: `${prefix}direct` };
 
+  // 1b. Direct scan with White Quiet Zone padding
+  const imageWithQz = addQuietZone(image, 30);
+  qr = tryScanJimp(imageWithQz);
+  if (qr) return { found: true, data: qr, method: `${prefix}direct-quietzone` };
+
   // 2. High-contrast & greyscale
   try {
-    const contrast = image.clone().greyscale().contrast(0.35);
+    const contrast = image.clone().greyscale().contrast(0.4);
     qr = tryScanJimp(contrast);
     if (qr) return { found: true, data: qr, method: `${prefix}contrast` };
+
+    qr = tryScanJimp(addQuietZone(contrast, 30));
+    if (qr) return { found: true, data: qr, method: `${prefix}contrast-quietzone` };
+  } catch (e) {}
+
+  // 2b. Otsu Dynamic Threshold on Full Image
+  try {
+    const otsuT = getOtsuThreshold(image);
+    const otsuImg = applyBinarize(image, otsuT);
+    qr = tryScanJimp(addQuietZone(otsuImg, 30));
+    if (qr) return { found: true, data: qr, method: `${prefix}otsu-${otsuT}` };
   } catch (e) {}
 
   const { width: w, height: h } = image.bitmap;
@@ -82,7 +209,7 @@ function scanImageWithQuadrants(image, prefix = '') {
     { name: 'bottom-left', x: 0, y: Math.round(h * 0.38), w: Math.round(w * 0.65), h: Math.round(h * 0.62) },
     // Bottom-Half Full Width
     { name: 'bottom-half', x: 0, y: Math.round(h * 0.35), w: w, h: Math.round(h * 0.65) },
-    // Center-Bottom
+    // Center-Bottom (Krungsri, BAAC, TISCO)
     { name: 'center-bottom', x: Math.round(w * 0.15), y: Math.round(h * 0.40), w: Math.round(w * 0.70), h: Math.round(h * 0.60) },
     // Middle-Right
     { name: 'middle-right', x: Math.round(w * 0.35), y: Math.round(h * 0.25), w: Math.round(w * 0.65), h: Math.round(h * 0.55) },
@@ -99,31 +226,49 @@ function scanImageWithQuadrants(image, prefix = '') {
       qr = tryScanJimp(cropped);
       if (qr) return { found: true, data: qr, method: `${prefix}crop-${reg.name}` };
 
+      // Crop with Quiet Zone (Critical boost for edge-adjacent QR codes)
+      const croppedQz = addQuietZone(cropped, 24);
+      qr = tryScanJimp(croppedQz);
+      if (qr) return { found: true, data: qr, method: `${prefix}crop-${reg.name}-qz` };
+
       // High-contrast crop scan
-      const contrastCropped = cropped.clone().greyscale().contrast(0.4);
-      qr = tryScanJimp(contrastCropped);
+      const contrastCropped = cropped.clone().greyscale().contrast(0.45);
+      qr = tryScanJimp(addQuietZone(contrastCropped, 24));
       if (qr) return { found: true, data: qr, method: `${prefix}crop-${reg.name}-contrast` };
 
-      // Adaptive binarization thresholds (128, 105, 155)
-      for (const thresh of [128, 105, 155]) {
+      // Otsu optimal binarization
+      const otsuThresh = getOtsuThreshold(cropped);
+      for (const thresh of [otsuThresh, otsuThresh - 20, otsuThresh + 20, 128]) {
         const binarized = applyBinarize(cropped, thresh);
-        qr = tryScanJimp(binarized);
-        if (qr) return { found: true, data: qr, method: `${prefix}crop-${reg.name}-binarize-${thresh}` };
+        qr = tryScanJimp(addQuietZone(binarized, 24));
+        if (qr) return { found: true, data: qr, method: `${prefix}crop-${reg.name}-otsu-${thresh}` };
       }
+
+      // Bradley-Roth Adaptive Thresholding (removes lighting gradient & shadows)
+      try {
+        const adaptive = applyAdaptiveThreshold(cropped);
+        qr = tryScanJimp(addQuietZone(adaptive, 24));
+        if (qr) return { found: true, data: qr, method: `${prefix}crop-${reg.name}-adaptive` };
+      } catch (e) {}
 
       // Sharpening pass for blurry/compressed images
       try {
         const sharpened = cropped.clone().greyscale().convolute(SHARPEN_KERNEL);
-        qr = tryScanJimp(sharpened);
+        qr = tryScanJimp(addQuietZone(sharpened, 24));
         if (qr) return { found: true, data: qr, method: `${prefix}crop-${reg.name}-sharpen` };
       } catch (e) {}
 
-      // Upscaling for small QR codes (< 500px)
-      if (reg.w < 500) {
-        const scaled = cropped.clone();
-        scaled.resize({ w: Math.round(reg.w * 1.75) });
-        qr = tryScanJimp(scaled);
-        if (qr) return { found: true, data: qr, method: `${prefix}crop-${reg.name}-scaled` };
+      // Upscaling for small Mini QR codes (< 600px)
+      if (reg.w < 600) {
+        const scaled15 = cropped.clone();
+        scaled15.resize({ w: Math.round(reg.w * 1.5) });
+        qr = tryScanJimp(addQuietZone(scaled15, 28));
+        if (qr) return { found: true, data: qr, method: `${prefix}crop-${reg.name}-scaled1.5` };
+
+        const scaled20 = cropped.clone();
+        scaled20.resize({ w: Math.round(reg.w * 2.0) });
+        qr = tryScanJimp(addQuietZone(scaled20, 32));
+        if (qr) return { found: true, data: qr, method: `${prefix}crop-${reg.name}-scaled2.0` };
       }
     } catch (e) {}
   }

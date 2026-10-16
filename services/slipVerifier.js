@@ -77,7 +77,10 @@ function getTodayDateInfo() {
  * and spelling variations (พัชญ์ชามญชุ์ vs พัชญ์ชามญช์)
  */
 function checkRecipientMatch(detectedReceiver, expectedReceiver) {
-  if (!expectedReceiver) return true;
+  // If expectedReceiver is corrupted or contains question marks, fallback to official shop name
+  if (!expectedReceiver || /\?{2,}/.test(expectedReceiver)) {
+    expectedReceiver = 'พัชญ์ชามญชุ์ กฤติณัฐธนชัย';
+  }
   if (!detectedReceiver) return false;
 
   const normalize = (str) => (str || '')
@@ -104,10 +107,13 @@ function checkRecipientMatch(detectedReceiver, expectedReceiver) {
     }
   }
 
-  // English transliterations for Patchamon Krittinatthanachai
-  const englishAliases = ['patchamon', 'phatchamon', 'krittinat'];
-  for (const alias of englishAliases) {
-    if (normDetected.includes(alias) && (normExpected.includes('พัชญ์ชามญช') || normExpected.includes('กฤติณัฐ'))) {
+  // Official Shop Account tokens (prevents false mismatch even if settings are missing/tampered)
+  const officialTokens = [
+    'พัชญ์ชามญช', 'พัชญ์ชามญช์', 'พัชญ์ชามญชุ์', 'กฤติณัฐธนชัย', 'กฤติณัฐ',
+    'patchamon', 'phatchamon', 'krittinat'
+  ];
+  for (const t of officialTokens) {
+    if (normDetected.includes(normalize(t))) {
       return true;
     }
   }
@@ -256,9 +262,13 @@ async function runGeminiVisionOcr(filePath, mimeType, targetAmount, expectedRece
  * 6. Date validation & Freshness check
  * 7. Anti-fraud / Altered slip & Transfer status validation (SUCCESS vs FAILED/SCHEDULED)
  */
-async function verifySlip(filePath, mimeType, expectedAmount, expectedReceiver = 'พัชญ์ชามญชุ์ กฤติณัฐธนชัย', excludeOrderId = null) {
+async function verifySlip(filePath, mimeType, expectedAmount, expectedReceiver = 'พัชญ์ชามญชุ์ กฤติณัฐธนชัย', excludeOrderId = null, options = {}) {
   const targetAmount = parseFloat(expectedAmount) || 0;
   const today = getTodayDateInfo();
+
+  if (!expectedReceiver || /\?{2,}/.test(expectedReceiver)) {
+    expectedReceiver = 'พัชญ์ชามญชุ์ กฤติณัฐธนชัย';
+  }
 
   if (!fs.existsSync(filePath)) {
     return {
@@ -316,6 +326,23 @@ async function verifySlip(filePath, mimeType, expectedAmount, expectedReceiver =
   let qrTransferDate = qrInfo?.transferDate || null;
   let qrTransferTime = qrInfo?.transferTime || null;
   let qrScanMethod = qrScanResult?.method || null;
+
+  // Ultra-Accurate Layer: Check client-detected QR (e.g. from browser native BarcodeDetector)
+  if (options && options.clientQrData) {
+    const clientRaw = String(options.clientQrData).trim();
+    const clientInfo = parseSlipQrInfo(clientRaw);
+    if (clientInfo && (clientInfo.isRealBankSlipQr || clientInfo.transactionRef || clientRaw.startsWith('00'))) {
+      hasQr = true;
+      qrData = clientRaw;
+      qrInfo = clientInfo;
+      isRealBankQr = true;
+      qrScanMethod = qrScanMethod || 'client-barcode-detector';
+      qrBankName = clientInfo.bankName || qrBankName;
+      qrTransactionRef = clientInfo.transactionRef || qrTransactionRef;
+      qrTransferDate = clientInfo.transferDate || qrTransferDate;
+      qrTransferTime = clientInfo.transferTime || qrTransferTime;
+    }
+  }
 
   // Fallback to QR Tag 54 amount if embedded
   if (detected === null && qrInfo && qrInfo.amount !== undefined && qrInfo.amount !== null) {
