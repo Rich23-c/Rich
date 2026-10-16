@@ -830,6 +830,23 @@ function resetOrders() {
   return true;
 }
 
+function deleteOrder(orderId) {
+  initLocalCache();
+  if (!Array.isArray(memoryCache.orders)) return false;
+  const idx = memoryCache.orders.findIndex(o => o.id === orderId);
+  if (idx === -1) return false;
+  memoryCache.orders.splice(idx, 1);
+  writeJson(ORDERS_FILE, memoryCache.orders);
+
+  if (supabase) {
+    safeSupabaseExec(
+      supabase.from('orders').delete().eq('id', orderId),
+      `Delete single order ${orderId}`
+    );
+  }
+  return true;
+}
+
 // ==========================================
 // SETTINGS API
 // ==========================================
@@ -1101,6 +1118,7 @@ module.exports = {
   findOrders,
   createOrder,
   updateOrderStatus,
+  deleteOrder,
   resetOrders,
   getUsedSlips,
   registerUsedSlip,

@@ -11,9 +11,9 @@ const orderCreateLimits = new Map();   // ip -> { count: number, resetAt: number
 const bannedIps = new Map();           // ip -> unbanTimestamp (24-hour malicious bot blacklist)
 const securityAuditLogs = [];          // Circular buffer: last 50 security events
 
-// Cryptographic Session Secret (Generated fresh on boot if not set in environment)
-const SESSION_SECRET = process.env.ADMIN_SESSION_SECRET || crypto.randomBytes(32).toString('hex');
-const SESSION_MAX_AGE_MS = 8 * 60 * 60 * 1000; // 8 hours valid session
+// Cryptographic Session Secret (Stable fallback across server reboots so admin sessions do not unexpectedly expire)
+const SESSION_SECRET = process.env.ADMIN_SESSION_SECRET || 'snack_by_maew_admin_secure_secret_2026_rich_key_99';
+const SESSION_MAX_AGE_MS = 12 * 60 * 60 * 1000; // 12 hours valid session
 
 // Configuration Constants
 const MAX_LOGIN_ATTEMPTS = 5;

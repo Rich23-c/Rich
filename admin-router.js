@@ -39,6 +39,11 @@ const uploadSnackImage = multer({
   fileFilter: slipFileFilter,
   limits: { fileSize: 10 * 1024 * 1024 }
 });
+const uploadQrImage = multer({
+  storage: multer.memoryStorage(),
+  fileFilter: slipFileFilter,
+  limits: { fileSize: 10 * 1024 * 1024 }
+});
 
 // Middleware for Admin Authentication (Supports Cryptographic HMAC Session Tokens & Direct PIN)
 function requireAdmin(req, res, next) {
@@ -280,11 +285,62 @@ router.patch('/api/admin/orders/:id/status', requireAdmin, (req, res) => {
   }
 });
 
-// Admin reset mock orders
+// Admin reset all orders (Clear / Reset orders)
 router.post('/api/admin/reset-mock-orders', requireAdmin, (req, res) => {
   try {
     db.resetOrders();
-    res.json({ success: true, message: 'ล้างข้อมูลคำสั่งซื้อทดลองเรียบร้อยแล้ว' });
+    res.json({ success: true, message: 'ล้างข้อมูลคำสั่งซื้อทั้งหมดเรียบร้อยแล้ว' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Admin delete single order
+router.delete('/api/admin/orders/:id', requireAdmin, (req, res) => {
+  try {
+    const success = db.deleteOrder(req.params.id);
+    if (!success) {
+      return res.status(404).json({ success: false, error: 'ไม่พบหมายเลขคำสั่งซื้อที่ต้องการลบ' });
+    }
+    res.json({ success: true, message: 'ลบรายการสั่งซื้อเรียบร้อยแล้ว' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Admin delete all orders (alias)
+router.delete('/api/admin/orders', requireAdmin, (req, res) => {
+  try {
+    db.resetOrders();
+    res.json({ success: true, message: 'ล้างข้อมูลคำสั่งซื้อทั้งหมดเรียบร้อยแล้ว' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Admin upload shop QR Code image
+router.post('/api/admin/upload-qr', requireAdmin, uploadQrImage.single('qrImage'), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'กรุณาเลือกไฟล์รูปภาพ QR Code' });
+    }
+    const publicImagesDir = path.join(__dirname, 'public', 'images');
+    if (!fs.existsSync(publicImagesDir)) {
+      fs.mkdirSync(publicImagesDir, { recursive: true });
+    }
+    const filename = `shop-qr-${Date.now()}.png`;
+    const destPath = path.join(publicImagesDir, filename);
+    fs.writeFileSync(destPath, req.file.buffer);
+
+    // Overwrite default shop-qr.png as well
+    try {
+      fs.writeFileSync(path.join(publicImagesDir, 'shop-qr.png'), req.file.buffer);
+    } catch (e) {}
+
+    const qrUrl = `/images/${filename}`;
+    const updated = db.updateSettings({ promptpayQrImage: qrUrl });
+
+    res.json({ success: true, qrUrl, data: updated, message: 'อัปโหลดและบันทึกรูป QR Code สำเร็จแล้ว 🎉' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

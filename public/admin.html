@@ -623,17 +623,40 @@
           <p class="text-xs text-slate-500">ข้อมูลและรูปภาพ QR Code นี้จะแสดงบนหน้าเว็บลูกค้าเพื่อให้ลูกค้าสแกนจ่ายเงิน</p>
         </div>
 
-        <!-- Current QR Preview Card -->
-        <div class="bg-amber-50/60 p-4 rounded-2xl border border-amber-200 flex flex-col sm:flex-row items-center gap-4">
-          <img id="adminQrPreview" src="/images/shop-qr.png" alt="QR Code รับเงิน" class="w-28 h-auto object-contain rounded-xl border border-amber-200 bg-white shadow-xs" />
-          <div class="text-xs text-slate-600 space-y-1">
-            <span class="font-bold text-emerald-700 text-sm flex items-center gap-1">
-              <span>✅</span> ใช้งานรูปภาพ QR Code รับเงินของร้านแล้ว
-            </span>
-            <p>• ผู้ให้บริการ: <span class="font-semibold text-slate-800">Thai QR Payment (พร้อมเพย์)</span></p>
-            <p>• ชื่อบัญชี: <span class="font-semibold text-slate-800">พัชญ์ชามญชุ์ กฤติณัฐธนชัย</span></p>
-            <p>• ประเภท: <span class="font-medium text-blue-700">สแกนได้ทุกแอปธนาคารไทย</span></p>
-            <p class="text-[11px] text-slate-500 pt-1">ลูกค้ารองรับการสแกนผ่านทุกแอปธนาคารไทย</p>
+        <!-- Current QR Preview & Upload Card -->
+        <div class="bg-amber-50/70 p-4 sm:p-5 rounded-2xl border border-amber-200 flex flex-col sm:flex-row items-center gap-5">
+          <div class="relative shrink-0 text-center">
+            <img id="adminQrPreview" src="/images/shop-qr.png" alt="QR Code รับเงิน" class="w-32 h-32 object-contain rounded-2xl border-2 border-amber-300 bg-white shadow-sm p-1.5 mx-auto" />
+            <span class="inline-block text-[10px] text-amber-800 bg-amber-100 font-semibold px-2 py-0.5 rounded-full mt-1.5 border border-amber-200">รูปภาพ QR ปัจจุบัน</span>
+          </div>
+          <div class="text-xs text-slate-600 space-y-2 flex-1 text-center sm:text-left">
+            <div class="flex items-center justify-center sm:justify-start gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span class="font-bold text-emerald-800 text-sm">QR Code รับเงินของร้าน (PromptPay QR)</span>
+            </div>
+            <p class="text-slate-600 text-[11px] sm:text-xs leading-relaxed">
+              อัปโหลดรูปภาพ QR Code พร้อมเพย์ หรือรูป QR รับเงินจากแอปธนาคารของคุณ ลูกค้าจะเห็นและสามารถสแกนจ่ายเงินได้ทันที
+            </p>
+            <div class="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-1">
+              <input type="file" id="qrFileInput" accept="image/png,image/jpeg,image/webp" class="hidden" onchange="handleAdminQrUpload(this)" />
+              <button
+                type="button"
+                onclick="document.getElementById('qrFileInput').click()"
+                id="btnUploadQr"
+                class="px-4 py-2 rounded-xl text-xs font-bold bg-orange-600 hover:bg-orange-700 text-white shadow-xs transition flex items-center gap-1.5 cursor-pointer active:scale-95"
+              >
+                <i data-lucide="upload" class="w-3.5 h-3.5"></i>
+                <span>📷 อัปโหลดรูป QR Code ใหม่</span>
+              </button>
+              <button
+                type="button"
+                onclick="resetQrCodeToDefault()"
+                class="px-3 py-2 rounded-xl text-xs font-semibold bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 transition cursor-pointer"
+                title="กลับไปใช้รูป QR Code เริ่มต้นของระบบ"
+              >
+                รีเซ็ตเป็น QR เริ่มต้น
+              </button>
+            </div>
           </div>
         </div>
 
@@ -648,15 +671,27 @@
             <input type="text" id="settingShopSubtitle" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-orange-500 focus:outline-none" />
           </div>
 
-          <div>
-            <label class="block font-semibold text-slate-700 mb-1">ชื่อบัญชีรับเงิน (ชื่อที่ลูกค้าเห็น)</label>
-            <input type="text" id="settingPromptpayName" placeholder="เช่น ณัฐพัชร์ กฤติณัฐธนชัย" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-orange-500 focus:outline-none" />
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label class="block font-semibold text-slate-700 mb-1">
+                หมายเลขพร้อมเพย์ (เบอร์โทร หรือ เลขบัตรประชาชน) <span class="text-rose-500">*</span>
+              </label>
+              <input type="text" id="settingPromptpayId" placeholder="เช่น 0958174540 หรือ 0809249673" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-orange-500 focus:outline-none font-mono text-xs sm:text-sm font-bold text-slate-900" required />
+              <p class="text-[11px] text-slate-500 mt-1">ใช้สำหรับสร้าง QR Code อัตโนมัติและตรวจสอบยอดโอน</p>
+            </div>
+            <div>
+              <label class="block font-semibold text-slate-700 mb-1">
+                ชื่อบัญชีรับเงิน (ชื่อที่ลูกค้าเห็น) <span class="text-rose-500">*</span>
+              </label>
+              <input type="text" id="settingPromptpayName" placeholder="เช่น ณัฐพัชร์ กฤติณัฐธนชัย" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-orange-500 focus:outline-none text-xs sm:text-sm font-bold text-slate-900" required />
+              <p class="text-[11px] text-slate-500 mt-1">ชื่อเจ้าของบัญชีสำหรับแสดงให้ลูกค้าตรวจสอบความถูกต้อง</p>
+            </div>
           </div>
 
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label class="block font-semibold text-slate-700 mb-1">ธนาคาร</label>
-              <input type="text" id="settingBankName" placeholder="เช่น กสิกรไทย" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-orange-500 focus:outline-none" />
+              <input type="text" id="settingBankName" placeholder="เช่น กสิกรไทย หรือ พร้อมเพย์" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-orange-500 focus:outline-none" />
             </div>
             <div>
               <label class="block font-semibold text-slate-700 mb-1">เลขที่บัญชีธนาคาร</label>
@@ -1285,6 +1320,10 @@
               <button onclick="quickUpdateStatus('cancelled')" class="px-3 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-xl font-semibold text-xs transition cursor-pointer">
                 ยกเลิก
               </button>
+              <button type="button" onclick="deleteSingleOrder(currentActiveOrderId)" class="px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-xs transition cursor-pointer flex items-center gap-1 active:scale-95 ml-auto">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                <span>🗑️ ลบออเดอร์นี้</span>
+              </button>
             </div>
           </div>
         </div>
@@ -1292,6 +1331,6 @@
     </div>
   </div>
 
-  <script src="/js/admin.js?v=3.1.1"></script>
+  <script src="/js/admin.js?v=3.2.0"></script>
 </body>
 </html>

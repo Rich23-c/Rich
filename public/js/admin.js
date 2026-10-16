@@ -1,11 +1,11 @@
-// State (No permanent storage: requires entering PIN every time the page is opened)
-try {
-  localStorage.removeItem('admin_pin_token');
-  sessionStorage.removeItem('admin_pin_token');
-} catch (e) {}
-
+// State (Stored in sessionStorage for active tab session so refresh does not drop session)
 let adminPin = '';
 let adminSessionToken = '';
+try {
+  adminPin = sessionStorage.getItem('snack_admin_pin') || '';
+  adminSessionToken = sessionStorage.getItem('snack_admin_token') || '';
+} catch (e) {}
+
 let currentTab = 'snacks';
 let allOrders = [];
 let allAdminSnacks = [];
@@ -45,10 +45,17 @@ function escapeHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
-// Initialize on DOM Ready: ALWAYS show login prompt
-document.addEventListener('DOMContentLoaded', () => {
+// Initialize on DOM Ready: Auto-restore session if active in sessionStorage
+document.addEventListener('DOMContentLoaded', async () => {
   if (window.lucide) lucide.createIcons();
-  showLoginOverlay();
+
+  if (adminPin || adminSessionToken) {
+    hideLoginOverlay();
+    resetIdleTimer();
+    await loadInitialData();
+  } else {
+    showLoginOverlay();
+  }
 
   // Auto-refresh orders every 5 seconds when authenticated
   setInterval(() => {
@@ -56,14 +63,6 @@ document.addEventListener('DOMContentLoaded', () => {
       loadAdminOrders(false);
     }
   }, 5000);
-});
-
-// Reset PIN whenever user leaves the page or closes the tab
-window.addEventListener('beforeunload', () => {
-  adminPin = '';
-});
-window.addEventListener('pagehide', () => {
-  adminPin = '';
 });
 
 async function verifyPinWithServer(pin) {
@@ -162,6 +161,10 @@ async function submitAdminPin() {
     if (loginResult && loginResult.success) {
       adminPin = enteredPin;
       adminSessionToken = loginResult.token || '';
+      try {
+        sessionStorage.setItem('snack_admin_pin', enteredPin);
+        sessionStorage.setItem('snack_admin_token', adminSessionToken);
+      } catch (e) {}
       resetIdleTimer();
       hideLoginOverlay();
       await loadInitialData();
@@ -194,6 +197,10 @@ async function submitAdminPin() {
 function logoutAdmin() {
   adminPin = '';
   adminSessionToken = '';
+  try {
+    sessionStorage.removeItem('snack_admin_pin');
+    sessionStorage.removeItem('snack_admin_token');
+  } catch (e) {}
   clearTimeout(idleTimer);
   showLoginOverlay();
 }
@@ -1247,7 +1254,12 @@ function renderOrdersTable() {
         ${verifyBadge}
       </td>
       <td class="p-3.5 text-center">
-        ${statusSelectHtml}
+        <div class="flex items-center justify-center gap-1.5">
+          ${statusSelectHtml}
+          <button type="button" onclick="deleteSingleOrder('${order.id}')" title="ลบออเดอร์นี้" class="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition cursor-pointer">
+            <i data-lucide="trash-2" class="w-4 h-4"></i>
+          </button>
+        </div>
       </td>
     `;
 
@@ -1398,6 +1410,14 @@ function renderOrdersTable() {
                 <option value="delivered" ${order.orderStatus === 'delivered' ? 'selected' : ''}>🚚 ส่งมอบเรียบร้อย</option>
                 <option value="cancelled" ${order.orderStatus === 'cancelled' ? 'selected' : ''}>❌ ยกเลิก</option>
               </select>
+              <button
+                type="button"
+                onclick="deleteSingleOrder('${order.id}')"
+                class="p-2 rounded-xl text-red-500 hover:bg-red-50 border border-slate-200 transition cursor-pointer shrink-0"
+                title="ลบออเดอร์นี้"
+              >
+                <i data-lucide="trash-2" class="w-4 h-4"></i>
+              </button>
             </div>
           </div>
         `;
@@ -1429,15 +1449,28 @@ async function changeOrderStatus(orderId, newStatus) {
         toast: true,
         position: 'top-end',
         showConfirmButton: false,
-        timer: 1200
+        timer: 1500
       });
       Toast.fire({
         icon: 'success',
-        title: 'อัปเดตสถานะออเดอร์สำเร็จ'
+        title: 'อัปเดตสถานะออเดอร์สำเร็จ ✅'
+      });
+    } else {
+      Swal.fire({
+        icon: 'error',
+        title: 'อัปเดตสถานะไม่สำเร็จ',
+        text: data.error || 'กรุณาลองใหม่อีกครั้ง',
+        confirmButtonColor: '#ef4444'
       });
     }
   } catch (err) {
     console.error('Update status error:', err);
+    Swal.fire({
+      icon: 'error',
+      title: 'เกิดข้อผิดพลาด',
+      text: err.message || 'ไม่สามารถติดต่อเซิร์ฟเวอร์ได้',
+      confirmButtonColor: '#ef4444'
+    });
   }
 }
 
@@ -1559,12 +1592,12 @@ async function quickUpdateStatus(newStatus) {
   closeSlipDetailModal();
 }
 
-// Reset Mock Orders
+// Reset All Orders
 async function resetMockOrders() {
   const confirm = await Swal.fire({
     icon: 'warning',
-    title: 'ต้องการล้างข้อมูลคำสั่งซื้อจำลองทั้งหมด?',
-    text: 'ออเดอร์ทดลองและรูปสลิปทดสอบทั้งหมดจะถูกลบออกจากระบบ',
+    title: 'ต้องการล้างรายการสั่งซื้อทั้งหมด?',
+    text: 'ออเดอร์ทั้งหมดจะถูกลบออกจากระบบและรีเซ็ตรายการในครัวทั้งหมด',
     showCancelButton: true,
     confirmButtonText: 'ใช่, ล้างข้อมูลเลย 🗑️',
     cancelButtonText: 'ยกเลิก',
@@ -1577,17 +1610,32 @@ async function resetMockOrders() {
     const res = await adminFetch('/api/admin/reset-mock-orders', { method: 'POST' });
     const data = await res.json();
     if (data.success) {
+      allOrders = [];
+      clearAllPurchasedSnacks();
       await loadAdminOrders(true);
       Swal.fire({
         icon: 'success',
         title: 'ล้างข้อมูลเรียบร้อยแล้ว!',
-        text: 'ระบบพร้อมรับคำสั่งซื้อจริงแล้วครับ',
+        text: 'ระบบพร้อมรับคำสั่งซื้อใหม่แล้วครับ',
         timer: 1500,
         showConfirmButton: false
+      });
+    } else {
+      Swal.fire({
+        icon: 'error',
+        title: 'ไม่สามารถล้างข้อมูลได้',
+        text: data.error || 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง',
+        confirmButtonColor: '#ef4444'
       });
     }
   } catch (err) {
     console.error('Reset mock orders error:', err);
+    Swal.fire({
+      icon: 'error',
+      title: 'เกิดข้อผิดพลาด',
+      text: err.message || 'ไม่สามารถติดต่อเซิร์ฟเวอร์ได้',
+      confirmButtonColor: '#ef4444'
+    });
   }
 }
 
@@ -1922,6 +1970,7 @@ async function saveShopSettings() {
     const data = await res.json();
 
     if (data.success) {
+      if (data.data) currentAdminSettings = data.data;
       if (updates.geminiApiKeys) {
         try { localStorage.setItem('cached_gemini_api_keys', updates.geminiApiKeys); } catch (e) {}
         updateGeminiKeyBadge(updates.geminiApiKeys);
@@ -1932,9 +1981,165 @@ async function saveShopSettings() {
         text: 'การตั้งค่าร้าน ข้อมูลพร้อมเพย์ และคีย์ AI ถูกอัปเดตเรียบร้อยแล้ว',
         confirmButtonColor: '#f97316'
       });
+    } else {
+      Swal.fire({
+        icon: 'error',
+        title: 'บันทึกไม่สำเร็จ',
+        text: data.error || 'เกิดข้อผิดพลาดในการบันทึกข้อมูล กรุณาลองใหม่อีกครั้ง',
+        confirmButtonColor: '#ef4444'
+      });
     }
   } catch (err) {
     console.error('Save settings error:', err);
+    Swal.fire({
+      icon: 'error',
+      title: 'เกิดข้อผิดพลาด',
+      text: err.message || 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้',
+      confirmButtonColor: '#ef4444'
+    });
+  }
+}
+
+// Admin upload QR Code image handler
+async function handleAdminQrUpload(input) {
+  if (!input.files || !input.files[0]) return;
+  const file = input.files[0];
+
+  const btn = document.getElementById('btnUploadQr');
+  const originalHtml = btn ? btn.innerHTML : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span>⏳ กำลังอัปโหลด...</span>';
+  }
+
+  const formData = new FormData();
+  formData.append('qrImage', file);
+
+  try {
+    const res = await adminFetch('/api/admin/upload-qr', {
+      method: 'POST',
+      body: formData
+    });
+    const data = await res.json();
+    if (data.success) {
+      const qrEl = document.getElementById('adminQrPreview');
+      if (qrEl) qrEl.src = data.qrUrl || '/images/shop-qr.png';
+      if (currentAdminSettings) {
+        currentAdminSettings.promptpayQrImage = data.qrUrl;
+      }
+      Swal.fire({
+        icon: 'success',
+        title: 'อัปโหลด QR Code สำเร็จ 🎉',
+        text: 'รูปภาพ QR Code รับเงินใหม่ได้รับการบันทึกและแสดงบนหน้าร้านเรียบร้อยแล้ว',
+        confirmButtonColor: '#10b981'
+      });
+    } else {
+      Swal.fire({
+        icon: 'error',
+        title: 'อัปโหลดรูปภาพไม่สำเร็จ',
+        text: data.error || 'กรุณาลองใหม่อีกครั้ง',
+        confirmButtonColor: '#ef4444'
+      });
+    }
+  } catch (err) {
+    console.error('QR upload error:', err);
+    Swal.fire({
+      icon: 'error',
+      title: 'เกิดข้อผิดพลาด',
+      text: err.message || 'ไม่สามารถอัปโหลดรูปภาพได้',
+      confirmButtonColor: '#ef4444'
+    });
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = originalHtml;
+    }
+    input.value = '';
+  }
+}
+
+// Reset QR Code to default
+async function resetQrCodeToDefault() {
+  const confirm = await Swal.fire({
+    title: 'ต้องการใช้ QR เริ่มต้น?',
+    text: 'ระบบจะกลับไปใช้รูป QR Code พร้อมเพย์มาตรฐานของร้าน',
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonText: 'ใช่, ใช้รูปเริ่มต้น',
+    cancelButtonText: 'ยกเลิก',
+    confirmButtonColor: '#f97316'
+  });
+  if (!confirm.isConfirmed) return;
+
+  try {
+    const res = await adminFetch('/api/admin/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ promptpayQrImage: '/images/shop-qr.png' })
+    });
+    const data = await res.json();
+    if (data.success) {
+      const qrEl = document.getElementById('adminQrPreview');
+      if (qrEl) qrEl.src = '/images/shop-qr.png';
+      if (currentAdminSettings) currentAdminSettings.promptpayQrImage = '/images/shop-qr.png';
+      Swal.fire({
+        icon: 'success',
+        title: 'รีเซ็ตสำเร็จ',
+        text: 'กลับไปใช้รูปภาพ QR Code เริ่มต้นเรียบร้อยแล้ว',
+        timer: 1500,
+        showConfirmButton: false
+      });
+    }
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+// Admin delete single order
+async function deleteSingleOrder(orderId) {
+  if (!orderId) return;
+  const confirm = await Swal.fire({
+    title: `ต้องการลบออเดอร์นี้?`,
+    text: `ออเดอร์ ${orderId} และรูปสลิปจะถูกลบออกจากระบบอย่างถาวร`,
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'ใช่, ลบเลย 🗑️',
+    cancelButtonText: 'ยกเลิก',
+    confirmButtonColor: '#ef4444'
+  });
+  if (!confirm.isConfirmed) return;
+
+  try {
+    const res = await adminFetch(`/api/admin/orders/${orderId}`, {
+      method: 'DELETE'
+    });
+    const data = await res.json();
+    if (data.success) {
+      closeSlipDetailModal();
+      await loadAdminOrders(true);
+      Swal.fire({
+        icon: 'success',
+        title: 'ลบเรียบร้อยแล้ว 🗑️',
+        text: `ออเดอร์ ${orderId} ถูกลบออกจากระบบแล้วครับ`,
+        timer: 1500,
+        showConfirmButton: false
+      });
+    } else {
+      Swal.fire({
+        icon: 'error',
+        title: 'ไม่สามารถลบได้',
+        text: data.error || 'กรุณาลองใหม่อีกครั้ง',
+        confirmButtonColor: '#ef4444'
+      });
+    }
+  } catch (e) {
+    console.error(e);
+    Swal.fire({
+      icon: 'error',
+      title: 'เกิดข้อผิดพลาด',
+      text: e.message || 'ไม่สามารถติดต่อเซิร์ฟเวอร์ได้',
+      confirmButtonColor: '#ef4444'
+    });
   }
 }
 
