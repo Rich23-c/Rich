@@ -2218,11 +2218,38 @@ function downloadWindowsShortcut(targetType = 'customer') {
   const isCustomer = (targetType === 'customer');
   const name = isCustomer ? 'ร้านขนมแม้ว' : 'แอดมินร้านขนมแม้ว';
   const targetUrl = isCustomer ? window.location.origin : `${window.location.origin}/admin`;
-  const content = `[InternetShortcut]\r\nURL=${targetUrl}\r\nIconIndex=0\r\n`;
-  const blob = new Blob([content], { type: 'application/octet-stream' });
+  
+  // Create an HTML launcher that Windows and Chrome natively open directly into the browser
+  const htmlContent = `<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <title>${isCustomer ? 'ร้านขนมแม้ว 🐾' : 'แอดมินร้านขนมแม้ว 🐾'}</title>
+  <meta http-equiv="refresh" content="0; url=${targetUrl}">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #fff7ed; color: #1c1917; text-align: center; }
+    .card { background: #ffffff; padding: 2rem; border-radius: 1rem; box-shadow: 0 10px 25px rgba(0,0,0,0.08); border: 1px solid #fed7aa; max-width: 400px; }
+    h2 { margin: 0 0 0.5rem 0; color: #ea580c; }
+    p { color: #78716c; font-size: 14px; margin-bottom: 1rem; }
+    a { color: #ea580c; font-weight: bold; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>🐾 ${isCustomer ? 'ร้านขนมแม้ว' : 'แอดมินร้านขนมแม้ว'}</h2>
+    <p>กำลังเปิดร้านขนมแม้ว กรุณารอสักครู่...</p>
+    <a href="${targetUrl}">คลิกที่นี่หากเบราว์เซอร์ไม่เปิดอัตโนมัติ</a>
+  </div>
+  <script>
+    window.location.replace("${targetUrl}");
+  </script>
+</body>
+</html>`;
+
+  const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `${name}.url`;
+  a.download = `${name}.html`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -2233,9 +2260,9 @@ function downloadWindowsShortcut(targetType = 'customer') {
     title: 'ดาวน์โหลดไฟล์ทางลัดสำเร็จ! 💻',
     html: `
       <div class="text-left text-xs sm:text-sm space-y-2 text-stone-700">
-        <p>ดาวน์โหลดไฟล์ <b>${name}.url</b> เรียบร้อยแล้ว</p>
-        <div class="bg-amber-50 border border-amber-200 rounded-xl p-3 text-amber-900">
-          💡 นำไฟล์นี้ไปวางบนหน้าจอ <b>Desktop ของ Windows</b> เพื่อดับเบิลคลิกเปิดร้านขนมแม้วได้ทันทีเลยครับ!
+        <p>ดาวน์โหลดไฟล์ <b>${name}.html</b> เรียบร้อยแล้ว</p>
+        <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-emerald-900 font-medium">
+          ✨ ดับเบิลคลิกที่ไฟล์นี้เพื่อเปิดร้านได้ทันที และสามารถลากไปวางบน <b>Desktop ของ Windows</b> เป็นทางลัดได้เลยครับ!
         </div>
       </div>
     `,
@@ -2289,7 +2316,7 @@ async function triggerPwaInstall(platform = 'windows') {
               onclick="downloadWindowsShortcut('customer')"
               class="inline-flex items-center gap-2 bg-stone-900 hover:bg-stone-800 text-white font-bold py-2.5 px-4 rounded-xl text-xs shadow-md transition cursor-pointer active:scale-95"
             >
-              <span>📥 ดาวน์โหลดไฟล์ทางลัด Desktop สำหรับ Windows (.url)</span>
+              <span>📥 ดาวน์โหลดทางลัดสำหรับ Windows (ดับเบิลคลิกเปิดได้ทันที)</span>
             </button>
           </div>
         </div>
