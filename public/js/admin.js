@@ -2282,7 +2282,37 @@ window.addEventListener('appinstalled', () => {
   });
 });
 
-async function triggerPwaInstall() {
+function downloadWindowsShortcut(targetType = 'admin') {
+  const isCustomer = (targetType === 'customer');
+  const name = isCustomer ? 'ร้านขนมแม้ว' : 'แอดมินร้านขนมแม้ว';
+  const targetUrl = isCustomer ? window.location.origin : `${window.location.origin}/admin`;
+  const content = `[InternetShortcut]\r\nURL=${targetUrl}\r\nIconIndex=0\r\n`;
+  const blob = new Blob([content], { type: 'application/octet-stream' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${name}.url`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+
+  Swal.fire({
+    icon: 'success',
+    title: 'ดาวน์โหลดไฟล์ทางลัดสำเร็จ! 💻',
+    html: `
+      <div class="text-left text-xs sm:text-sm space-y-2 text-slate-700">
+        <p>ดาวน์โหลดไฟล์ <b>${name}.url</b> เรียบร้อยแล้ว</p>
+        <div class="bg-amber-50 border border-amber-200 rounded-xl p-3 text-amber-900">
+          💡 นำไฟล์นี้ไปวางบนหน้าจอ <b>Desktop ของ Windows</b> เพื่อดับเบิลคลิกเปิดระบบได้ทันทีเลยครับ!
+        </div>
+      </div>
+    `,
+    confirmButtonColor: '#ea580c',
+    confirmButtonText: 'ตกลง'
+  });
+}
+
+async function triggerPwaInstall(platform = 'windows') {
   if (deferredAdminPwaPrompt) {
     deferredAdminPwaPrompt.prompt();
     const { outcome } = await deferredAdminPwaPrompt.userChoice;
@@ -2290,45 +2320,86 @@ async function triggerPwaInstall() {
       Swal.fire({
         icon: 'success',
         title: 'กำลังติดตั้ง... 🎉',
-        text: 'ระบบกำลังเพิ่มไอคอน "แอดมินแม้ว 🐾" ลงในหน้าจอมือถือของคุณ',
+        text: 'ระบบกำลังเพิ่มไอคอน "แอดมินแม้ว 🐾" ลงในเครื่องของคุณ',
         timer: 1800,
         showConfirmButton: false
       });
     }
     deferredAdminPwaPrompt = null;
-  } else {
-    // If browser already installed, standalone, or manual install instructions
+    return;
+  }
+
+  // Windows Desktop Install Guide & Download Shortcut
+  if (platform === 'windows') {
     Swal.fire({
-      title: '📲 วิธีติดตั้งแอป Admin บนมือถือ Android',
+      title: '💻 ติดตั้งแอป Admin บน Windows',
       html: `
-        <div class="text-left text-xs sm:text-sm space-y-3 text-slate-700">
-          <p class="font-bold text-slate-800">
-            ติดตั้งเป็นแอปแท้ลงบนหน้าจอมือถือได้ทันที โดยไม่ต้องโหลดผ่าน Google Play:
+        <div class="text-left text-xs sm:text-sm space-y-3.5 text-slate-700">
+          <p class="font-bold text-slate-900">
+            ใช้งานเป็นแอปเดสก์ท็อปบน Windows เต็มจอ สะดวก รวดเร็ว ไม่มีแถบเบราว์เซอร์:
           </p>
-          <div class="bg-amber-50/80 border border-amber-200 rounded-2xl p-3.5 space-y-2 text-amber-950 font-medium">
-            <div class="flex items-start gap-2">
-              <span class="w-5 h-5 rounded-full bg-amber-200 text-amber-900 font-bold flex items-center justify-center text-xs shrink-0 mt-0.5">1</span>
-              <span>แตะที่ <b>ปุ่มจุด 3 จุด (⋮)</b> ที่มุมขวาบนของเบราว์เซอร์ Google Chrome</span>
+
+          <div class="bg-blue-50/80 border border-blue-200 rounded-2xl p-3.5 space-y-2.5 text-blue-950 font-medium">
+            <div class="flex items-start gap-2.5">
+              <span class="w-5 h-5 rounded-full bg-blue-200 text-blue-900 font-bold flex items-center justify-center text-xs shrink-0 mt-0.5">1</span>
+              <span>ใน Google Chrome หรือ Microsoft Edge ให้สังเกตที่ <b>แถบ URL ด้านขวาบน</b> จะมีไอคอน <b>⊕ (Install App / ติดตั้งแอป)</b></span>
             </div>
-            <div class="flex items-start gap-2">
-              <span class="w-5 h-5 rounded-full bg-amber-200 text-amber-900 font-bold flex items-center justify-center text-xs shrink-0 mt-0.5">2</span>
-              <span>เลือกเมนู <b>"ติดตั้งแอป" (Install app)</b> หรือ <b>"เพิ่มลงในหน้าจอหลัก" (Add to Home screen)</b></span>
-            </div>
-            <div class="flex items-start gap-2">
-              <span class="w-5 h-5 rounded-full bg-amber-200 text-amber-900 font-bold flex items-center justify-center text-xs shrink-0 mt-0.5">3</span>
-              <span>แตะยืนยัน <b>"ติดตั้ง" (Install)</b></span>
+            <div class="flex items-start gap-2.5">
+              <span class="w-5 h-5 rounded-full bg-blue-200 text-blue-900 font-bold flex items-center justify-center text-xs shrink-0 mt-0.5">2</span>
+              <span>คลิก <b>"ติดตั้ง" (Install)</b> ระบบจะสร้างไอคอน <b>"แอดมินแม้ว 🐾"</b> บน Windows Desktop และ Start Menu ทันที</span>
             </div>
           </div>
-          <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-2.5 text-center text-emerald-800 text-xs font-bold">
-            ✨ ไอคอนสีเข้ม "แอดมินแม้ว 🐾" จะปรากฏบนหน้าจอมือถือ เปิดใช้งานได้เต็มจอ ไม่มีแถบเว็บกวนใจ!
+
+          <div class="pt-2 text-center">
+            <p class="text-xs text-slate-500 mb-2">หรือดาวน์โหลดไฟล์ทางลัดไปไว้บนหน้าจอ Desktop ได้เลย:</p>
+            <button
+              type="button"
+              onclick="downloadWindowsShortcut('admin')"
+              class="inline-flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white font-bold py-2.5 px-4 rounded-xl text-xs shadow-md transition cursor-pointer active:scale-95"
+            >
+              <span>📥 ดาวน์โหลดไฟล์ทางลัด Desktop สำหรับ Windows (.url)</span>
+            </button>
           </div>
         </div>
       `,
       icon: 'info',
-      confirmButtonText: 'รับทราบวิธีติดตั้ง',
+      confirmButtonText: 'ปิดหน้าต่าง',
       confirmButtonColor: '#ea580c'
     });
+    return;
   }
+
+  // Android Mobile Install Guide
+  Swal.fire({
+    title: '📲 วิธีติดตั้งแอป Admin บนมือถือ Android',
+    html: `
+      <div class="text-left text-xs sm:text-sm space-y-3 text-slate-700">
+        <p class="font-bold text-slate-800">
+          ติดตั้งเป็นแอปแท้ลงบนหน้าจอมือถือได้ทันที โดยไม่ต้องโหลดผ่าน Google Play:
+        </p>
+        <div class="bg-amber-50/80 border border-amber-200 rounded-2xl p-3.5 space-y-2 text-amber-950 font-medium">
+          <div class="flex items-start gap-2">
+            <span class="w-5 h-5 rounded-full bg-amber-200 text-amber-900 font-bold flex items-center justify-center text-xs shrink-0 mt-0.5">1</span>
+            <span>แตะที่ <b>ปุ่มจุด 3 จุด (⋮)</b> ที่มุมขวาบนของเบราว์เซอร์ Google Chrome</span>
+          </div>
+          <div class="flex items-start gap-2">
+            <span class="w-5 h-5 rounded-full bg-amber-200 text-amber-900 font-bold flex items-center justify-center text-xs shrink-0 mt-0.5">2</span>
+            <span>เลือกเมนู <b>"ติดตั้งแอป" (Install app)</b> หรือ <b>"เพิ่มลงในหน้าจอหลัก" (Add to Home screen)</b></span>
+          </div>
+          <div class="flex items-start gap-2">
+            <span class="w-5 h-5 rounded-full bg-amber-200 text-amber-900 font-bold flex items-center justify-center text-xs shrink-0 mt-0.5">3</span>
+            <span>แตะยืนยัน <b>"ติดตั้ง" (Install)</b></span>
+          </div>
+        </div>
+        <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-2.5 text-center text-emerald-800 text-xs font-bold">
+          ✨ ไอคอนสีเข้ม "แอดมินแม้ว 🐾" จะปรากฏบนหน้าจอมือถือ เปิดใช้งานได้เต็มจอ ไม่มีแถบเว็บกวนใจ!
+        </div>
+      </div>
+    `,
+    icon: 'info',
+    confirmButtonText: 'รับทราบวิธีติดตั้ง',
+    confirmButtonColor: '#ea580c'
+  });
 }
 
 function toggleInputVisibility(inputId) {

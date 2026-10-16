@@ -2194,3 +2194,147 @@ function scrollToPaymentSection() {
   }
 }
 
+// ==========================================
+// PWA INSTALLATION & WINDOWS APP DOWNLOAD HANDLERS
+// ==========================================
+let deferredCustomerPwaPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredCustomerPwaPrompt = e;
+});
+
+window.addEventListener('appinstalled', () => {
+  deferredCustomerPwaPrompt = null;
+  Swal.fire({
+    icon: 'success',
+    title: 'ติดตั้งแอปเรียบร้อย 🎉',
+    text: 'ไอคอน "ร้านขนมแม้ว 🐾" พร้อมใช้งานบนเครื่องของคุณแล้วครับ!',
+    timer: 2000,
+    showConfirmButton: false
+  });
+});
+
+function downloadWindowsShortcut(targetType = 'customer') {
+  const isCustomer = (targetType === 'customer');
+  const name = isCustomer ? 'ร้านขนมแม้ว' : 'แอดมินร้านขนมแม้ว';
+  const targetUrl = isCustomer ? window.location.origin : `${window.location.origin}/admin`;
+  const content = `[InternetShortcut]\r\nURL=${targetUrl}\r\nIconIndex=0\r\n`;
+  const blob = new Blob([content], { type: 'application/octet-stream' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${name}.url`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+
+  Swal.fire({
+    icon: 'success',
+    title: 'ดาวน์โหลดไฟล์ทางลัดสำเร็จ! 💻',
+    html: `
+      <div class="text-left text-xs sm:text-sm space-y-2 text-stone-700">
+        <p>ดาวน์โหลดไฟล์ <b>${name}.url</b> เรียบร้อยแล้ว</p>
+        <div class="bg-amber-50 border border-amber-200 rounded-xl p-3 text-amber-900">
+          💡 นำไฟล์นี้ไปวางบนหน้าจอ <b>Desktop ของ Windows</b> เพื่อดับเบิลคลิกเปิดร้านขนมแม้วได้ทันทีเลยครับ!
+        </div>
+      </div>
+    `,
+    confirmButtonColor: '#ea580c',
+    confirmButtonText: 'ตกลง'
+  });
+}
+
+async function triggerPwaInstall(platform = 'windows') {
+  if (deferredCustomerPwaPrompt) {
+    deferredCustomerPwaPrompt.prompt();
+    const { outcome } = await deferredCustomerPwaPrompt.userChoice;
+    if (outcome === 'accepted') {
+      Swal.fire({
+        icon: 'success',
+        title: 'กำลังติดตั้ง... 🎉',
+        text: 'ระบบกำลังเพิ่มไอคอน "ร้านขนมแม้ว 🐾" ลงในเครื่องของคุณ',
+        timer: 1800,
+        showConfirmButton: false
+      });
+    }
+    deferredCustomerPwaPrompt = null;
+    return;
+  }
+
+  // Windows Desktop Install Guide & Download Shortcut
+  if (platform === 'windows') {
+    Swal.fire({
+      title: '💻 ติดตั้งแอปร้านขนมแม้ว บน Windows',
+      html: `
+        <div class="text-left text-xs sm:text-sm space-y-3.5 text-stone-700">
+          <p class="font-bold text-stone-900">
+            ใช้งานเป็นแอปเดสก์ท็อปบนคอมพิวเตอร์ Windows สั่งขนมง่าย เต็มจอ ไม่มีแถบเบราว์เซอร์:
+          </p>
+
+          <div class="bg-amber-50/80 border border-amber-200 rounded-2xl p-3.5 space-y-2.5 text-amber-950 font-medium">
+            <div class="flex items-start gap-2.5">
+              <span class="w-5 h-5 rounded-full bg-amber-200 text-amber-900 font-bold flex items-center justify-center text-xs shrink-0 mt-0.5">1</span>
+              <span>ใน Google Chrome หรือ Microsoft Edge สังเกตที่ <b>แถบ URL ด้านขวาบน</b> จะมีไอคอน <b>⊕ (Install App / ติดตั้งแอป)</b></span>
+            </div>
+            <div class="flex items-start gap-2.5">
+              <span class="w-5 h-5 rounded-full bg-amber-200 text-amber-900 font-bold flex items-center justify-center text-xs shrink-0 mt-0.5">2</span>
+              <span>คลิก <b>"ติดตั้ง" (Install)</b> ระบบจะสร้างไอคอน <b>"ร้านขนมแม้ว 🐾"</b> บน Windows Desktop และ Start Menu ทันที</span>
+            </div>
+          </div>
+
+          <div class="pt-2 text-center">
+            <p class="text-xs text-stone-500 mb-2">หรือดาวน์โหลดไฟล์ทางลัดไปไว้บนหน้าจอ Desktop ได้เลย:</p>
+            <button
+              type="button"
+              onclick="downloadWindowsShortcut('customer')"
+              class="inline-flex items-center gap-2 bg-stone-900 hover:bg-stone-800 text-white font-bold py-2.5 px-4 rounded-xl text-xs shadow-md transition cursor-pointer active:scale-95"
+            >
+              <span>📥 ดาวน์โหลดไฟล์ทางลัด Desktop สำหรับ Windows (.url)</span>
+            </button>
+          </div>
+        </div>
+      `,
+      icon: 'info',
+      confirmButtonText: 'ปิดหน้าต่าง',
+      confirmButtonColor: '#ea580c'
+    });
+    return;
+  }
+
+  // Mobile Install Guide (Android & iOS)
+  Swal.fire({
+    title: '📲 ติดตั้งแอปร้านขนมแม้ว บนมือถือ',
+    html: `
+      <div class="text-left text-xs sm:text-sm space-y-3 text-stone-700">
+        <p class="font-bold text-stone-800">
+          ติดตั้งเป็นแอปแท้ลงบนหน้าจอมือถือได้ทันที ไม่ต้องผ่าน App Store / Play Store:
+        </p>
+        <div class="bg-amber-50/80 border border-amber-200 rounded-2xl p-3.5 space-y-2 text-amber-950 font-medium">
+          <p><b>Android:</b> แตะที่จุด 3 จุด (⋮) ด้านบนขวา &gt; เลือก <b>"ติดตั้งแอป"</b> หรือ <b>"เพิ่มลงในหน้าจอหลัก"</b></p>
+          <p><b>iPhone / iOS:</b> แตะปุ่มแชร์ (Share ⎋) ด้านล่าง &gt; เลื่อนลงเลือก <b>"เพิ่มไปยังหน้าจอโฮม" (Add to Home Screen)</b></p>
+        </div>
+      </div>
+    `,
+    icon: 'info',
+    confirmButtonText: 'เข้าใจแล้ว',
+    confirmButtonColor: '#ea580c'
+  });
+}
+
+// Download Order Slip or Receipt image in modal window
+function downloadOrderSlipOrReceipt() {
+  if (uploadedSlipUrl) {
+    const a = document.createElement('a');
+    a.href = uploadedSlipUrl;
+    a.download = `Slip-${Date.now()}.jpg`;
+    a.target = '_blank';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  } else {
+    // If no direct slip image url, trigger print/save
+    window.print();
+  }
+}
+
+

@@ -123,16 +123,25 @@
         <span>เข้าสู่ระบบหลังบ้าน 🔓</span>
       </button>
 
-      <!-- Install Admin App directly to Android Home Screen -->
-      <div class="pt-2 border-t border-slate-100">
+      <!-- Install Admin App directly to Windows or Android -->
+      <div class="pt-2 border-t border-slate-100 grid grid-cols-2 gap-2">
         <button
           type="button"
-          onclick="triggerPwaInstall()"
-          class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 px-3 rounded-2xl text-xs transition border border-slate-200 flex items-center justify-center gap-2 cursor-pointer active:scale-95 shadow-2xs"
+          onclick="triggerPwaInstall('windows')"
+          class="w-full bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold py-2.5 px-2 rounded-2xl text-xs transition border border-slate-300 flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 shadow-2xs"
+          title="ติดตั้งเป็นแอปบนคอมพิวเตอร์ Windows ใช้งานเต็มจอ"
+        >
+          <span class="text-sm">💻</span>
+          <span>โหลดลง Windows</span>
+        </button>
+        <button
+          type="button"
+          onclick="triggerPwaInstall('android')"
+          class="w-full bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold py-2.5 px-2 rounded-2xl text-xs transition border border-slate-300 flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 shadow-2xs"
           title="ติดตั้งเป็นแอปบนมือถือ Android โดยตรง ไม่ต้องผ่าน Play Store"
         >
-          <span>📲</span>
-          <span>ติดตั้งแอป Admin ลงมือถือ Android</span>
+          <span class="text-sm">📲</span>
+          <span>โหลดลง Android</span>
         </button>
       </div>
     </div>
@@ -183,14 +192,15 @@
           <span class="inline sm:hidden">+ เพิ่ม</span>
         </button>
 
-        <!-- Install Admin App on Android button -->
+        <!-- Install Admin App button (Windows & Mobile) -->
         <button
-          onclick="triggerPwaInstall()"
-          class="text-xs text-orange-700 bg-orange-50 hover:bg-orange-100 border border-orange-200 px-2.5 sm:px-3 py-2 rounded-xl transition font-bold flex items-center gap-1.5 cursor-pointer active:scale-95"
-          title="ติดตั้งแอป Admin ลงมือถือ Android โดยตรง"
+          onclick="triggerPwaInstall('windows')"
+          class="text-xs text-slate-800 bg-slate-100 hover:bg-slate-200 border border-slate-300 px-2.5 sm:px-3 py-2 rounded-xl transition font-bold flex items-center gap-1.5 cursor-pointer active:scale-95 shadow-2xs"
+          title="ดาวน์โหลดหรือติดตั้งแอปหลังบ้านลงบน Windows หรือมือถือ"
         >
-          <span>📲</span>
-          <span class="hidden sm:inline">ติดตั้งแอป</span>
+          <span>💻</span>
+          <span class="hidden sm:inline">โหลดลง Windows</span>
+          <span class="sm:hidden">Windows</span>
         </button>
 
         <a
