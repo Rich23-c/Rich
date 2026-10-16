@@ -1,0 +1,105 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Prompt:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Kanit:wght@400;500;600;700&display=swap');
+
+:root {
+  --primary: #18181b;
+  --primary-hover: #27272a;
+  --accent: #ea580c;
+  --warm-bg: #fafaf9;
+  --card-bg: #ffffff;
+  --border-subtle: #e7e5e4;
+}
+
+body {
+  font-family: 'Prompt', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: var(--warm-bg);
+  color: #292524;
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, .font-heading {
+  font-family: 'Kanit', sans-serif;
+  letter-spacing: -0.015em;
+}
+
+/* Minimal unobtrusive scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #d6d3d1;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #a8a29e;
+}
+
+/* Minimal card hover animation */
+.snack-card {
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease;
+}
+.snack-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px -6px rgba(0, 0, 0, 0.06);
+}
+
+.snack-card.selected {
+  border-color: #18181b;
+  background-color: #ffffff;
+  box-shadow: 0 0 0 1px #18181b;
+}
+
+/* Pulsing badge */
+@keyframes pulse-subtle {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.85; transform: scale(1.02); }
+}
+.pulse-badge {
+  animation: pulse-subtle 2s infinite ease-in-out;
+}
+
+/* Upload dropzone active state */
+.dropzone-active {
+  border-color: #18181b !important;
+  background-color: #f5f5f4 !important;
+}
+
+/* Loading spinner */
+.spinner {
+  border: 2.5px solid rgba(0, 0, 0, 0.08);
+  border-top: 2.5px solid #18181b;
+  border-radius: 50%;
+  width: 22px;
+  height: 22px;
+  animation: spin 0.75s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Touch Optimizations */
+button, a, input, select, textarea, .snack-card, .clickable {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (max-width: 640px) {
+  input[type="text"],
+  input[type="tel"],
+  input[type="number"],
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
