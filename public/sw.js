@@ -1,10 +1,12 @@
 // Service Worker for Snack by Maew PWA
-const CACHE_NAME = 'snack-maew-cache-v1';
+const CACHE_NAME = 'snack-maew-cache-v2';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
-  '/css/style.css',
   '/manifest.json',
+  '/favicon.ico',
+  '/images/icon-32.png',
+  '/images/icon-64.png',
   '/images/icon-192.png',
   '/images/icon-512.png',
   '/images/icon.svg'
