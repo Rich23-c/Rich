@@ -393,19 +393,22 @@
             <p class="text-xs text-slate-500 mt-0.5">เมื่อลูกค้าแนบสลิปที่มียอดเงินและวันที่ถูกต้อง ออเดอร์จะถูกบันทึกและแสดงที่นี่ทันที</p>
           </div>
 
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-2 flex-wrap">
             <button
+              type="button"
               onclick="resetMockOrders()"
-              class="text-xs text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 px-3 py-2 rounded-xl transition font-semibold flex items-center gap-1.5 self-start sm:self-auto"
+              class="text-xs text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 px-3.5 py-2.5 rounded-xl transition font-bold flex items-center gap-1.5 self-start sm:self-auto cursor-pointer active:scale-95 shadow-2xs"
+              title="ล้างรายการสั่งซื้อและออเดอร์ทั้งหมดในระบบ"
             >
-              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
-              <span>ล้างออเดอร์จำลอง (Reset)</span>
+              <i data-lucide="trash-2" class="w-4 h-4 text-red-500"></i>
+              <span>ล้างข้อมูลออเดอร์ทั้งหมด (Reset)</span>
             </button>
             <button
-              onclick="loadAdminOrders()"
-              class="text-xs text-slate-600 hover:text-orange-600 bg-slate-100 hover:bg-slate-200 px-3.5 py-2 rounded-xl transition font-semibold flex items-center gap-1.5 self-start sm:self-auto"
+              type="button"
+              onclick="loadAdminOrders(true)"
+              class="text-xs text-slate-700 hover:text-orange-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 px-3.5 py-2.5 rounded-xl transition font-semibold flex items-center gap-1.5 self-start sm:self-auto cursor-pointer active:scale-95 shadow-2xs"
             >
-              <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+              <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-slate-500"></i>
               <span>รีเฟรชออเดอร์ล่าสุด</span>
             </button>
           </div>
@@ -1328,6 +1331,6 @@
     </div>
   </div>
 
-  <script src="/js/admin.js?v=3.2.0"></script>
+  <script src="/js/admin.js?v=3.3.0"></script>
 </body>
 </html>

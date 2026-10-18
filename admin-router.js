@@ -55,8 +55,8 @@ function requireAdmin(req, res, next) {
     return next();
   }
 
-  // 2. Fallback to PIN Header
-  const pin = req.headers['x-admin-pin'] || req.query.pin;
+  // 2. Fallback to PIN Header or Body
+  const pin = req.headers['x-admin-pin'] || (req.body && req.body.adminPin) || req.query.pin;
   if (pin && db.verifyAdminPin(pin)) {
     return next();
   }
@@ -286,9 +286,9 @@ router.patch('/api/admin/orders/:id/status', requireAdmin, (req, res) => {
 });
 
 // Admin reset all orders (Clear / Reset orders)
-router.post('/api/admin/reset-mock-orders', requireAdmin, (req, res) => {
+router.post('/api/admin/reset-mock-orders', requireAdmin, async (req, res) => {
   try {
-    db.resetOrders();
+    await db.resetOrders();
     res.json({ success: true, message: 'ล้างข้อมูลคำสั่งซื้อทั้งหมดเรียบร้อยแล้ว' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -296,9 +296,9 @@ router.post('/api/admin/reset-mock-orders', requireAdmin, (req, res) => {
 });
 
 // Admin delete single order
-router.delete('/api/admin/orders/:id', requireAdmin, (req, res) => {
+router.delete('/api/admin/orders/:id', requireAdmin, async (req, res) => {
   try {
-    const success = db.deleteOrder(req.params.id);
+    const success = await db.deleteOrder(req.params.id);
     if (!success) {
       return res.status(404).json({ success: false, error: 'ไม่พบหมายเลขคำสั่งซื้อที่ต้องการลบ' });
     }
@@ -309,9 +309,9 @@ router.delete('/api/admin/orders/:id', requireAdmin, (req, res) => {
 });
 
 // Admin delete all orders (alias)
-router.delete('/api/admin/orders', requireAdmin, (req, res) => {
+router.delete('/api/admin/orders', requireAdmin, async (req, res) => {
   try {
-    db.resetOrders();
+    await db.resetOrders();
     res.json({ success: true, message: 'ล้างข้อมูลคำสั่งซื้อทั้งหมดเรียบร้อยแล้ว' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

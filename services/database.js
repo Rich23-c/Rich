@@ -444,12 +444,7 @@ async function backgroundSyncFromSupabase() {
         const mapped = mapSupabaseOrder(o);
         ordersMap.set(mapped.id, mapped);
       });
-      // Keep any unsaved local orders in memory
-      (memoryCache.orders || []).forEach(localOrder => {
-        if (!ordersMap.has(localOrder.id)) {
-          ordersMap.set(localOrder.id, localOrder);
-        }
-      });
+      // Supabase is the source of truth for cloud mode - do not resurrect deleted orders
       memoryCache.orders = Array.from(ordersMap.values()).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
       writeJson(ORDERS_FILE, memoryCache.orders);
     }
@@ -813,6 +808,10 @@ function registerUsedSlip({ qrData, transactionRef, fileHash, orderId = null }) 
 
 // Reset Mock/Test Orders (Clears orders & customer info, but PERMANENTLY PRESERVES SLIP MEMORY)
 function resetOrders() {
+  return resetOrdersAsync();
+}
+
+async function resetOrdersAsync() {
   initLocalCache();
 
   // 1. Ensure all slips in existing orders are permanently archived before deleting orders
@@ -832,22 +831,36 @@ function resetOrders() {
   memoryCache.orders = [];
   writeJson(ORDERS_FILE, []);
 
+  // 3. Delete from Supabase cloud database if connected
   if (supabase) {
-    safeSupabaseExec(
-      supabase.from('orders')
+    try {
+      // not.is.null is universally compatible with UUID, string, and integer ID columns in PostgreSQL
+      const { error: delErr } = await supabase
+        .from('orders')
         .delete()
-        .neq('id', 'DO_NOT_DELETE_NON_EXISTENT'),
-      'Reset orders'
-    );
+        .not('id', 'is', null);
+
+      if (delErr) {
+        console.warn('[Supabase Warning] Reset orders by not.is.null:', delErr.message);
+        // Fallback: delete using date comparison
+        await supabase.from('orders').delete().gt('createdAt', '1970-01-01');
+      } else {
+        console.log('✅ [Cloud Database] Orders table completely cleared in Supabase');
+      }
+    } catch (e) {
+      console.error('[Supabase Exception] Reset orders:', e.message);
+    }
   }
 
-  // 3. Clear physical slip image files from disk to reclaim disk storage
+  // 4. Clear physical slip image files from disk to reclaim disk storage
   const slipsDir = path.join(__dirname, '..', 'uploads', 'slips');
   if (fs.existsSync(slipsDir)) {
     try {
       const files = fs.readdirSync(slipsDir);
       for (const f of files) {
-        fs.unlinkSync(path.join(slipsDir, f));
+        try {
+          fs.unlinkSync(path.join(slipsDir, f));
+        } catch (e) {}
       }
     } catch (e) {
       console.warn('Error clearing slips folder:', e.message);
@@ -860,19 +873,26 @@ function resetOrders() {
 }
 
 function deleteOrder(orderId) {
+  return deleteOrderAsync(orderId);
+}
+
+async function deleteOrderAsync(orderId) {
   initLocalCache();
   if (!Array.isArray(memoryCache.orders)) return false;
   const idx = memoryCache.orders.findIndex(o => o.id === orderId);
-  if (idx === -1) return false;
-  memoryCache.orders.splice(idx, 1);
-  writeJson(ORDERS_FILE, memoryCache.orders);
+  if (idx !== -1) {
+    memoryCache.orders.splice(idx, 1);
+    writeJson(ORDERS_FILE, memoryCache.orders);
+  }
 
   if (supabase) {
-    safeSupabaseExec(
-      supabase.from('orders').delete().eq('id', orderId),
-      `Delete single order ${orderId}`
-    );
+    try {
+      await supabase.from('orders').delete().eq('id', orderId);
+    } catch (e) {
+      console.error(`[Supabase Exception] Delete single order ${orderId}:`, e.message);
+    }
   }
+
   return true;
 }
 

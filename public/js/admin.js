@@ -2,8 +2,8 @@
 let adminPin = '';
 let adminSessionToken = '';
 try {
-  adminPin = sessionStorage.getItem('snack_admin_pin') || '';
-  adminSessionToken = sessionStorage.getItem('snack_admin_token') || '';
+  adminPin = sessionStorage.getItem('snack_admin_pin') || localStorage.getItem('snack_admin_pin') || '';
+  adminSessionToken = sessionStorage.getItem('snack_admin_token') || localStorage.getItem('snack_admin_token') || '';
 } catch (e) {}
 
 let currentTab = 'snacks';
@@ -164,6 +164,8 @@ async function submitAdminPin() {
       try {
         sessionStorage.setItem('snack_admin_pin', enteredPin);
         sessionStorage.setItem('snack_admin_token', adminSessionToken);
+        localStorage.setItem('snack_admin_pin', enteredPin);
+        localStorage.setItem('snack_admin_token', adminSessionToken);
       } catch (e) {}
       resetIdleTimer();
       hideLoginOverlay();
@@ -200,6 +202,8 @@ function logoutAdmin() {
   try {
     sessionStorage.removeItem('snack_admin_pin');
     sessionStorage.removeItem('snack_admin_token');
+    localStorage.removeItem('snack_admin_pin');
+    localStorage.removeItem('snack_admin_token');
   } catch (e) {}
   clearTimeout(idleTimer);
   showLoginOverlay();
@@ -1601,23 +1605,44 @@ async function resetMockOrders() {
     showCancelButton: true,
     confirmButtonText: 'ใช่, ล้างข้อมูลเลย 🗑️',
     cancelButtonText: 'ยกเลิก',
-    confirmButtonColor: '#ef4444'
+    confirmButtonColor: '#ef4444',
+    cancelButtonColor: '#64748b'
   });
 
   if (!confirm.isConfirmed) return;
 
+  // Show loading indicator
+  Swal.fire({
+    title: 'กำลังล้างข้อมูลออเดอร์...',
+    text: 'กรุณารอสักครู่ ระบบกำลังเคลียร์รายการทั้งหมด',
+    allowOutsideClick: false,
+    didOpen: () => {
+      Swal.showLoading();
+    }
+  });
+
   try {
-    const res = await adminFetch('/api/admin/reset-mock-orders', { method: 'POST' });
+    const res = await adminFetch('/api/admin/reset-mock-orders', { 
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminPin: adminPin || '' })
+    });
     const data = await res.json();
     if (data.success) {
       allOrders = [];
-      clearAllPurchasedSnacks();
-      await loadAdminOrders(true);
+      savePurchasedItems({});
+      renderOrdersTable();
+      renderKitchenShoppingList();
+      updateStats();
+
+      // Refresh clean data from server
+      await loadAdminOrders(false);
+
       Swal.fire({
         icon: 'success',
-        title: 'ล้างข้อมูลเรียบร้อยแล้ว!',
-        text: 'ระบบพร้อมรับคำสั่งซื้อใหม่แล้วครับ',
-        timer: 1500,
+        title: 'ล้างข้อมูลเรียบร้อยแล้ว! 🗑️',
+        text: 'ระบบได้ล้างรายการสั่งซื้อทั้งหมดเรียบร้อยแล้วครับ',
+        timer: 1600,
         showConfirmButton: false
       });
     } else {
@@ -2115,8 +2140,12 @@ async function deleteSingleOrder(orderId) {
     });
     const data = await res.json();
     if (data.success) {
+      allOrders = allOrders.filter(o => o.id !== orderId);
       closeSlipDetailModal();
-      await loadAdminOrders(true);
+      renderOrdersTable();
+      renderKitchenShoppingList();
+      updateStats();
+      await loadAdminOrders(false);
       Swal.fire({
         icon: 'success',
         title: 'ลบเรียบร้อยแล้ว 🗑️',

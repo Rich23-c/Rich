@@ -2001,6 +2001,15 @@ function clearDeviceOrderHistory() {
   renderEmptyOrderHistory('ล้างข้อมูลบนอุปกรณ์นี้เรียบร้อยแล้ว');
   const countText = document.getElementById('orderHistoryCountText');
   if (countText) countText.innerText = 'มีทั้งหมด 0 รายการ';
+
+  if (window.Swal) {
+    Swal.fire({
+      icon: 'success',
+      title: 'ล้างข้อมูลบนเครื่องนี้เรียบร้อยแล้ว 🗑️',
+      timer: 1400,
+      showConfirmButton: false
+    });
+  }
 }
 
 function renderOrderHistoryList(orders) {
