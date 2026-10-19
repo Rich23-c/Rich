@@ -1091,9 +1091,36 @@ function renderKitchenShoppingList() {
   if (window.lucide) lucide.createIcons();
 }
 
+// Toggle Admin Orders View Mode (Cards List with Slips vs Table)
+function setAdminOrdersViewMode(mode) {
+  const cardsContainer = document.getElementById('adminOrdersCardsContainer');
+  const tableContainer = document.getElementById('adminOrdersTableContainer');
+  const cardsBtn = document.getElementById('viewModeCardsBtn');
+  const tableBtn = document.getElementById('viewModeTableBtn');
+
+  const activeBtnClass = 'px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer bg-white text-slate-900 shadow-2xs border border-slate-200/60';
+  const inactiveBtnClass = 'px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer text-slate-600 hover:text-slate-900';
+
+  if (mode === 'table') {
+    if (cardsContainer) cardsContainer.classList.add('hidden');
+    if (tableContainer) tableContainer.classList.remove('hidden');
+    if (cardsBtn) cardsBtn.className = inactiveBtnClass;
+    if (tableBtn) tableBtn.className = activeBtnClass;
+    localStorage.setItem('admin_orders_view_mode', 'table');
+  } else {
+    if (cardsContainer) cardsContainer.classList.remove('hidden');
+    if (tableContainer) tableContainer.classList.add('hidden');
+    if (cardsBtn) cardsBtn.className = activeBtnClass;
+    if (tableBtn) tableBtn.className = inactiveBtnClass;
+    localStorage.setItem('admin_orders_view_mode', 'cards');
+  }
+}
+
 function renderOrdersTable() {
   const tbody = document.getElementById('ordersTableBody');
-  const mobileContainer = document.getElementById('adminOrdersMobileCards');
+  const mobileContainer = document.getElementById('adminOrdersCardsContainer') || document.getElementById('adminOrdersMobileCards');
+  const countBadge = document.getElementById('ordersCountSummaryBadge');
+  if (countBadge) countBadge.innerText = `${allOrders.length} รายการ`;
   tbody.innerHTML = '';
 
   if (allOrders.length === 0) {
@@ -1134,9 +1161,9 @@ function renderOrdersTable() {
     const thumbImg = order.slipBase64 || (order.slipVerification && order.slipVerification.slipBase64) || order.slipImage || '';
     if (thumbImg) {
       slipHtml = `
-        <div class="relative group inline-block cursor-pointer" onclick="openSlipDetailModal('${order.id}')" title="กดดูสลิปขนาดใหญ่">
-          <img src="${thumbImg}" class="w-12 h-14 object-cover rounded-xl border border-slate-300 shadow-xs hover:scale-105 transition" onerror="this.onerror=null; this.src='/images/shop-qr.png';" />
-          <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 rounded-xl flex items-center justify-center text-white transition">
+        <div class="relative group inline-block cursor-pointer overflow-hidden rounded-xl border border-slate-300 shadow-2xs hover:border-orange-500 transition" onclick="openSlipDetailModal('${order.id}')" title="กดดูสลิปขนาดใหญ่">
+          <img src="${thumbImg}" class="w-16 h-20 object-contain bg-slate-50 group-hover:scale-105 transition" onerror="this.onerror=null; this.src='/images/shop-qr.png';" />
+          <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition">
             <i data-lucide="zoom-in" class="w-4 h-4"></i>
           </div>
         </div>
@@ -1270,12 +1297,12 @@ function renderOrdersTable() {
     tbody.appendChild(tr);
   });
 
-  // Also render Mobile Cards for smartphones (adminOrdersMobileCards)
+  // Also render Cards List (adminOrdersCardsContainer)
   if (mobileContainer) {
     mobileContainer.innerHTML = '';
     if (allOrders.length === 0) {
       mobileContainer.innerHTML = `
-        <div class="p-8 text-center text-slate-400 bg-slate-50/70 rounded-2xl border border-dashed border-slate-200">
+        <div class="p-8 text-center text-slate-400 bg-slate-50/70 rounded-3xl border border-dashed border-slate-200">
           <i data-lucide="inbox" class="w-8 h-8 mx-auto text-slate-300 mb-1.5"></i>
           <p class="font-medium text-xs">ยังไม่มีรายการสั่งซื้อเข้ามา</p>
         </div>
@@ -1284,63 +1311,90 @@ function renderOrdersTable() {
       allOrders.forEach(order => {
         const { cost: orderCost, profit: orderProfit, marginPercent: orderMargin } = getOrderCostAndProfit(order);
         const card = document.createElement('div');
-        card.className = 'bg-white rounded-2xl p-4 border border-slate-200 shadow-xs space-y-3';
+        card.className = 'bg-white rounded-3xl p-5 sm:p-6 border border-slate-200/90 shadow-xs space-y-4 hover:border-slate-300 transition';
 
         const dateStr = new Date(order.createdAt).toLocaleString('th-TH', {
-          day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
+          day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit'
         });
 
-        // Items list
-        const itemsHtml = (order.items || []).map(i => `
-          <div class="flex justify-between text-xs py-0.5">
-            <span class="text-slate-800 font-medium">🍪 ${i.name} × ${i.quantity} ${i.unit}</span>
-            <span class="text-slate-600 font-semibold">${i.subtotal} ฿</span>
+        // Detailed items list: สั่งอะไร
+        const itemsDetailedHtml = (order.items || []).map(i => `
+          <div class="flex items-center justify-between text-xs py-1.5 border-b border-slate-100 last:border-0">
+            <div class="flex items-center gap-2">
+              <span class="w-5 h-5 rounded-md bg-amber-100 text-amber-900 font-bold flex items-center justify-center text-[10px] shrink-0">🍪</span>
+              <span class="font-bold text-slate-800">${escapeHtml(i.name)}</span>
+              <span class="text-slate-500 font-medium">× ${i.quantity} ${escapeHtml(i.unit)}</span>
+            </div>
+            <span class="font-extrabold text-slate-900">${i.subtotal.toLocaleString()} ฿</span>
           </div>
         `).join('');
 
         // Status badge info
         let statusBadge = '';
-        if (order.orderStatus === 'pending') statusBadge = '<span class="bg-amber-100 text-amber-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-amber-200">⏳ รอตรวจสอบสลิป</span>';
-        else if (order.orderStatus === 'verified') statusBadge = '<span class="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-emerald-200">🟢 ยืนยันสลิปแล้ว</span>';
-        else if (order.orderStatus === 'preparing') statusBadge = '<span class="bg-blue-100 text-blue-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-blue-200">👨‍🍳 กำลังเตรียมขนม</span>';
-        else if (order.orderStatus === 'prepared') statusBadge = '<span class="bg-amber-100 text-amber-900 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-amber-300">🍰 เตรียมขนมเสร็จแล้ว</span>';
-        else if (order.orderStatus === 'delivered') statusBadge = '<span class="bg-emerald-600 text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full">🚚 ส่งมอบแล้ว</span>';
-        else if (order.orderStatus === 'cancelled') statusBadge = '<span class="bg-red-100 text-red-700 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-red-200">❌ ยกเลิก</span>';
+        if (order.orderStatus === 'pending') statusBadge = '<span class="bg-amber-100 text-amber-800 text-[11px] font-bold px-2.5 py-0.5 rounded-full border border-amber-200 inline-flex items-center gap-1">⏳ รอตรวจสอบสลิป</span>';
+        else if (order.orderStatus === 'verified') statusBadge = '<span class="bg-emerald-100 text-emerald-800 text-[11px] font-bold px-2.5 py-0.5 rounded-full border border-emerald-200 inline-flex items-center gap-1">🟢 ยืนยันสลิปแล้ว</span>';
+        else if (order.orderStatus === 'preparing') statusBadge = '<span class="bg-blue-100 text-blue-800 text-[11px] font-bold px-2.5 py-0.5 rounded-full border border-blue-200 inline-flex items-center gap-1">👨‍🍳 กำลังเตรียมขนม</span>';
+        else if (order.orderStatus === 'prepared') statusBadge = '<span class="bg-amber-100 text-amber-900 text-[11px] font-bold px-2.5 py-0.5 rounded-full border border-amber-300 inline-flex items-center gap-1">🍰 เตรียมขนมเสร็จแล้ว</span>';
+        else if (order.orderStatus === 'delivered') statusBadge = '<span class="bg-emerald-600 text-white text-[11px] font-bold px-2.5 py-0.5 rounded-full inline-flex items-center gap-1">🚚 ส่งมอบแล้ว</span>';
+        else if (order.orderStatus === 'cancelled') statusBadge = '<span class="bg-red-100 text-red-700 text-[11px] font-bold px-2.5 py-0.5 rounded-full border border-red-200 inline-flex items-center gap-1">❌ ยกเลิก</span>';
 
         // AI Verification badge
         let verifyBadge = '';
-        const v = order.slipVerification;
+        const v = order.slipVerification || {};
         if (v && v.isDuplicateSlip) {
-          verifyBadge = `<span class="text-[10px] text-red-700 font-bold bg-red-50 px-2 py-0.5 rounded-lg border border-red-200">🚨 สลิปซ้ำ!</span>`;
+          verifyBadge = `<span class="text-[11px] text-red-700 font-bold bg-red-50 px-2.5 py-1 rounded-lg border border-red-200 inline-flex items-center gap-1">🚨 สลิปซ้ำ!</span>`;
         } else if (order.orderStatus === 'verified' || (v && (v.isReadyToSave || v.status === 'VALID_AND_MATCHED' || v.isAmountMatched))) {
-          verifyBadge = `<span class="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200">✓ ยืนยันสลิปแล้ว (${v?.transferDate || 'วันนี้'})</span>`;
+          verifyBadge = `<span class="text-[11px] text-emerald-700 font-bold bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 inline-flex items-center gap-1">✓ ยืนยันสลิปแล้ว (${v?.transferDate || 'วันนี้'})</span>`;
         } else {
-          verifyBadge = `<span class="text-[10px] text-amber-700 font-bold bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200">⏳ รอแอดมินตรวจ</span>`;
+          verifyBadge = `<span class="text-[11px] text-amber-700 font-bold bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200 inline-flex items-center gap-1">⏳ รอแอดมินตรวจ</span>`;
         }
 
         // Phone call button
         const phoneCallBtn = order.customerPhone ? `
-          <a href="tel:${order.customerPhone}" class="inline-flex items-center gap-1 text-[11px] text-blue-700 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-lg border border-blue-200 font-bold active:scale-95 transition">
+          <a href="tel:${order.customerPhone}" class="inline-flex items-center gap-1 text-[11px] text-blue-700 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-lg border border-blue-200 font-bold active:scale-95 transition" title="กดโทรออก">
             <i data-lucide="phone-call" class="w-3 h-3"></i>
-            <span>โทร ${order.customerPhone}</span>
+            <span>โทร ${escapeHtml(order.customerPhone)}</span>
           </a>
         ` : '<span class="text-[11px] text-slate-400">ไม่ระบุเบอร์</span>';
 
-        // Slip thumbnail button
-        let slipThumbHtml = '<span class="text-xs text-slate-400">ไม่มีสลิป</span>';
-        const mobileThumbImg = order.slipBase64 || (order.slipVerification && order.slipVerification.slipBase64) || order.slipImage || '';
-        if (mobileThumbImg) {
-          slipThumbHtml = `
-            <button type="button" onclick="openSlipDetailModal('${order.id}')" class="flex items-center gap-2 bg-slate-50 hover:bg-slate-100 p-1.5 pr-3 rounded-xl border border-slate-200 transition text-left cursor-pointer active:scale-98">
-              <img src="${mobileThumbImg}" class="w-10 h-12 object-cover rounded-lg border border-slate-300" onerror="this.onerror=null; this.src='/images/shop-qr.png';" />
-              <div>
-                <div class="text-[11px] font-bold text-slate-800 flex items-center gap-1">
-                  <i data-lucide="zoom-in" class="w-3 h-3 text-orange-600"></i>
-                  <span>ดูสลิปโอน</span>
+        // Slip display: นำสลิปมาให้ดูเป็นรายการ
+        let slipCardHtml = '';
+        const cardThumbImg = order.slipBase64 || v.slipBase64 || order.slipImage || '';
+        if (cardThumbImg) {
+          slipCardHtml = `
+            <div class="space-y-2 flex flex-col items-center w-full">
+              <div
+                class="relative group cursor-pointer overflow-hidden rounded-2xl border-2 border-slate-200 hover:border-orange-500 shadow-sm transition bg-white w-full max-w-[220px]"
+                onclick="openSlipDetailModal('${order.id}')"
+                title="คลิกเพื่อดูสลิปขนาดใหญ่เต็มจอ"
+              >
+                <img
+                  src="${cardThumbImg}"
+                  alt="สลิปโอนเงิน"
+                  class="w-full h-48 sm:h-52 object-contain bg-slate-50 group-hover:scale-105 transition duration-200"
+                  onerror="this.onerror=null; this.src='/images/shop-qr.png';"
+                />
+                <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-xs font-bold gap-1 transition">
+                  <i data-lucide="zoom-in" class="w-4 h-4"></i>
+                  <span>ดูรูปสลิปเต็มจอ</span>
                 </div>
-                <div class="text-[10px] text-slate-500">แตะเพื่อซูมดูรูปเต็ม</div>
               </div>
-            </button>
+              <button
+                type="button"
+                onclick="openSlipDetailModal('${order.id}')"
+                class="text-[11px] font-bold text-slate-700 hover:text-orange-600 bg-white hover:bg-slate-100 border border-slate-200 px-3 py-1 rounded-xl shadow-2xs transition inline-flex items-center gap-1 cursor-pointer active:scale-95"
+              >
+                <i data-lucide="zoom-in" class="w-3.5 h-3.5 text-orange-600"></i>
+                <span>ซูมดูรูปสลิป</span>
+              </button>
+            </div>
+          `;
+        } else {
+          slipCardHtml = `
+            <div class="p-6 text-center text-slate-400 bg-slate-100/70 rounded-2xl border border-dashed border-slate-200 space-y-1 w-full">
+              <i data-lucide="image-off" class="w-7 h-7 mx-auto text-slate-300"></i>
+              <p class="text-xs font-bold text-slate-500">ไม่มีรูปสลิปแนบมา</p>
+            </div>
           `;
         }
 
@@ -1348,7 +1402,7 @@ function renderOrdersTable() {
           <button
             type="button"
             onclick="changeOrderStatus('${order.id}', 'verified')"
-            class="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer mb-2"
+            class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2 px-3.5 rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer"
           >
             <i data-lucide="check-circle" class="w-4 h-4"></i>
             <span>✅ กดยืนยันสลิปถูกต้อง</span>
@@ -1356,56 +1410,91 @@ function renderOrdersTable() {
         ` : '';
 
         card.innerHTML = `
-          <!-- Card Header -->
-          <div class="flex items-center justify-between border-b border-slate-100 pb-2.5">
-            <div>
-              <div class="font-mono font-bold text-orange-600 text-xs">${escapeHtml(order.id)}</div>
-              <div class="text-[10px] text-slate-400 mt-0.5">${escapeHtml(dateStr)}</div>
-            </div>
-            <div>${statusBadge}</div>
-          </div>
-
-          <!-- Customer info -->
-          <div class="flex items-center justify-between text-xs">
-            <div>
-              <span class="text-slate-400 text-[10px]">ลูกค้า:</span>
-              <span class="font-bold text-slate-800 ml-1">${escapeHtml(order.customerName)}</span>
-              <div class="inline-flex items-center gap-1 text-[10px] text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded mt-0.5 font-medium">
-                <span>📱</span>
-                <span>${escapeHtml(order.deviceModel || 'อุปกรณ์มือถือ')}</span>
+          <!-- Card Header: ลูกค้าคนไหน -->
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-slate-100 pb-3.5">
+            <div class="space-y-1">
+              <div class="flex items-center gap-2.5 flex-wrap">
+                <span class="text-base sm:text-lg font-extrabold text-slate-900 font-heading">
+                  👤 คุณ ${escapeHtml(order.customerName)}
+                </span>
+                ${statusBadge}
+              </div>
+              <div class="flex items-center gap-2 text-xs text-slate-500 flex-wrap">
+                <span>${phoneCallBtn}</span>
+                <span>•</span>
+                <span class="font-mono text-orange-600 font-bold bg-orange-50 px-2 py-0.5 rounded-md border border-orange-200/60">${escapeHtml(order.id)}</span>
+                <span>•</span>
+                <span>🕒 ${escapeHtml(dateStr)}</span>
+                <span>•</span>
+                <span class="bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md font-medium text-[11px]">📱 ${escapeHtml(order.deviceModel || 'อุปกรณ์มือถือ')}</span>
               </div>
             </div>
-            <div>${phoneCallBtn}</div>
           </div>
 
-          <!-- Items list -->
-          <div class="bg-slate-50 p-2.5 rounded-xl border border-slate-100 divide-y divide-slate-100">
-            ${itemsHtml}
-            <div class="flex justify-between items-baseline pt-1.5 mt-1 font-bold">
-              <span class="text-xs text-slate-600">ยอดรวมทั้งสิ้น:</span>
-              <div class="text-right">
-                <div class="text-base text-orange-600 font-heading">${order.totalPrice.toLocaleString()} บาท</div>
-                <div class="text-[11px] font-semibold ${orderProfit >= 0 ? 'text-emerald-600' : 'text-rose-500'}">
-                  กำไร ${orderProfit >= 0 ? '+' : ''}${orderProfit.toLocaleString()} ฿ <span class="text-[10px] font-normal text-slate-500">(ต้นทุน ${orderCost.toLocaleString()} ฿)</span>
+          <!-- Card Body Grid: สั่งอะไร (ซ้าย) vs นำสลิปมาให้ดู (ขวา) -->
+          <div class="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
+            <!-- ฝั่งซ้าย: สั่งอะไร (รายการขนมและยอดรวม) -->
+            <div class="md:col-span-7 space-y-3 bg-slate-50/80 p-4 rounded-2xl border border-slate-200/70">
+              <div class="flex items-center justify-between border-b border-slate-200/80 pb-2">
+                <span class="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <span>🍰 รายการขนมที่ลูกค้าสั่ง:</span>
+                  <span class="text-orange-600">(${(order.items || []).length} อย่าง)</span>
+                </span>
+              </div>
+              <div class="divide-y divide-slate-100">
+                ${itemsDetailedHtml}
+              </div>
+              <div class="pt-2 border-t border-slate-200/80 flex justify-between items-baseline font-bold">
+                <span class="text-xs text-slate-600">ยอดรวมทั้งสิ้น:</span>
+                <div class="text-right">
+                  <div class="text-lg sm:text-xl font-heading text-orange-600 font-extrabold">
+                    ${order.totalPrice.toLocaleString()} บาท
+                  </div>
+                  <div class="text-[11px] font-semibold ${orderProfit >= 0 ? 'text-emerald-600' : 'text-rose-500'}">
+                    กำไรสุทธิ ${orderProfit >= 0 ? '+' : ''}${orderProfit.toLocaleString()} ฿ <span class="text-[10px] font-normal text-slate-400">(ต้นทุน ${orderCost.toLocaleString()} ฿)</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ฝั่งขวา: นำสลิปมาให้ดูเป็นรายการ -->
+            <div class="md:col-span-5 bg-slate-50/80 p-4 rounded-2xl border border-slate-200/70 flex flex-col items-center justify-center space-y-2.5">
+              <div class="flex items-center justify-between w-full border-b border-slate-200/80 pb-2">
+                <span class="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <i data-lucide="receipt" class="w-3.5 h-3.5 text-orange-600"></i>
+                  <span>สลิปการโอนเงิน:</span>
+                </span>
+                ${verifyBadge}
+              </div>
+              ${slipCardHtml}
+              <!-- Slip AI Details -->
+              <div class="text-[11px] text-slate-600 w-full space-y-1 bg-white p-2.5 rounded-xl border border-slate-200/60 font-mono">
+                <div class="flex justify-between">
+                  <span class="text-slate-400 font-sans">ยอดตรวจในสลิป:</span>
+                  <span class="font-bold text-slate-900 font-sans">${v.detectedAmount !== null && v.detectedAmount !== undefined ? `${v.detectedAmount.toLocaleString()} ฿` : 'รอตรวจ'}</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-slate-400 font-sans">วันเวลาโอน:</span>
+                  <span class="font-sans text-slate-700">${v.transferDate || 'ไม่ระบุ'} ${v.transferTime || ''}</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-slate-400 font-sans">ธนาคาร:</span>
+                  <span class="font-sans text-slate-700 font-medium">${v.bankName || order.bankName || 'ธนาคารไทย'}</span>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- Slip & Verification info -->
-          <div class="flex items-center justify-between gap-2 pt-0.5">
-            <div>${slipThumbHtml}</div>
-            <div>${verifyBadge}</div>
-          </div>
-
-          <!-- Status update dropdown -->
-          <div class="pt-2 border-t border-slate-100 space-y-2">
-            ${mobileConfirmBtn}
-            <div class="flex items-center justify-between gap-2">
-              <span class="text-[11px] text-slate-500 font-semibold shrink-0">สถานะ:</span>
+          <!-- Card Footer: การจัดการสถานะออเดอร์ -->
+          <div class="pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div class="flex items-center gap-2">
+              ${mobileConfirmBtn}
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-slate-500 font-semibold shrink-0">สถานะ:</span>
               <select
                 onchange="changeOrderStatus('${order.id}', this.value)"
-                class="w-full text-xs font-bold rounded-xl px-2.5 py-2 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-orange-500 bg-white shadow-xs"
+                class="text-xs font-bold rounded-xl px-3 py-2 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-orange-500 bg-white shadow-2xs"
               >
                 <option value="pending" ${order.orderStatus === 'pending' ? 'selected' : ''}>⏳ รอตรวจสอบสลิป</option>
                 <option value="verified" ${order.orderStatus === 'verified' ? 'selected' : ''}>🟢 ยืนยันสลิปแล้ว</option>
@@ -1417,7 +1506,7 @@ function renderOrdersTable() {
               <button
                 type="button"
                 onclick="deleteSingleOrder('${order.id}')"
-                class="p-2 rounded-xl text-red-500 hover:bg-red-50 border border-slate-200 transition cursor-pointer shrink-0"
+                class="p-2 rounded-xl text-red-500 hover:bg-red-50 border border-slate-200 hover:border-red-200 transition cursor-pointer"
                 title="ลบออเดอร์นี้"
               >
                 <i data-lucide="trash-2" class="w-4 h-4"></i>

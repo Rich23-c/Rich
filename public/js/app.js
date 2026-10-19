@@ -2011,6 +2011,17 @@ function showReceiptModal(order) {
   document.getElementById('modalOrderDate').innerText = new Date(order.createdAt).toLocaleString('th-TH');
   document.getElementById('modalTotalPrice').innerText = `${order.totalPrice.toLocaleString()} บาท`;
 
+  const phoneRow = document.getElementById('modalCustomerPhoneRow');
+  const phoneEl = document.getElementById('modalCustomerPhone');
+  if (phoneRow && phoneEl) {
+    if (order.customerPhone) {
+      phoneEl.innerText = order.customerPhone;
+      phoneRow.classList.remove('hidden');
+    } else {
+      phoneRow.classList.add('hidden');
+    }
+  }
+
   const modalDeviceEl = document.getElementById('modalDeviceModel');
   if (modalDeviceEl) {
     const d = order.deviceInfo || (order.slipVerification && order.slipVerification.deviceInfo) || {};
@@ -2033,6 +2044,19 @@ function showReceiptModal(order) {
   } else {
     statusEl.className = 'font-bold px-2.5 py-0.5 rounded-full text-xs bg-amber-100 text-amber-800';
     statusEl.innerText = '⏳ แนบสลิปแล้ว (รอร้านตรวจสอบ)';
+  }
+
+  // Display attached slip preview in receipt
+  const slipSection = document.getElementById('modalSlipSection');
+  const slipImg = document.getElementById('modalSlipImg');
+  const slipSrc = order.slipBase64 || (order.slipVerification && order.slipVerification.slipBase64) || order.slipImage || uploadedSlipUrl || '';
+  if (slipSection && slipImg) {
+    if (slipSrc) {
+      slipImg.src = slipSrc;
+      slipSection.classList.remove('hidden');
+    } else {
+      slipSection.classList.add('hidden');
+    }
   }
 
   renderReceiptStatus(order);

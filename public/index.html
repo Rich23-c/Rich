@@ -652,6 +652,10 @@
           <span>ชื่อลูกค้า:</span>
           <span id="modalCustomerName" class="font-medium text-stone-900">-</span>
         </div>
+        <div class="flex justify-between text-stone-600 font-sans" id="modalCustomerPhoneRow">
+          <span>เบอร์ติดต่อ:</span>
+          <span id="modalCustomerPhone" class="font-medium text-stone-900">-</span>
+        </div>
         <div class="flex justify-between text-stone-600 font-sans items-center">
           <span>สั่งจากอุปกรณ์:</span>
           <span id="modalDeviceModel" class="font-medium text-stone-800 text-[11px] bg-stone-100 px-2 py-0.5 rounded-md">📱 -</span>
@@ -662,8 +666,11 @@
         </div>
 
         <!-- Ordered Items -->
-        <div class="pt-2 border-t border-stone-200/60 font-sans space-y-1.5" id="modalItemsList">
-          <!-- Injected items -->
+        <div class="pt-2 border-t border-stone-200/60 font-sans space-y-1.5">
+          <div class="font-medium text-stone-800 pb-0.5">รายการขนมที่สั่ง:</div>
+          <div id="modalItemsList" class="space-y-1.5">
+            <!-- Injected items -->
+          </div>
         </div>
 
         <div class="pt-2 border-t border-stone-200/80 flex justify-between font-sans text-sm font-semibold text-stone-900">
@@ -674,6 +681,26 @@
         <div class="pt-2 border-t border-stone-200/60 font-sans text-xs flex justify-between items-center">
           <span class="text-stone-500">สถานะการตรวจสลิป:</span>
           <span id="modalSlipStatus" class="font-medium px-2 py-0.5 rounded-full">-</span>
+        </div>
+
+        <!-- Attached Slip Preview -->
+        <div id="modalSlipSection" class="pt-3 border-t border-stone-200/80 font-sans hidden space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-semibold text-stone-800 flex items-center gap-1.5">
+              <i data-lucide="receipt" class="w-3.5 h-3.5 text-stone-600"></i>
+              <span>สลิปการโอนเงินที่แนบมา:</span>
+            </span>
+            <span class="text-[11px] text-stone-400">แตะเพื่อดูรูปขนาดเต็ม</span>
+          </div>
+          <div class="bg-white rounded-xl p-2 border border-stone-200 text-center">
+            <img
+              id="modalSlipImg"
+              src=""
+              alt="สลิปการโอนเงิน"
+              class="max-h-52 w-auto mx-auto rounded-lg object-contain shadow-xs cursor-pointer hover:opacity-95 transition"
+              onclick="if(this.src) window.open(this.src, '_blank')"
+            />
+          </div>
         </div>
       </div>
 
