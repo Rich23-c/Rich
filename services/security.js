@@ -512,10 +512,9 @@ function verifySlipVerificationToken(token, expectedAmount = null) {
     if (Date.now() - payload.iat > 15 * 60 * 1000) {
       return null;
     }
-    // Amount matching check (tolerance 0.05 THB)
+    // Amount matching check (tolerance 0.05 THB; paying more or equal is valid)
     if (expectedAmount !== null && payload.detectedAmount !== null && payload.detectedAmount !== undefined) {
-      const diff = Math.abs(Number(payload.detectedAmount) - Number(expectedAmount));
-      if (diff > 0.05) {
+      if (Number(payload.detectedAmount) < Number(expectedAmount) - 0.05) {
         return null;
       }
     }

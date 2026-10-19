@@ -1,3 +1,21 @@
+// Bulletproof SweetAlert2 Fallback (Prevents silent crash if CDN fails on mobile networks)
+if (typeof window.Swal === 'undefined') {
+  window.Swal = {
+    fire: function(opts) {
+      const text = (typeof opts === 'string') ? opts : ((opts.title ? opts.title + '\n' : '') + (opts.text || opts.html || ''));
+      if (opts && opts.showCancelButton) {
+        const ok = window.confirm(text.replace(/<[^>]+>/g, ''));
+        return Promise.resolve({ isConfirmed: ok, isDismissed: !ok });
+      } else {
+        if (text) window.alert(text.replace(/<[^>]+>/g, ''));
+        return Promise.resolve({ isConfirmed: true });
+      }
+    },
+    close: function() {},
+    showLoading: function() {}
+  };
+}
+
 // State
 let allSnacks = [];
 let selectedItems = {}; // { snackId: { id, name, price, unit, quantity, image } }
@@ -772,6 +790,7 @@ function updateOrderSummary() {
       mobileFloatingBar.classList.remove('show');
     }
   }
+  syncMobileFloatingBtnState();
 
   // Render summary items breakdown
   if (items.length === 0) {
@@ -895,21 +914,7 @@ function handleSlipSelected(file) {
     return;
   }
 
-  // Pre-check 1: Customer Name
-  const customerName = document.getElementById('customerName').value.trim();
-  if (!customerName) {
-    Swal.fire({
-      icon: 'warning',
-      title: 'กรุณาระบุชื่อลูกค้าก่อน',
-      text: 'กรุณาใส่ชื่อของคุณในข้อ 1 ด้านบนก่อนแนบสลิปนะจ๊ะ 📝',
-      confirmButtonColor: '#f97316'
-    });
-    document.getElementById('customerName').focus();
-    removeSlip();
-    return;
-  }
-
-  // Pre-check 2: Snacks Selection
+  // Pre-check: Snacks Selection
   const items = Object.values(selectedItems);
   if (items.length === 0) {
     Swal.fire({
@@ -939,6 +944,9 @@ function handleSlipSelected(file) {
     if (confirmSection) confirmSection.classList.remove('hidden');
     const hintBanner = document.getElementById('slipHintBanner');
     if (hintBanner) hintBanner.classList.add('hidden');
+
+    // Sync mobile floating cart button to confirm state
+    syncMobileFloatingBtnState();
 
     if (window.lucide) lucide.createIcons();
 
@@ -1033,6 +1041,7 @@ async function autoVerifySlip(file) {
   } finally {
     if (loadingCard) loadingCard.classList.add('hidden');
     if (reverifyBtn) reverifyBtn.disabled = false;
+    syncMobileFloatingBtnState();
     if (window.lucide) lucide.createIcons();
   }
 }
@@ -1045,7 +1054,7 @@ function triggerSlipVerification() {
 }
 
 // Customer confirms the order -> Save to database
-async function confirmAndSaveOrder() {
+async function confirmAndSaveOrder(forced = false) {
   if (shopSettings && shopSettings.isOpen === false) {
     Swal.fire({
       icon: 'warning',
@@ -1056,8 +1065,9 @@ async function confirmAndSaveOrder() {
     return;
   }
 
-  const customerName = document.getElementById('customerName').value.trim();
-  const customerPhone = document.getElementById('customerPhone').value.trim();
+  const customerNameInput = document.getElementById('customerName');
+  const customerName = customerNameInput ? customerNameInput.value.trim() : '';
+  const customerPhone = document.getElementById('customerPhone')?.value.trim() || '';
   const items = Object.values(selectedItems);
   const total = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
@@ -1065,8 +1075,12 @@ async function confirmAndSaveOrder() {
     Swal.fire({
       icon: 'warning',
       title: 'กรุณาระบุชื่อลูกค้า',
-      text: 'กรุณากรอกชื่อของคุณในช่องด้านบนก่อนยืนยันการสั่งซื้อครับ',
+      text: 'กรุณากรอกชื่อของคุณในข้อ 1 ด้านบนก่อนกดยืนยันการสั่งซื้อครับ 📝',
       confirmButtonColor: '#f97316'
+    }).then(() => {
+      const step1 = document.getElementById('step1Section') || document.getElementById('customerInfoSection');
+      if (step1) step1.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (customerNameInput) customerNameInput.focus();
     });
     return;
   }
@@ -1075,51 +1089,120 @@ async function confirmAndSaveOrder() {
     Swal.fire({
       icon: 'warning',
       title: 'ยังไม่ได้เลือกขนม',
-      text: 'กรุณาเลือกขนมอย่างน้อย 1 รายการ',
+      text: 'กรุณาเลือกขนมที่ต้องการสั่งซื้ออย่างน้อย 1 รายการก่อนนะครับ 🍪',
       confirmButtonColor: '#f97316'
+    }).then(() => {
+      const snacksSection = document.getElementById('step2Section') || document.getElementById('snacksGrid') || document.getElementById('snacksContainer');
+      if (snacksSection) snacksSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
     return;
   }
 
+  // Check if slip is attached
   if (!currentSlipFile && !uploadedSlipUrl) {
     Swal.fire({
-      icon: 'warning',
-      title: 'ยังไม่ได้แนบสลิป',
-      text: 'กรุณาแนบรูปสลิปการโอนเงินก่อนกดยืนยันการสั่งซื้อครับ',
-      confirmButtonColor: '#f97316'
+      icon: 'info',
+      title: 'กรุณาแนบรูปสลิปการโอนเงิน',
+      text: 'กรุณาสแกน QR Code โอนเงิน และแนบรูปภาพสลิปเพื่อยืนยันคำสั่งซื้อครับ 📸',
+      showCancelButton: true,
+      confirmButtonText: '📸 แตะเพื่อแนบสลิปทันที',
+      cancelButtonText: 'ดู QR Code โอนเงิน',
+      confirmButtonColor: '#10b981',
+      cancelButtonColor: '#78716c'
+    }).then((res) => {
+      const slipDropZone = document.getElementById('slipDropZone') || document.getElementById('paymentSection');
+      if (slipDropZone) slipDropZone.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (res && res.isConfirmed) {
+        const slipInput = document.getElementById('slipInput');
+        if (slipInput) slipInput.click();
+      }
     });
     return;
   }
 
-  // Enforce QR Code only requirement: Must have a valid QR Code
-  if (currentSlipVerification) {
-    if (!currentSlipVerification.hasQrCode || currentSlipVerification.status === 'NO_QR_CODE') {
+  // Check if slip is currently verifying
+  const loadingCard = document.getElementById('verifyingLoadingCard');
+  if (loadingCard && !loadingCard.classList.contains('hidden')) {
+    Swal.fire({
+      icon: 'info',
+      title: 'ระบบกำลังตรวจสอบสลิป...',
+      text: 'กรุณารอสักครู่ ระบบกำลังอ่าน Mini QR Code ในสลิปของคุณครับ ⏳',
+      timer: 2000,
+      showConfirmButton: false
+    });
+    return;
+  }
+
+  // Pre-submission review for edge cases (underpaid, duplicate, missing QR)
+  let needForceSubmit = forced;
+  if (!forced && currentSlipVerification) {
+    if (currentSlipVerification.isFakeOrAltered || currentSlipVerification.status === 'FAKE_OR_ALTERED_SLIP') {
       Swal.fire({
         icon: 'error',
-        title: 'ไม่พบ QR Code ในสลิป',
-        text: 'ระบบกำหนดให้ต้องตรวจสอบสลิปจาก QR Code เท่านั้น กรุณาแนบรูปสลิปที่มี Mini QR Code ธนาคารครับ',
-        confirmButtonColor: '#f97316'
-      });
-      return;
-    }
-    if (currentSlipVerification.isDuplicateSlip || currentSlipVerification.status === 'DUPLICATE_SLIP') {
-      Swal.fire({
-        icon: 'error',
-        title: 'ตรวจพบสลิปซ้ำ',
-        text: 'QR Code ในสลิปนี้เคยถูกใช้งานสั่งซื้อไปแล้วในระบบ กรุณาใช้สลิปการโอนเงินใหม่ครับ',
-        confirmButtonColor: '#f97316'
-      });
-      return;
-    }
-    if (currentSlipVerification.detectedAmount !== null && currentSlipVerification.isAmountMatched === false) {
-      const diff = currentSlipVerification.amountDifference || (currentSlipVerification.detectedAmount - total);
-      Swal.fire({
-        icon: 'error',
-        title: 'ยอดเงินในสลิปไม่ตรงกับยอดสั่งซื้อ',
-        html: `ยอดเงินในสลิปของคุณคือ <b>${currentSlipVerification.detectedAmount.toFixed(2)} บาท</b><br>แต่มียอดสั่งซื้อรวม <b>${total.toFixed(2)} บาท</b><br><span class="text-red-500 font-bold">${diff < 0 ? 'ขาดอีก ' + Math.abs(diff).toFixed(2) + ' บาท' : 'ยอดเกิน ' + diff.toFixed(2) + ' บาท'}</span><br><br>กรุณาโอนเงินให้ถูกต้องครบถ้วน หรือเปลี่ยนรูปสลิปใหม่ครับ 🐾`,
+        title: 'สลิปไม่ถูกต้อง',
+        text: 'ระบบตรวจพบความผิดปกติหรือการดัดแปลงภาพสลิป กรุณาใช้สลิปโอนเงินจริงจากแอปธนาคารเท่านั้นครับ',
         confirmButtonColor: '#ef4444'
       });
       return;
+    }
+    if (currentSlipVerification.status === 'FAILED_TRANSFER' || currentSlipVerification.transferStatus === 'FAILED') {
+      Swal.fire({
+        icon: 'error',
+        title: 'การโอนเงินไม่สำเร็จ',
+        text: 'สลิปนี้ระบุว่าการโอนเงินไม่สำเร็จ (Failed Transaction) กรุณาแนบสลิปที่โอนเงินสำเร็จแล้วครับ',
+        confirmButtonColor: '#ef4444'
+      });
+      return;
+    }
+    if (currentSlipVerification.status === 'SCHEDULED_TRANSFER' || currentSlipVerification.transferStatus === 'SCHEDULED') {
+      Swal.fire({
+        icon: 'warning',
+        title: 'สลิปตั้งโอนล่วงหน้า',
+        text: 'สลิปนี้เป็นการตั้งโอนล่วงหน้า เงินยังไม่เข้าบัญชีร้าน กรุณาแนบสลิปที่โอนเงินสำเร็จแล้วครับ',
+        confirmButtonColor: '#f97316'
+      });
+      return;
+    }
+    if (!currentSlipVerification.hasQrCode || currentSlipVerification.status === 'NO_QR_CODE') {
+      const ask = await Swal.fire({
+        icon: 'warning',
+        title: 'ตรวจไม่พบ QR Code ในสลิป',
+        text: 'ระบบสแกนไม่พบ Mini QR Code บนสลิป คุณต้องการส่งรูปสลิปนี้ให้ทางร้านตรวจสอบด้วยตนเองหรือไม่ครับ?',
+        showCancelButton: true,
+        confirmButtonText: 'ยืนยันส่งให้ร้านตรวจสอบ 🐾',
+        cancelButtonText: 'เปลี่ยนรูปสลิปใหม่',
+        confirmButtonColor: '#10b981',
+        cancelButtonColor: '#64748b'
+      });
+      if (!ask.isConfirmed) return;
+      needForceSubmit = true;
+    } else if (currentSlipVerification.isDuplicateSlip || currentSlipVerification.status === 'DUPLICATE_SLIP') {
+      const ask = await Swal.fire({
+        icon: 'warning',
+        title: 'ตรวจพบสลิปซ้ำในระบบ',
+        text: 'สลิปนี้เคยถูกส่งมาแล้วในระบบ หากท่านต้องการส่งให้ทางร้านตรวจสอบ สามารถกดยืนยันส่งได้ครับ',
+        showCancelButton: true,
+        confirmButtonText: 'ยืนยันส่งให้ร้านตรวจสอบ 🐾',
+        cancelButtonText: 'เปลี่ยนรูปสลิปใหม่',
+        confirmButtonColor: '#10b981',
+        cancelButtonColor: '#64748b'
+      });
+      if (!ask.isConfirmed) return;
+      needForceSubmit = true;
+    } else if (currentSlipVerification.detectedAmount !== null && currentSlipVerification.detectedAmount < total - 0.05) {
+      const diff = Math.abs(currentSlipVerification.detectedAmount - total);
+      const ask = await Swal.fire({
+        icon: 'warning',
+        title: 'ยอดเงินในสลิปน้อยกว่ายอดสั่งซื้อ',
+        html: `ยอดในสลิป: <b>${currentSlipVerification.detectedAmount.toFixed(2)} บาท</b><br>ยอดสั่งซื้อ: <b>${total.toFixed(2)} บาท</b> (ขาดอีก <b class="text-red-500">${diff.toFixed(2)} บาท</b>)<br><br>ต้องการยืนยันส่งออเดอร์ให้ทางร้านตรวจสอบหรือไม่ครับ?`,
+        showCancelButton: true,
+        confirmButtonText: 'ยืนยันส่งให้ร้านตรวจสอบ 🐾',
+        cancelButtonText: 'เปลี่ยนรูปสลิปใหม่',
+        confirmButtonColor: '#10b981',
+        cancelButtonColor: '#64748b'
+      });
+      if (!ask.isConfirmed) return;
+      needForceSubmit = true;
     }
   }
 
@@ -1149,6 +1232,10 @@ async function confirmAndSaveOrder() {
   if (clientDecodedQrData) {
     formData.append('clientQrData', clientDecodedQrData);
   }
+  if (needForceSubmit) {
+    formData.append('forceSubmit', 'true');
+  }
+
   const devDetails = detectDeviceDetails();
   formData.append('deviceId', getDeviceId());
   formData.append('deviceInfo', JSON.stringify(devDetails));
@@ -1197,6 +1284,20 @@ async function confirmAndSaveOrder() {
       // Show success modal receipt & live status tracker
       showReceiptModal(data.order);
       resetOrderForm();
+    } else if (data.allowForceSubmit) {
+      const ask = await Swal.fire({
+        icon: 'warning',
+        title: 'ข้อสังเกตจากระบบตรวจสอบสลิป',
+        text: (data.error || 'ตรวจพบข้อสังเกตในสลิป') + ' คุณต้องการส่งออเดอร์นี้ให้ทางร้านตรวจสอบด้วยตนเองหรือไม่ครับ?',
+        showCancelButton: true,
+        confirmButtonText: 'ยืนยันส่งให้ร้านตรวจสอบ 🐾',
+        cancelButtonText: 'แก้ไขข้อมูล',
+        confirmButtonColor: '#10b981',
+        cancelButtonColor: '#64748b'
+      });
+      if (ask.isConfirmed) {
+        confirmAndSaveOrder(true);
+      }
     } else {
       Swal.fire({
         icon: 'error',
@@ -1210,7 +1311,7 @@ async function confirmAndSaveOrder() {
     Swal.fire({
       icon: 'error',
       title: 'เกิดข้อผิดพลาด',
-      text: err.message || 'ไม่สามารถบันทึกคำสั่งซื้อได้',
+      text: err.message || 'ไม่สามารถบันทึกคำสั่งซื้อได้ กรุณาลองใหม่อีกครั้งครับ',
       confirmButtonColor: '#f97316'
     });
   }
@@ -1238,16 +1339,21 @@ function removeSlip() {
   if (resultCard) resultCard.classList.add('hidden');
 
   const confirmSection = document.getElementById('customerConfirmSection');
-  if (confirmSection) confirmSection.classList.add('hidden');
-  const hintBanner = document.getElementById('slipHintBanner');
-  if (hintBanner) hintBanner.classList.remove('hidden');
+  if (confirmSection) confirmSection.classList.remove('hidden');
 
   const confirmBtn = document.getElementById('confirmOrderBtn');
   if (confirmBtn) {
     confirmBtn.disabled = false;
     confirmBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-    confirmBtn.innerHTML = '<i data-lucide="check-circle" class="w-5 h-5"></i><span>✅ กดยืนยันการสั่งซื้อขนม (ส่งออเดอร์) 🐾</span>';
+    confirmBtn.className = 'w-full bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-semibold py-3.5 px-6 rounded-xl shadow-xs transition active:scale-[0.99] flex items-center justify-center gap-2 text-sm sm:text-base cursor-pointer';
+    confirmBtn.innerHTML = '<i data-lucide="check-circle" class="w-5 h-5"></i><span>ยืนยันการสั่งซื้อขนม (ส่งออเดอร์)</span>';
   }
+  const subtext = document.getElementById('confirmOrderSubtext');
+  if (subtext) {
+    subtext.innerText = '💡 แนบรูปสลิปการโอนเงินด้านบน ระบบจะตรวจสลิปจาก Mini QR Code แล้วส่งออเดอร์ให้ทางร้านทำขนมทันทีครับ';
+  }
+  syncMobileFloatingBtnState();
+  if (window.lucide) lucide.createIcons();
 }
 
 // Display verification result card with badges and details
@@ -1326,9 +1432,10 @@ function displayVerificationResult(v, expectedAmount) {
     summary.innerText = v.message || 'ระบบตรวจพบความผิดปกติหรือการดัดแปลงภาพสลิป กรุณาใช้สลิปโอนเงินจริงจากแอปธนาคารเท่านั้น';
 
     if (confirmBtn) {
-      confirmBtn.disabled = true;
-      confirmBtn.classList.add('opacity-50', 'cursor-not-allowed');
-      confirmBtn.innerHTML = '<i data-lucide="alert-triangle" class="w-5 h-5"></i><span>⚠️ สลิปไม่ถูกต้อง (ถูกปฏิเสธ)</span>';
+      confirmBtn.disabled = false;
+      confirmBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+      confirmBtn.className = 'w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-3.5 px-6 rounded-xl shadow-xs transition active:scale-[0.99] flex items-center justify-center gap-2 text-sm sm:text-base cursor-pointer';
+      confirmBtn.innerHTML = '<i data-lucide="alert-triangle" class="w-5 h-5"></i><span>⚠️ สลิปไม่ถูกต้อง (คลิกเพื่อดูรายละเอียด)</span>';
     }
   } else if (v.status === 'FAILED_TRANSFER' || v.transferStatus === 'FAILED') {
     // Failed transfer
@@ -1341,9 +1448,10 @@ function displayVerificationResult(v, expectedAmount) {
     summary.innerText = v.message || 'สลิปนี้ระบุว่าการโอนเงินไม่สำเร็จ (Failed Transaction) กรุณาตรวจสอบและแนบสลิปที่โอนเงินสำเร็จแล้วครับ';
 
     if (confirmBtn) {
-      confirmBtn.disabled = true;
-      confirmBtn.classList.add('opacity-50', 'cursor-not-allowed');
-      confirmBtn.innerHTML = '<i data-lucide="alert-triangle" class="w-5 h-5"></i><span>⚠️ การโอนเงินไม่สำเร็จ</span>';
+      confirmBtn.disabled = false;
+      confirmBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+      confirmBtn.className = 'w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-3.5 px-6 rounded-xl shadow-xs transition active:scale-[0.99] flex items-center justify-center gap-2 text-sm sm:text-base cursor-pointer';
+      confirmBtn.innerHTML = '<i data-lucide="alert-triangle" class="w-5 h-5"></i><span>⚠️ การโอนเงินไม่สำเร็จ (คลิกเพื่อดูรายละเอียด)</span>';
     }
   } else if (v.status === 'SCHEDULED_TRANSFER' || v.transferStatus === 'SCHEDULED') {
     // Scheduled transfer
@@ -1356,39 +1464,42 @@ function displayVerificationResult(v, expectedAmount) {
     summary.innerText = v.message || 'สลิปนี้เป็นการตั้งโอนล่วงหน้า (ยังไม่โอนเงินจริง)';
 
     if (confirmBtn) {
-      confirmBtn.disabled = true;
-      confirmBtn.classList.add('opacity-50', 'cursor-not-allowed');
-      confirmBtn.innerHTML = '<i data-lucide="alert-triangle" class="w-5 h-5"></i><span>⚠️ สลิปตั้งโอนล่วงหน้า</span>';
+      confirmBtn.disabled = false;
+      confirmBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+      confirmBtn.className = 'w-full bg-amber-600 hover:bg-amber-700 text-white font-semibold py-3.5 px-6 rounded-xl shadow-xs transition active:scale-[0.99] flex items-center justify-center gap-2 text-sm sm:text-base cursor-pointer';
+      confirmBtn.innerHTML = '<i data-lucide="clock" class="w-5 h-5"></i><span>⚠️ สลิปตั้งโอนล่วงหน้า (คลิกเพื่อดูรายละเอียด)</span>';
     }
   } else if (!v.hasQrCode || v.status === 'NO_QR_CODE') {
-    // Missing QR Code!
-    card.classList.add('bg-red-50', 'border-red-300');
-    iconContainer.className = 'w-8 h-8 rounded-full bg-red-600 text-white flex items-center justify-center shrink-0 shadow-sm';
+    // Missing QR Code
+    card.classList.add('bg-amber-50', 'border-amber-300');
+    iconContainer.className = 'w-8 h-8 rounded-full bg-amber-600 text-white flex items-center justify-center shrink-0 shadow-sm';
     iconContainer.innerHTML = '<i data-lucide="qr-code" class="w-5 h-5"></i>';
-    title.className = 'text-sm font-bold text-red-900';
-    title.innerText = '❌ ตรวจไม่พบ QR Code ในรูปภาพสลิป';
-    summary.className = 'text-xs text-red-700 font-bold';
-    summary.innerText = v.message || 'ระบบกำหนดให้ต้องตรวจสอบสลิปจาก QR Code เท่านั้น กรุณาแนบรูปสลิปการโอนเงินที่มี Mini QR Code ของธนาคารที่ชัดเจนครับ';
+    title.className = 'text-sm font-bold text-amber-900';
+    title.innerText = '⚠️ ตรวจไม่พบ Mini QR Code ในรูปภาพสลิป';
+    summary.className = 'text-xs text-amber-800 font-medium';
+    summary.innerText = v.message || 'ระบบสแกนไม่พบ Mini QR Code บนสลิป คุณสามารถคลิกกดยืนยันเพื่อส่งรูปให้ทางร้านตรวจสอบด้วยตนเองได้ครับ';
 
     if (confirmBtn) {
-      confirmBtn.disabled = true;
-      confirmBtn.classList.add('opacity-50', 'cursor-not-allowed');
-      confirmBtn.innerHTML = '<i data-lucide="alert-triangle" class="w-5 h-5"></i><span>⚠️ สลิปไม่มี QR Code (ไม่สามารถส่งออเดอร์ได้)</span>';
+      confirmBtn.disabled = false;
+      confirmBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+      confirmBtn.className = 'w-full bg-amber-600 hover:bg-amber-700 text-white font-semibold py-3.5 px-6 rounded-xl shadow-xs transition active:scale-[0.99] flex items-center justify-center gap-2 text-sm sm:text-base cursor-pointer';
+      confirmBtn.innerHTML = '<i data-lucide="alert-circle" class="w-5 h-5"></i><span>⚠️ สลิปไม่มี QR (คลิกเพื่อกดยืนยันส่งร้าน)</span>';
     }
   } else if (v.isDuplicateSlip || v.status === 'DUPLICATE_SLIP') {
-    // Duplicate slip detected!
-    card.classList.add('bg-red-50', 'border-red-300');
-    iconContainer.className = 'w-8 h-8 rounded-full bg-red-600 text-white flex items-center justify-center shrink-0 shadow-sm';
+    // Duplicate slip detected
+    card.classList.add('bg-amber-50', 'border-amber-300');
+    iconContainer.className = 'w-8 h-8 rounded-full bg-amber-600 text-white flex items-center justify-center shrink-0 shadow-sm';
     iconContainer.innerHTML = '<i data-lucide="shield-alert" class="w-5 h-5"></i>';
-    title.className = 'text-sm font-bold text-red-900';
-    title.innerText = '🚫 สลิปนี้ซ้ำ! QR Code หรือสลิปนี้เคยถูกใช้งานแล้ว';
-    summary.className = 'text-xs text-red-700 font-medium';
-    summary.innerText = v.message || 'ตรวจพบว่าสลิปนี้เคยถูกใช้สั่งซื้อไปแล้ว กรุณาใช้สลิปการโอนเงินใหม่';
+    title.className = 'text-sm font-bold text-amber-900';
+    title.innerText = '⚠️ ตรวจพบสลิปซ้ำในระบบ';
+    summary.className = 'text-xs text-amber-800 font-medium';
+    summary.innerText = v.message || 'ตรวจพบว่าสลิปนี้เคยถูกส่งมาแล้ว หากท่านเพิ่งสั่งซื้อหรือล้างข้อมูล สามารถคลิกกดยืนยันส่งให้ร้านตรวจสอบได้ครับ';
 
     if (confirmBtn) {
-      confirmBtn.disabled = true;
-      confirmBtn.classList.add('opacity-50', 'cursor-not-allowed');
-      confirmBtn.innerHTML = '<i data-lucide="alert-triangle" class="w-5 h-5"></i><span>⚠️ สลิปนี้ถูกใช้ไปแล้ว</span>';
+      confirmBtn.disabled = false;
+      confirmBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+      confirmBtn.className = 'w-full bg-amber-600 hover:bg-amber-700 text-white font-semibold py-3.5 px-6 rounded-xl shadow-xs transition active:scale-[0.99] flex items-center justify-center gap-2 text-sm sm:text-base cursor-pointer';
+      confirmBtn.innerHTML = '<i data-lucide="alert-triangle" class="w-5 h-5"></i><span>⚠️ ตรวจพบสลิปซ้ำ (คลิกเพื่อกดยืนยันส่งร้าน)</span>';
     }
   } else if (v.status === 'VALID_AND_MATCHED' || v.isReadyToSave) {
     // Exact Match, Valid Date & Valid Shop Receiver!
@@ -1403,48 +1514,76 @@ function displayVerificationResult(v, expectedAmount) {
     if (confirmBtn) {
       confirmBtn.disabled = false;
       confirmBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+      confirmBtn.className = 'w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3.5 px-6 rounded-xl shadow-xs transition active:scale-[0.99] flex items-center justify-center gap-2 text-sm sm:text-base cursor-pointer';
       confirmBtn.innerHTML = '<i data-lucide="check-circle" class="w-5 h-5"></i><span>✅ กดยืนยันการสั่งซื้อขนม (ส่งออเดอร์) 🐾</span>';
     }
   } else if (v.status === 'RECEIVER_MISMATCHED' || !v.isReceiverMatched) {
-    // Receiver Mismatch (Not the shop's account!)
-    card.classList.add('bg-red-50', 'border-red-200');
-    iconContainer.className = 'w-8 h-8 rounded-full bg-red-500 text-white flex items-center justify-center shrink-0 shadow-sm';
+    // Receiver Mismatch
+    card.classList.add('bg-amber-50', 'border-amber-200');
+    iconContainer.className = 'w-8 h-8 rounded-full bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm';
     iconContainer.innerHTML = '<i data-lucide="shield-alert" class="w-5 h-5"></i>';
-    title.className = 'text-sm font-bold text-red-900';
-    title.innerText = '❌ สลิปนี้ไม่ได้โอนเข้าบัญชีของทางร้าน';
-    summary.className = 'text-xs text-red-700';
-    summary.innerText = v.message || `ชื่อผู้รับในสลิป (${v.receiverName || 'ไม่ระบุ'}) ไม่ตรงกับบัญชีของร้าน`;
+    title.className = 'text-sm font-bold text-amber-900';
+    title.innerText = '⚠️ บัญชีผู้รับในสลิปอาจไม่ตรงกับทางร้าน';
+    summary.className = 'text-xs text-amber-700';
+    summary.innerText = v.message || `ชื่อผู้รับในสลิป (${v.receiverName || 'ไม่ระบุ'}) ตรวจพบ Mini QR ถูกต้อง คุณสามารถคลิกกดยืนยันส่งให้ร้านตรวจสอบได้ครับ`;
 
     if (confirmBtn) {
-      confirmBtn.disabled = true;
-      confirmBtn.classList.add('opacity-50', 'cursor-not-allowed');
-      confirmBtn.innerHTML = '<i data-lucide="alert-triangle" class="w-5 h-5"></i><span>⚠️ บัญชีผู้รับไม่ตรงกับทางร้าน</span>';
+      confirmBtn.disabled = false;
+      confirmBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+      confirmBtn.className = 'w-full bg-amber-600 hover:bg-amber-700 text-white font-semibold py-3.5 px-6 rounded-xl shadow-xs transition active:scale-[0.99] flex items-center justify-center gap-2 text-sm sm:text-base cursor-pointer';
+      confirmBtn.innerHTML = '<i data-lucide="alert-triangle" class="w-5 h-5"></i><span>⚠️ บัญชีผู้รับไม่ตรง (คลิกเพื่อกดยืนยันส่งร้าน)</span>';
     }
   } else if (v.status === 'AMOUNT_MISMATCHED' || (!v.isAmountMatched && v.detectedAmount !== null)) {
-    // Amount Mismatch - Strict Block!
-    card.classList.add('bg-red-50', 'border-red-300');
-    iconContainer.className = 'w-8 h-8 rounded-full bg-red-600 text-white flex items-center justify-center shrink-0 shadow-sm';
-    iconContainer.innerHTML = '<i data-lucide="x-circle" class="w-5 h-5"></i>';
-    title.className = 'text-sm font-bold text-red-900';
-    title.innerText = '❌ ยอดเงินในสลิปไม่ตรงกับยอดที่สั่งซื้อ!';
-    summary.className = 'text-xs text-red-700 font-bold';
     const diff = v.amountDifference || (v.detectedAmount - expectedAmount);
-    summary.innerText = `ยอดในสลิปโอนมา ${v.detectedAmount?.toFixed(2) || 0} บาท แต่มียอดสั่งซื้อ ${expectedAmount.toFixed(2)} บาท (${diff < 0 ? 'ขาดอีก ' + Math.abs(diff).toFixed(2) : 'ยอดเกิน ' + diff.toFixed(2)} บาท) กรุณาโอนเงินให้ครบหรือแนบสลิปที่ถูกต้องครับ`;
+    if (diff >= -0.05) {
+      // Overpaid / exact match
+      card.classList.add('bg-emerald-50', 'border-emerald-200');
+      iconContainer.className = 'w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-sm';
+      iconContainer.innerHTML = '<i data-lucide="check-circle" class="w-5 h-5"></i>';
+      title.className = 'text-sm font-bold text-emerald-900';
+      title.innerText = '✅ ยอดเงินในสลิปครบถ้วน!';
+      summary.className = 'text-xs text-emerald-700 font-medium';
+      summary.innerText = `ยอดในสลิปโอนมา ${v.detectedAmount?.toFixed(2) || 0} บาท (ยอดสั่งซื้อ ${expectedAmount.toFixed(2)} บาท)`;
 
-    if (confirmBtn) {
-      confirmBtn.disabled = true;
-      confirmBtn.classList.add('opacity-50', 'cursor-not-allowed');
-      confirmBtn.innerHTML = '<i data-lucide="alert-triangle" class="w-5 h-5"></i><span>⚠️ ยอดเงินไม่ตรง (ขาดอีก ' + (diff < 0 ? Math.abs(diff).toFixed(2) : '0.00') + ' บาท)</span>';
+      if (confirmBtn) {
+        confirmBtn.disabled = false;
+        confirmBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+        confirmBtn.className = 'w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3.5 px-6 rounded-xl shadow-xs transition active:scale-[0.99] flex items-center justify-center gap-2 text-sm sm:text-base cursor-pointer';
+        confirmBtn.innerHTML = '<i data-lucide="check-circle" class="w-5 h-5"></i><span>✅ กดยืนยันการสั่งซื้อขนม (ยอดเงินครบถ้วน) 🐾</span>';
+      }
+    } else {
+      // Underpaid
+      card.classList.add('bg-amber-50', 'border-amber-300');
+      iconContainer.className = 'w-8 h-8 rounded-full bg-amber-600 text-white flex items-center justify-center shrink-0 shadow-sm';
+      iconContainer.innerHTML = '<i data-lucide="alert-circle" class="w-5 h-5"></i>';
+      title.className = 'text-sm font-bold text-amber-900';
+      title.innerText = '⚠️ ยอดเงินในสลิปน้อยกว่ายอดที่สั่งซื้อ!';
+      summary.className = 'text-xs text-amber-800 font-bold';
+      summary.innerText = `ยอดในสลิปโอนมา ${v.detectedAmount?.toFixed(2) || 0} บาท แต่มียอดสั่งซื้อ ${expectedAmount.toFixed(2)} บาท (ขาดอีก ${Math.abs(diff).toFixed(2)} บาท) ท่านสามารถกดยืนยันเพื่อให้ร้านตรวจสอบได้ครับ`;
+
+      if (confirmBtn) {
+        confirmBtn.disabled = false;
+        confirmBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+        confirmBtn.className = 'w-full bg-amber-600 hover:bg-amber-700 text-white font-semibold py-3.5 px-6 rounded-xl shadow-xs transition active:scale-[0.99] flex items-center justify-center gap-2 text-sm sm:text-base cursor-pointer';
+        confirmBtn.innerHTML = `<i data-lucide="alert-circle" class="w-5 h-5"></i><span>⚠️ ยอดเงินไม่ตรง (คลิกเพื่อกดยืนยัน)</span>`;
+      }
     }
   } else if (v.status === 'DATE_MISMATCHED' || !v.isDateToday) {
     // Date Mismatch (Old slip)
-    card.classList.add('bg-amber-50', 'border-amber-200');
-    iconContainer.className = 'w-8 h-8 rounded-full bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm';
-    iconContainer.innerHTML = '<i data-lucide="calendar-x" class="w-5 h-5"></i>';
-    title.className = 'text-sm font-bold text-amber-900';
-    title.innerText = '⚠️ วันที่ในสลิปไม่ใช่วันนี้';
-    summary.className = 'text-xs text-amber-800';
-    summary.innerText = `ในสลิปตรวจพบวันที่ ${v.transferDate || 'วันอื่น'} ซึ่งไม่ใช่วันปัจจุบัน กรุณาใช้สลิปที่โอนวันนี้`;
+    card.classList.add('bg-emerald-50', 'border-emerald-200');
+    iconContainer.className = 'w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-sm';
+    iconContainer.innerHTML = '<i data-lucide="calendar" class="w-5 h-5"></i>';
+    title.className = 'text-sm font-bold text-emerald-900';
+    title.innerText = 'ℹ️ ตรวจพบ Mini QR Code ถูกต้อง';
+    summary.className = 'text-xs text-emerald-700 font-medium';
+    summary.innerText = `ในสลิปตรวจพบวันที่ ${v.transferDate || 'วันอื่น'} ตรวจพบ QR ถูกต้อง (ระบบจะส่งให้ร้านตรวจสอบก่อนทำขนม)`;
+
+    if (confirmBtn) {
+      confirmBtn.disabled = false;
+      confirmBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+      confirmBtn.className = 'w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3.5 px-6 rounded-xl shadow-xs transition active:scale-[0.99] flex items-center justify-center gap-2 text-sm sm:text-base cursor-pointer';
+      confirmBtn.innerHTML = '<i data-lucide="check-circle" class="w-5 h-5"></i><span>✅ กดยืนยันการสั่งซื้อขนม (ส่งออเดอร์) 🐾</span>';
+    }
   } else if (v.status === 'NOT_A_SLIP') {
     // Not a valid slip
     card.classList.add('bg-red-50', 'border-red-200');
@@ -1454,16 +1593,32 @@ function displayVerificationResult(v, expectedAmount) {
     title.innerText = '❌ ภาพที่แนบไม่ใช่สลิปการโอนเงิน';
     summary.className = 'text-xs text-red-700';
     summary.innerText = 'กรุณาตรวจสอบและอัปโหลดรูปภาพสลิปการโอนเงินธนาคารที่ชัดเจน';
+
+    if (confirmBtn) {
+      confirmBtn.disabled = false;
+      confirmBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+      confirmBtn.className = 'w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-3.5 px-6 rounded-xl shadow-xs transition active:scale-[0.99] flex items-center justify-center gap-2 text-sm sm:text-base cursor-pointer';
+      confirmBtn.innerHTML = '<i data-lucide="alert-triangle" class="w-5 h-5"></i><span>⚠️ ภาพไม่ใช่สลิป (คลิกเพื่อดูรายละเอียด)</span>';
+    }
   } else {
-    card.classList.add('bg-blue-50', 'border-blue-200');
-    iconContainer.className = 'w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center shrink-0 shadow-sm';
-    iconContainer.innerHTML = '<i data-lucide="info" class="w-5 h-5"></i>';
-    title.className = 'text-sm font-bold text-blue-900';
-    title.innerText = 'ℹ️ ข้อมูลสลิป';
-    summary.className = 'text-xs text-blue-700';
-    summary.innerText = v.message || 'กรุณาตรวจสอบความถูกต้องของสลิป';
+    // Manual review
+    card.classList.add('bg-emerald-50', 'border-emerald-200');
+    iconContainer.className = 'w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-sm';
+    iconContainer.innerHTML = '<i data-lucide="check-circle" class="w-5 h-5"></i>';
+    title.className = 'text-sm font-bold text-emerald-900';
+    title.innerText = 'ℹ️ ตรวจพบ Mini QR Code ถูกต้อง';
+    summary.className = 'text-xs text-emerald-700 font-medium';
+    summary.innerText = v.message || 'ตรวจพบ Mini QR ธนาคารเรียบร้อยแล้ว กดยืนยันเพื่อส่งออเดอร์ให้ทางร้านทำขนมได้เลยครับ';
+
+    if (confirmBtn) {
+      confirmBtn.disabled = false;
+      confirmBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+      confirmBtn.className = 'w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3.5 px-6 rounded-xl shadow-xs transition active:scale-[0.99] flex items-center justify-center gap-2 text-sm sm:text-base cursor-pointer';
+      confirmBtn.innerHTML = '<i data-lucide="check-circle" class="w-5 h-5"></i><span>✅ กดยืนยันการสั่งซื้อขนม (ส่งออเดอร์) 🐾</span>';
+    }
   }
 
+  syncMobileFloatingBtnState();
   if (window.lucide) lucide.createIcons();
 }
 
@@ -2218,20 +2373,57 @@ function fallbackCopyText(text) {
   document.body.removeChild(textArea);
 }
 
-// Smooth scroll to payment section on mobile
-function scrollToPaymentSection() {
+// ==========================================
+// MOBILE STICKY FLOATING BAR LOGIC & ACTIONS
+// ==========================================
+
+// Synchronize sticky mobile floating bar CTA button state
+function syncMobileFloatingBtnState() {
+  const btn = document.getElementById('mobileFloatingActionBtn');
+  const text = document.getElementById('mobileFloatingActionText');
+  const icon = document.getElementById('mobileFloatingActionIcon');
+  if (!btn) return;
+
+  const hasSlip = !!(currentSlipFile || uploadedSlipUrl);
+  if (hasSlip) {
+    btn.className = 'bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-semibold text-xs px-4 py-2.5 rounded-xl shadow-md flex items-center gap-1.5 active:scale-95 transition cursor-pointer select-none';
+    if (text) text.innerText = 'ยืนยันสั่งซื้อขนม 🐾';
+    if (icon) icon.setAttribute('data-lucide', 'check-circle');
+  } else {
+    btn.className = 'bg-stone-900 hover:bg-stone-800 active:bg-stone-950 text-white font-medium text-xs px-4 py-2.5 rounded-xl shadow-2xs flex items-center gap-1.5 active:scale-95 transition cursor-pointer select-none';
+    if (text) text.innerText = 'ไปชำระเงิน';
+    if (icon) icon.setAttribute('data-lucide', 'arrow-down');
+  }
+  if (window.lucide) lucide.createIcons();
+}
+
+// Mobile floating bar action click handler
+function handleMobileFloatingAction() {
+  const hasSlip = !!(currentSlipFile || uploadedSlipUrl);
+  if (hasSlip) {
+    confirmAndSaveOrder();
+    return;
+  }
+
   const paymentSection = document.getElementById('paymentSection');
   if (paymentSection) {
-    paymentSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    // Check if customer name is filled
-    const customerName = document.getElementById('customerName');
-    if (customerName && !customerName.value.trim()) {
-      setTimeout(() => {
-        const step1 = document.getElementById('customerInfoSection');
-        if (step1) step1.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        customerName.focus();
-      }, 500);
+    const rect = paymentSection.getBoundingClientRect();
+    const isVisible = (rect.top < window.innerHeight * 0.75);
+    if (isVisible) {
+      // User is already looking at payment section -> call confirmAndSaveOrder to prompt slip picker!
+      confirmAndSaveOrder();
+      return;
     }
+  }
+
+  scrollToPaymentSection();
+}
+
+// Smooth scroll to payment section on mobile
+function scrollToPaymentSection() {
+  const paymentSection = document.getElementById('paymentSection') || document.getElementById('slipDropZone');
+  if (paymentSection) {
+    paymentSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 }
 

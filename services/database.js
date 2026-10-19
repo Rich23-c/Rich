@@ -814,22 +814,13 @@ function resetOrders() {
 async function resetOrdersAsync() {
   initLocalCache();
 
-  // 1. Ensure all slips in existing orders are permanently archived before deleting orders
-  if (Array.isArray(memoryCache.orders)) {
-    memoryCache.orders.forEach(order => {
-      const v = order.slipVerification || {};
-      registerUsedSlip({
-        qrData: order.qrData || v.qrData || v.rawQrData,
-        transactionRef: order.transactionRef || v.transactionRef,
-        fileHash: order.fileHash || v.fileHash,
-        orderId: order.id
-      });
-    });
-  }
-
-  // 2. Clear orders data (Order history, customer names, phones, notes, items ordered)
+  // 1. Clear orders data (Order history, customer names, phones, notes, items ordered)
   memoryCache.orders = [];
   writeJson(ORDERS_FILE, []);
+
+  // 2. Clear used slips registry so store owner can test orders after reset
+  memoryCache.usedSlips = [];
+  writeJson(USED_SLIPS_FILE, []);
 
   // 3. Delete from Supabase cloud database if connected
   if (supabase) {
@@ -847,6 +838,8 @@ async function resetOrdersAsync() {
       } else {
         console.log('✅ [Cloud Database] Orders table completely cleared in Supabase');
       }
+
+      await supabase.from('settings').upsert({ id: 'used_slips_registry', data: [], updatedAt: new Date().toISOString() });
     } catch (e) {
       console.error('[Supabase Exception] Reset orders:', e.message);
     }
@@ -867,8 +860,6 @@ async function resetOrdersAsync() {
     }
   }
 
-  // NOTE: memoryCache.usedSlips is INTENTIONALLY NOT WIPED!
-  // It permanently remembers all slip QR codes, transaction refs, and hashes so old slips can NEVER be reused.
   return true;
 }
 
@@ -883,6 +874,21 @@ async function deleteOrderAsync(orderId) {
   if (idx !== -1) {
     memoryCache.orders.splice(idx, 1);
     writeJson(ORDERS_FILE, memoryCache.orders);
+  }
+
+  // Remove slip from usedSlips registry so that slip can be reused if the order was deleted
+  if (Array.isArray(memoryCache.usedSlips)) {
+    const beforeLen = memoryCache.usedSlips.length;
+    memoryCache.usedSlips = memoryCache.usedSlips.filter(s => s.orderId !== orderId);
+    if (memoryCache.usedSlips.length !== beforeLen) {
+      writeJson(USED_SLIPS_FILE, memoryCache.usedSlips);
+      if (supabase) {
+        safeSupabaseExec(
+          supabase.from('settings').upsert({ id: 'used_slips_registry', data: memoryCache.usedSlips, updatedAt: new Date().toISOString() }),
+          'Update used_slips_registry after order delete'
+        );
+      }
+    }
   }
 
   if (supabase) {

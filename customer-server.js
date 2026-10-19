@@ -445,7 +445,7 @@ app.post('/api/orders', orderCreateRateLimit, uploadSlip.single('slip'), async (
         return res.status(400).json({ success: false, error: 'ข้อมูลสินค้าในตะกร้าไม่ถูกต้อง' });
       }
 
-      const snackId = String(item.snackId || '').trim();
+      const snackId = String(item.snackId || item.id || '').trim();
       const originalSnack = allSnacks.find(s => s.id === snackId);
 
       if (!originalSnack) {
@@ -570,7 +570,7 @@ app.post('/api/orders', orderCreateRateLimit, uploadSlip.single('slip'), async (
     }
 
     // RULE 1: Anti-Tampering / Fake Slip Detection
-    if (slipVerification.isFakeOrAltered || slipVerification.status === 'FAKE_OR_ALTERED_SLIP') {
+    if (slipVerification && (slipVerification.isFakeOrAltered || slipVerification.status === 'FAKE_OR_ALTERED_SLIP')) {
       return res.status(400).json({
         success: false,
         error: slipVerification.message || '🚨 ระบบตรวจพบความผิดปกติหรือการดัดแปลงภาพสลิป กรุณาใช้สลิปโอนเงินจริงจากแอปธนาคารเท่านั้น'
@@ -578,14 +578,14 @@ app.post('/api/orders', orderCreateRateLimit, uploadSlip.single('slip'), async (
     }
 
     // RULE 2: Transfer Status Validation
-    if (slipVerification.status === 'FAILED_TRANSFER' || slipVerification.transferStatus === 'FAILED') {
+    if (slipVerification && (slipVerification.status === 'FAILED_TRANSFER' || slipVerification.transferStatus === 'FAILED')) {
       return res.status(400).json({
         success: false,
         error: slipVerification.message || '❌ สลิปนี้ระบุว่าการโอนเงินไม่สำเร็จ (Failed Transaction) กรุณาตรวจสอบและแนบสลิปที่โอนเงินสำเร็จแล้วครับ'
       });
     }
 
-    if (slipVerification.status === 'SCHEDULED_TRANSFER' || slipVerification.transferStatus === 'SCHEDULED') {
+    if (slipVerification && (slipVerification.status === 'SCHEDULED_TRANSFER' || slipVerification.transferStatus === 'SCHEDULED')) {
       return res.status(400).json({
         success: false,
         error: slipVerification.message || '⚠️ สลิปนี้เป็นการตั้งโอนล่วงหน้า (Scheduled) เงินยังไม่เข้าบัญชีร้าน กรุณาแนบสลิปที่โอนเงินสำเร็จแล้วครับ'
@@ -593,7 +593,7 @@ app.post('/api/orders', orderCreateRateLimit, uploadSlip.single('slip'), async (
     }
 
     // RULE 3: Shop Receiver Account Matching
-    if (slipVerification.isReceiverMatched === false || slipVerification.status === 'RECEIVER_MISMATCHED') {
+    if (slipVerification && (slipVerification.isReceiverMatched === false || slipVerification.status === 'RECEIVER_MISMATCHED')) {
       return res.status(400).json({
         success: false,
         error: slipVerification.message || '❌ สลิปนี้ไม่ได้โอนเข้าบัญชีของทางร้าน กรุณาตรวจสอบชื่อบัญชีผู้รับเงิน'
@@ -602,29 +602,34 @@ app.post('/api/orders', orderCreateRateLimit, uploadSlip.single('slip'), async (
 
     // RULE 4: Mandatory QR Code verification ("ตรวจสอบสลิปจาก QR code เท่านั้น")
     if (!slipVerification || !slipVerification.hasQrCode || slipVerification.status === 'NO_QR_CODE') {
-      return res.status(400).json({
-        success: false,
-        error: 'สลิปนี้ไม่มี QR Code หรือสแกน QR ไม่พบ (ระบบกำหนดให้ต้องตรวจสอบจาก QR Code บนสลิปเท่านั้น กรุณาแนบรูปสลิปที่มี Mini QR Code ธนาคาร)'
-      });
+      if (body.forceSubmit !== 'true') {
+        return res.status(400).json({
+          success: false,
+          allowForceSubmit: true,
+          error: 'สลิปนี้ไม่มี QR Code หรือสแกน QR ไม่พบ (ระบบกำหนดให้ต้องตรวจสอบจาก QR Code บนสลิปเท่านั้น หากเป็นสลิปจริงสามารถกดยืนยันให้ร้านตรวจสอบได้ครับ)'
+        });
+      }
     }
 
-    // RULE 5: Enforce Date Freshness (Reject stale/old slips from previous months/years)
+    // RULE 5: Date Freshness (Records warning for store owner to inspect without blocking customers)
+    let dateMismatchNote = '';
     if (slipVerification.isDateToday === false || slipVerification.status === 'DATE_MISMATCHED') {
-      return res.status(400).json({
-        success: false,
-        error: `⚠️ วันที่ในสลิป (${slipVerification.transferDate || 'ไม่ระบุ'}) ไม่ใช่วันที่ปัจจุบัน ระบบรับเฉพาะสลิปที่โอนเงินภายในวันนี้เท่านั้น เพื่อป้องกันการนำสลิปเก่ามาใช้ซ้ำ`
-      });
+      dateMismatchNote = `วันที่ในสลิป (${slipVerification.transferDate || 'ไม่ระบุ'}) ไม่ใช่วันนี้`;
+      console.log(`[Order Notice] ${dateMismatchNote} - marked for admin review.`);
     }
 
     // RULE: Enforce amount matching if amount is detected on slip
-    if (slipVerification.detectedAmount !== null && slipVerification.isAmountMatched === false) {
-      const detectedAmt = Number(slipVerification.detectedAmount).toFixed(2);
-      const targetAmt = Number(calculatedTotal).toFixed(2);
+    if (slipVerification.detectedAmount !== null) {
       const diff = Math.round((slipVerification.detectedAmount - calculatedTotal) * 100) / 100;
-      return res.status(400).json({
-        success: false,
-        error: `⚠️ ยอดเงินในสลิป (${detectedAmt} บาท) ไม่ตรงกับยอดสั่งซื้อ (${targetAmt} บาท) ${diff < 0 ? 'ขาดอีก ' + Math.abs(diff).toFixed(2) : 'เกิน ' + diff.toFixed(2)} บาท กรุณาโอนเงินให้ครบหรือแนบสลิปที่ถูกต้องครับ`
-      });
+      if (diff < -0.05 && body.forceSubmit !== 'true') {
+        const detectedAmt = Number(slipVerification.detectedAmount).toFixed(2);
+        const targetAmt = Number(calculatedTotal).toFixed(2);
+        return res.status(400).json({
+          success: false,
+          allowForceSubmit: true,
+          error: `⚠️ ยอดเงินในสลิป (${detectedAmt} บาท) น้อยกว่ายอดสั่งซื้อ (${targetAmt} บาท) ขาดอีก ${Math.abs(diff).toFixed(2)} บาท กรุณาโอนเงินให้ครบหรือยืนยันเพื่อให้ร้านตรวจสอบครับ`
+        });
+      }
     }
 
     // ==========================================
@@ -632,9 +637,9 @@ app.post('/api/orders', orderCreateRateLimit, uploadSlip.single('slip'), async (
     // Prevents automated bots from sending 10 requests at the exact same millisecond using one slip
     // ==========================================
     const { getFileHash } = require('./services/slipQrScanner');
-    const slipFileHash = slipVerification.fileHash || getFileHash(fullSlipPath);
-    const slipQrData = (slipVerification.qrData || '').trim();
-    const slipTxRef = (slipVerification.transactionRef || '').trim();
+    const slipFileHash = (slipVerification && slipVerification.fileHash) || getFileHash(fullSlipPath);
+    const slipQrData = ((slipVerification && slipVerification.qrData) || '').trim();
+    const slipTxRef = ((slipVerification && slipVerification.transactionRef) || '').trim();
 
     lockKey = slipFileHash || slipQrData || slipTxRef || slipFilename;
     if (!acquireSlipLock(lockKey)) {
@@ -652,10 +657,12 @@ app.post('/api/orders', orderCreateRateLimit, uploadSlip.single('slip'), async (
       transactionRef: slipTxRef
     });
 
-    if (dupCheck.isDuplicate) {
+    if (dupCheck.isDuplicate && body.forceSubmit !== 'true') {
       return res.status(400).json({
         success: false,
-        error: dupCheck.message || '🚨 ตรวจพบ QR Code ซ้ำในระบบ! สลิปนี้เคยถูกใช้งานสั่งซื้อไปแล้ว ไม่สามารถใช้ซ้ำได้'
+        isDuplicate: true,
+        allowForceSubmit: true,
+        error: dupCheck.message || '🚨 ตรวจพบ QR Code ซ้ำในระบบ! สลิปนี้เคยถูกใช้งานสั่งซื้อไปแล้ว'
       });
     }
 
@@ -707,6 +714,8 @@ app.post('/api/orders', orderCreateRateLimit, uploadSlip.single('slip'), async (
       qrData: slipQrData || null,
       transactionRef: slipTxRef || null,
       bankName: slipVerification?.bankName || 'ธนาคารไทย',
+      dateMismatchNote: dateMismatchNote || null,
+      forceSubmitted: body.forceSubmit === 'true',
       orderStatus: 'pending'          // เริ่มต้นเป็น "รอตรวจสอบสลิป"
     };
 

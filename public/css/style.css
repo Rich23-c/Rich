@@ -177,3 +177,15 @@ button, a, input, select, textarea, .snack-card, .clickable {
   background-color: #e2e8f0;
 }
 
+/* Ensure hidden elements are strictly hidden and do not intercept mobile touch events */
+.hidden {
+  display: none !important;
+}
+
+/* Fast responsive touch feedback and no tap delay on mobile devices */
+button, a, input, select, label {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+

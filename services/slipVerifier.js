@@ -522,12 +522,12 @@ async function verifySlip(filePath, mimeType, expectedAmount, expectedReceiver =
     };
   }
 
-  // 1. Amount Verification (Strict!)
+  // 1. Amount Verification (Paying equal or more is matched)
   let isMatched = false;
   let diff = 0;
   if (detected !== null && !isNaN(detected)) {
     diff = Math.round((detected - targetAmount) * 100) / 100;
-    isMatched = Math.abs(diff) <= 0.05;
+    isMatched = (diff >= -0.05);
   }
 
   // 2. Date Verification (Strict 24-48h freshness: today or yesterday only)
@@ -567,20 +567,20 @@ async function verifySlip(filePath, mimeType, expectedAmount, expectedReceiver =
     userMsg = `⚠️ สลิปนี้ไม่ได้โอนเข้าบัญชีของร้าน (ชื่อผู้รับในสลิป: "${detectedReceiver || 'ไม่พบบัญชีร้าน'}" ไม่ตรงกับบัญชีร้าน "${expectedReceiver}")`;
   } else if (detected !== null && !isMatched) {
     finalStatus = 'AMOUNT_MISMATCHED';
-    userMsg = `⚠️ ยอดเงินในสลิป (${detected.toFixed(2)} บาท) ไม่ตรงกับยอดสั่งซื้อ (${targetAmount.toFixed(2)} บาท) ${diff < 0 ? 'ขาดอีก ' + Math.abs(diff).toFixed(2) : 'เกิน ' + diff.toFixed(2)} บาท`;
+    userMsg = `⚠️ ยอดเงินในสลิป (${detected.toFixed(2)} บาท) น้อยกว่ายอดสั่งซื้อ (${targetAmount.toFixed(2)} บาท) ขาดอีก ${Math.abs(diff).toFixed(2)} บาท`;
   } else if (!isDateValid) {
     finalStatus = 'DATE_MISMATCHED';
-    userMsg = `⚠️ วันที่ในสลิป (${parsedDate || qrTransferDate || 'ไม่ใช่วันนี้'}) ไม่ใช่วันที่ปัจจุบัน กรุณาใช้สลิปที่โอนวันนี้เท่านั้น`;
+    userMsg = `ℹ️ วันที่ในสลิป (${parsedDate || qrTransferDate || 'ไม่ใช่วันนี้'}) ตรวจพบ Mini QR ถูกต้อง (ระบบจะส่งให้ร้านตรวจสอบก่อนทำขนม)`;
   } else if (detected !== null && isMatched && isDateValid && isReceiverValid) {
     finalStatus = 'VALID_AND_MATCHED';
-    userMsg = `✅ สลิปถูกต้อง 100%! ตรวจพบ Mini QR ธนาคาร (${finalBank}) ยอดเงินตรง ${targetAmount.toFixed(2)} บาท โอนเข้าบัญชีร้านเรียบร้อยสมบูรณ์`;
+    userMsg = `✅ สลิปถูกต้อง 100%! ตรวจพบ Mini QR ธนาคาร (${finalBank}) ยอดเงินครบถ้วน ${targetAmount.toFixed(2)} บาท โอนเข้าบัญชีร้านเรียบร้อยสมบูรณ์`;
   } else {
     // QR is valid, but AI didn't catch amount with certainty -> Needs admin review
     finalStatus = 'MANUAL_REVIEW';
     userMsg = `✓ ตรวจพบ Mini QR ธนาคาร (${finalBank}) เรียบร้อยแล้ว รอทางร้านตรวจสอบยอดเงินเพิ่มเติมครับ`;
   }
 
-  const readyToSave = (finalStatus === 'VALID_AND_MATCHED');
+  const readyToSave = (finalStatus === 'VALID_AND_MATCHED' || finalStatus === 'MANUAL_REVIEW' || finalStatus === 'DATE_MISMATCHED');
 
   return {
     isValidSlip: isSlip,
