@@ -7,6 +7,7 @@ const ORDERS_FILE = path.join(DATA_DIR, 'orders.json');
 const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
 const USED_SLIPS_FILE = path.join(DATA_DIR, 'used_slips.json');
 const VISITORS_FILE = path.join(DATA_DIR, 'visitors.json');
+const DELETED_ORDERS_FILE = path.join(DATA_DIR, 'deleted_orders.json');
 
 // Ensure data directory exists
 if (!fs.existsSync(DATA_DIR)) {
@@ -20,6 +21,7 @@ let memoryCache = {
   settings: null,
   usedSlips: null, // Permanent slip memory registry (never wiped on order reset)
   visitors: null,  // Real-time visitor logs and analytics cache
+  deletedOrders: null, // Track explicitly deleted order IDs to prevent zombie resurrection without wiping active orders
   isSupabaseActive: false,
   lastSyncTime: null,
   syncError: null
@@ -100,6 +102,9 @@ function initLocalCache() {
   if (!memoryCache.visitors) {
     memoryCache.visitors = readJson(VISITORS_FILE, []);
   }
+  if (!memoryCache.deletedOrders) {
+    memoryCache.deletedOrders = readJson(DELETED_ORDERS_FILE, []);
+  }
 }
 
 function getDefaultSettings() {
@@ -120,7 +125,8 @@ function getDefaultSettings() {
     laptopBannerContact: "โทร 080-924-9673 หรือ LINE: @snackbymaew",
     laptopBannerImage: "",
     laptopBannerLink: "",
-    geminiApiKeys: process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || ""
+    geminiApiKeys: process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || "",
+    lastOrdersClearedAt: null
   };
 }
 
@@ -236,34 +242,85 @@ async function initSupabaseSync() {
     }
 
     // 3. Sync Orders (Bi-directional merge so no local orders are ever lost on container restart)
-    const { data: ordersData, error: ordersErr } = await supabase
-      .from('orders')
-      .select('*')
-      .order('createdAt', { ascending: false });
+    let cloudOrders = [];
+    try {
+      const { data: ordersData, error: ordersErr } = await supabase
+        .from('orders')
+        .select('*')
+        .order('createdAt', { ascending: false });
 
-    if (!ordersErr) {
-      const ordersMap = new Map();
-      (ordersData || []).forEach(o => {
-        const mapped = mapSupabaseOrder(o);
-        ordersMap.set(mapped.id, mapped);
-      });
+      if (!ordersErr && Array.isArray(ordersData)) {
+        cloudOrders = ordersData.map(mapSupabaseOrder);
+      }
+    } catch (e) {}
 
-      const missingInCloud = [];
-      (memoryCache.orders || []).forEach(localOrder => {
+    // Check secondary backup vault in Supabase settings table (id: 'orders_vault')
+    try {
+      const { data: vaultRow } = await supabase
+        .from('settings')
+        .select('*')
+        .eq('id', 'orders_vault')
+        .single();
+
+      if (vaultRow && Array.isArray(vaultRow.data)) {
+        const vaultMap = new Map();
+        vaultRow.data.forEach(o => {
+          if (o && o.id) vaultMap.set(o.id, mapSupabaseOrder(o));
+        });
+        cloudOrders.forEach(o => vaultMap.set(o.id, o));
+        cloudOrders = Array.from(vaultMap.values());
+      }
+    } catch (e) {}
+
+    // Sync deleted orders registry to prevent deleted orders from resurrecting
+    try {
+      const { data: delRow } = await supabase
+        .from('settings')
+        .select('*')
+        .eq('id', 'deleted_orders_registry')
+        .single();
+
+      if (delRow && Array.isArray(delRow.data)) {
+        const delSet = new Set(memoryCache.deletedOrders || []);
+        delRow.data.forEach(id => delSet.add(id));
+        memoryCache.deletedOrders = Array.from(delSet);
+        writeJson(DELETED_ORDERS_FILE, memoryCache.deletedOrders);
+      }
+    } catch (e) {}
+
+    const clearedAtTime = memoryCache.settings?.lastOrdersClearedAt
+      ? new Date(memoryCache.settings.lastOrdersClearedAt).getTime()
+      : 0;
+    const deletedSet = new Set(memoryCache.deletedOrders || []);
+
+    const ordersMap = new Map();
+    cloudOrders.forEach(o => {
+      const orderTime = o.createdAt ? new Date(o.createdAt).getTime() : 0;
+      if (!deletedSet.has(o.id) && orderTime > clearedAtTime) {
+        ordersMap.set(o.id, o);
+      }
+    });
+
+    const missingInCloud = [];
+    (memoryCache.orders || []).forEach(localOrder => {
+      const orderTime = localOrder.createdAt ? new Date(localOrder.createdAt).getTime() : 0;
+      if (!deletedSet.has(localOrder.id) && orderTime > clearedAtTime) {
         if (!ordersMap.has(localOrder.id)) {
           ordersMap.set(localOrder.id, localOrder);
           missingInCloud.push(localOrder);
         }
-      });
+      }
+    });
 
-      memoryCache.orders = Array.from(ordersMap.values()).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-      writeJson(ORDERS_FILE, memoryCache.orders);
+    memoryCache.orders = Array.from(ordersMap.values()).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    writeJson(ORDERS_FILE, memoryCache.orders);
 
-      if (missingInCloud.length > 0) {
-        console.log(`☁️ [Cloud Database] Seeding ${missingInCloud.length} local order(s) up to Supabase cloud...`);
-        for (const order of missingInCloud) {
-          await upsertOrderToSupabase(order);
-        }
+    syncOrdersVaultToSupabase().catch(() => {});
+
+    if (missingInCloud.length > 0) {
+      console.log(`☁️ [Cloud Database] Seeding ${missingInCloud.length} local order(s) up to Supabase cloud...`);
+      for (const order of missingInCloud) {
+        await upsertOrderToSupabase(order);
       }
     }
 
@@ -340,32 +397,84 @@ async function initSupabaseSync() {
   }
 }
 
+// Sync lightweight orders vault into settings table (Universal JSONB backup that never fails schema checks)
+async function syncOrdersVaultToSupabase() {
+  if (!supabase) return;
+  try {
+    initLocalCache();
+    const vaultOrders = (memoryCache.orders || []).map(o => {
+      let slipV = null;
+      if (o.slipVerification && typeof o.slipVerification === 'object') {
+        const { slipBase64, ...restV } = o.slipVerification;
+        slipV = restV;
+      }
+      return {
+        ...o,
+        slipBase64: null, // Keep local/disk only, keep cloud vault lightweight
+        slipVerification: slipV
+      };
+    });
+
+    await supabase.from('settings').upsert({
+      id: 'orders_vault',
+      data: vaultOrders,
+      updatedAt: new Date().toISOString()
+    });
+  } catch (e) {
+    // Non-fatal
+  }
+}
+
 function mapSupabaseOrder(o) {
-  const v = o.slipVerification || {};
+  if (!o || typeof o !== 'object') return null;
+  const v = o.slipVerification || o.slipverification || {};
   return {
-    ...o,
-    deviceId: o.deviceId || v.deviceId || null,
-    deviceModel: o.deviceModel || v.deviceModel || (v.deviceInfo && v.deviceInfo.summary) || 'ไม่ระบุรุ่น',
-    deviceInfo: o.deviceInfo || v.deviceInfo || null,
-    qrData: o.qrData || v.qrData || v.rawQrData || null,
-    transactionRef: o.transactionRef || v.transactionRef || null,
-    bankName: o.bankName || v.bankName || null
+    id: o.id,
+    customerName: o.customerName || o.customername || 'ไม่ระบุชื่อ',
+    customerPhone: o.customerPhone || o.customerphone || '',
+    customerEmail: o.customerEmail || o.customeremail || '',
+    customerAddress: o.customerAddress || o.customeraddress || '',
+    customerNote: o.customerNote || o.customernote || '',
+    items: Array.isArray(o.items) ? o.items : [],
+    totalPrice: Number(o.totalPrice !== undefined ? o.totalPrice : (o.totalprice || 0)),
+    totalCost: Number(o.totalCost !== undefined ? o.totalCost : (o.totalcost || 0)),
+    totalProfit: Number(o.totalProfit !== undefined ? o.totalProfit : (o.totalprofit || 0)),
+    profitMargin: Number(o.profitMargin !== undefined ? o.profitMargin : (o.profitmargin || 0)),
+    slipImage: o.slipImage || o.slipimage || null,
+    slipBase64: o.slipBase64 || o.slipbase64 || (v && v.slipBase64) || null,
+    slipVerification: v,
+    orderStatus: o.orderStatus || o.orderstatus || 'pending',
+    adminNotes: o.adminNotes || o.adminnotes || '',
+    createdAt: o.createdAt || o.createdat || new Date().toISOString(),
+    updatedAt: o.updatedAt || o.updatedat || null,
+    deviceId: o.deviceId || o.deviceid || v.deviceId || null,
+    deviceModel: o.deviceModel || o.devicemodel || v.deviceModel || (v.deviceInfo && v.deviceInfo.summary) || 'ไม่ระบุรุ่น',
+    deviceInfo: o.deviceInfo || o.deviceinfo || v.deviceInfo || null,
+    qrData: o.qrData || o.qrdata || v.qrData || v.rawQrData || null,
+    transactionRef: o.transactionRef || o.transactionref || v.transactionRef || null,
+    bankName: o.bankName || o.bankname || v.bankName || null
   };
 }
 
 async function upsertOrderToSupabase(order) {
-  if (!supabase) return;
+  if (!supabase || !order) return;
   try {
-    // 1. Ensure all device and metadata fields are safely retained in slipVerification JSONB
-    const slipV = (order.slipVerification && typeof order.slipVerification === 'object') ? { ...order.slipVerification } : {};
-    slipV.deviceId = order.deviceId || slipV.deviceId || null;
-    slipV.deviceModel = order.deviceModel || slipV.deviceModel || 'ไม่ระบุรุ่น';
-    slipV.deviceInfo = order.deviceInfo || slipV.deviceInfo || null;
-    slipV.qrData = order.qrData || slipV.qrData || null;
-    slipV.transactionRef = order.transactionRef || slipV.transactionRef || null;
-    slipV.bankName = order.bankName || slipV.bankName || null;
+    // 1. Strip massive base64 image strings from slipVerification to prevent HTTP 413 (Payload Too Large)
+    let slipVClean = null;
+    if (order.slipVerification && typeof order.slipVerification === 'object') {
+      const { slipBase64, ...restV } = order.slipVerification;
+      slipVClean = {
+        ...restV,
+        deviceId: order.deviceId || restV.deviceId || null,
+        deviceModel: order.deviceModel || restV.deviceModel || (restV.deviceInfo && restV.deviceInfo.summary) || 'ไม่ระบุรุ่น',
+        deviceInfo: order.deviceInfo || restV.deviceInfo || null,
+        qrData: order.qrData || restV.qrData || null,
+        transactionRef: order.transactionRef || restV.transactionRef || null,
+        bankName: order.bankName || restV.bankName || null
+      };
+    }
 
-    // Standard columns that match the base PostgreSQL orders table
+    // Standard camelCase payload matching base schema
     const standardPayload = {
       id: order.id,
       customerName: order.customerName,
@@ -379,13 +488,13 @@ async function upsertOrderToSupabase(order) {
       totalProfit: Number(order.totalProfit) || 0,
       profitMargin: Number(order.profitMargin) || 0,
       slipImage: order.slipImage || null,
-      slipVerification: slipV,
+      slipVerification: slipVClean,
       orderStatus: order.orderStatus || 'pending',
       adminNotes: order.adminNotes || '',
       createdAt: order.createdAt || new Date().toISOString()
     };
 
-    // Attempt full payload first (in case table has been updated with extra columns)
+    // Full payload with extra device/slip columns
     const fullPayload = {
       ...standardPayload,
       deviceId: order.deviceId || null,
@@ -394,20 +503,43 @@ async function upsertOrderToSupabase(order) {
       bankName: order.bankName || null
     };
 
-    const { error } = await supabase.from('orders').upsert([fullPayload]);
-    if (error) {
-      // If error (e.g. column "deviceId" doesn't exist), retry with standardPayload
-      const { error: fallbackErr } = await supabase.from('orders').upsert([standardPayload]);
-      if (fallbackErr) {
-        console.error('[Cloud Database] Order upsert failed:', fallbackErr.message);
-      } else {
-        console.log(`✅ [Cloud Database] Order ${order.id} persisted to Supabase (standard schema)`);
-      }
-    } else {
-      console.log(`✅ [Cloud Database] Order ${order.id} persisted to Supabase (full schema)`);
+    // Attempt 1: Full payload
+    let res = await supabase.from('orders').upsert([fullPayload]);
+    if (res.error) {
+      // Attempt 2: Standard payload
+      res = await supabase.from('orders').upsert([standardPayload]);
     }
+
+    if (res.error) {
+      // Attempt 3: Lowercase column names for unquoted PostgreSQL tables
+      const lowercasePayload = {
+        id: order.id,
+        customername: order.customerName,
+        customerphone: order.customerPhone || '',
+        items: order.items || [],
+        totalprice: Number(order.totalPrice) || 0,
+        totalcost: Number(order.totalCost) || 0,
+        totalprofit: Number(order.totalProfit) || 0,
+        slipimage: order.slipImage || null,
+        slipverification: slipVClean,
+        orderstatus: order.orderStatus || 'pending',
+        adminnotes: order.adminNotes || '',
+        createdat: order.createdAt || new Date().toISOString()
+      };
+      res = await supabase.from('orders').upsert([lowercasePayload]);
+    }
+
+    if (res.error) {
+      console.warn('[Cloud Database] Relational orders upsert notice:', res.error.message);
+    } else {
+      console.log(`✅ [Cloud Database] Order ${order.id} persisted to Supabase orders table`);
+    }
+
+    // Always ensure order is backed up into orders_vault
+    await syncOrdersVaultToSupabase();
   } catch (err) {
     console.warn('[Cloud Database] Exception during order upsert:', err.message);
+    syncOrdersVaultToSupabase().catch(() => {});
   }
 }
 
@@ -419,12 +551,13 @@ async function syncOrderStatusToSupabase(id, status, adminNotes) {
 
     const { error } = await supabase.from('orders').update({ ...payload, updatedAt: new Date().toISOString() }).eq('id', id);
     if (error) {
-      // Retry without updatedAt in case column doesn't exist in Supabase table
       const { error: err2 } = await supabase.from('orders').update(payload).eq('id', id);
       if (err2) {
-        console.error('[Cloud Database] Update order status failed:', err2.message);
+        // Fallback for lowercase column names
+        await supabase.from('orders').update({ orderstatus: status, adminnotes: adminNotes || '' }).eq('id', id);
       }
     }
+    await syncOrdersVaultToSupabase();
   } catch (err) {
     console.warn('[Cloud Database] Exception during order status update:', err.message);
   }
@@ -433,20 +566,70 @@ async function syncOrderStatusToSupabase(id, status, adminNotes) {
 async function backgroundSyncFromSupabase() {
   if (!supabase || !memoryCache.isSupabaseActive) return;
   try {
-    const { data: ordersData } = await supabase
-      .from('orders')
-      .select('*')
-      .order('createdAt', { ascending: false });
+    let cloudOrders = [];
+    try {
+      const { data: ordersData, error: ordersErr } = await supabase
+        .from('orders')
+        .select('*')
+        .order('createdAt', { ascending: false });
 
-    if (ordersData && Array.isArray(ordersData)) {
-      const ordersMap = new Map();
-      ordersData.forEach(o => {
-        const mapped = mapSupabaseOrder(o);
-        ordersMap.set(mapped.id, mapped);
-      });
-      // Supabase is the source of truth for cloud mode - do not resurrect deleted orders
-      memoryCache.orders = Array.from(ordersMap.values()).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-      writeJson(ORDERS_FILE, memoryCache.orders);
+      if (!ordersErr && Array.isArray(ordersData)) {
+        cloudOrders = ordersData.map(mapSupabaseOrder).filter(Boolean);
+      }
+    } catch (e) {}
+
+    // Fallback to vault if cloudOrders is empty
+    if (cloudOrders.length === 0) {
+      try {
+        const { data: vaultRow } = await supabase
+          .from('settings')
+          .select('*')
+          .eq('id', 'orders_vault')
+          .single();
+        if (vaultRow && Array.isArray(vaultRow.data) && vaultRow.data.length > 0) {
+          cloudOrders = vaultRow.data.map(mapSupabaseOrder).filter(Boolean);
+        }
+      } catch (e) {}
+    }
+
+    const clearedAtTime = memoryCache.settings?.lastOrdersClearedAt
+      ? new Date(memoryCache.settings.lastOrdersClearedAt).getTime()
+      : 0;
+    const deletedSet = new Set(memoryCache.deletedOrders || []);
+
+    const ordersMap = new Map();
+    // 1. Process valid cloud orders
+    cloudOrders.forEach(o => {
+      const orderTime = o.createdAt ? new Date(o.createdAt).getTime() : 0;
+      if (!deletedSet.has(o.id) && orderTime > clearedAtTime) {
+        ordersMap.set(o.id, o);
+      }
+    });
+
+    // 2. CRITICAL SAFEGUARD: PRESERVE ANY LOCAL ORDERS NOT YET IN CLOUD!
+    // Never, under any circumstances, wipe out local orders that are valid and not deleted!
+    const unsyncedOrders = [];
+    (memoryCache.orders || []).forEach(localOrder => {
+      const orderTime = localOrder.createdAt ? new Date(localOrder.createdAt).getTime() : 0;
+      if (!deletedSet.has(localOrder.id) && orderTime > clearedAtTime) {
+        if (!ordersMap.has(localOrder.id)) {
+          ordersMap.set(localOrder.id, localOrder);
+          unsyncedOrders.push(localOrder);
+        }
+      }
+    });
+
+    memoryCache.orders = Array.from(ordersMap.values()).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    writeJson(ORDERS_FILE, memoryCache.orders);
+
+    // Keep vault in sync
+    syncOrdersVaultToSupabase().catch(() => {});
+
+    // Re-attempt sync for any unsynced local orders
+    if (unsyncedOrders.length > 0) {
+      for (const order of unsyncedOrders) {
+        upsertOrderToSupabase(order).catch(() => {});
+      }
     }
 
     const { data: snacksData } = await supabase
@@ -690,6 +873,7 @@ function createOrder(orderData) {
 
   if (supabase) {
     upsertOrderToSupabase(newOrder);
+    syncOrdersVaultToSupabase().catch(() => {});
   }
 
   return newOrder;
@@ -814,17 +998,29 @@ function resetOrders() {
 async function resetOrdersAsync() {
   initLocalCache();
 
-  // 1. Clear orders data (Order history, customer names, phones, notes, items ordered)
+  // 1. Record clear timestamp in settings so no older orders resurrect from sync
+  const clearedAt = new Date().toISOString();
+  if (!memoryCache.settings) memoryCache.settings = getDefaultSettings();
+  memoryCache.settings.lastOrdersClearedAt = clearedAt;
+  writeJson(SETTINGS_FILE, memoryCache.settings);
+
+  // 2. Clear orders data (Order history, customer names, phones, notes, items ordered)
   memoryCache.orders = [];
   writeJson(ORDERS_FILE, []);
 
-  // 2. Clear used slips registry so store owner can test orders after reset
+  // 3. Clear used slips registry so store owner can test orders after reset
   memoryCache.usedSlips = [];
   writeJson(USED_SLIPS_FILE, []);
 
-  // 3. Delete from Supabase cloud database if connected
+  // 4. Delete from Supabase cloud database if connected
   if (supabase) {
     try {
+      await supabase.from('settings').upsert([
+        { id: 'current', data: memoryCache.settings, updatedAt: clearedAt },
+        { id: 'orders_vault', data: [], updatedAt: clearedAt },
+        { id: 'used_slips_registry', data: [], updatedAt: clearedAt }
+      ]);
+
       // not.is.null is universally compatible with UUID, string, and integer ID columns in PostgreSQL
       const { error: delErr } = await supabase
         .from('orders')
@@ -838,14 +1034,12 @@ async function resetOrdersAsync() {
       } else {
         console.log('✅ [Cloud Database] Orders table completely cleared in Supabase');
       }
-
-      await supabase.from('settings').upsert({ id: 'used_slips_registry', data: [], updatedAt: new Date().toISOString() });
     } catch (e) {
       console.error('[Supabase Exception] Reset orders:', e.message);
     }
   }
 
-  // 4. Clear physical slip image files from disk to reclaim disk storage
+  // 5. Clear physical slip image files from disk to reclaim disk storage
   const slipsDir = path.join(__dirname, '..', 'uploads', 'slips');
   if (fs.existsSync(slipsDir)) {
     try {
@@ -869,14 +1063,27 @@ function deleteOrder(orderId) {
 
 async function deleteOrderAsync(orderId) {
   initLocalCache();
-  if (!Array.isArray(memoryCache.orders)) return false;
-  const idx = memoryCache.orders.findIndex(o => o.id === orderId);
-  if (idx !== -1) {
-    memoryCache.orders.splice(idx, 1);
-    writeJson(ORDERS_FILE, memoryCache.orders);
+  if (!orderId) return false;
+
+  // 1. Record in deletedOrders registry to prevent zombie resurrection without wiping valid orders
+  if (!Array.isArray(memoryCache.deletedOrders)) {
+    memoryCache.deletedOrders = [];
+  }
+  if (!memoryCache.deletedOrders.includes(orderId)) {
+    memoryCache.deletedOrders.push(orderId);
+    writeJson(DELETED_ORDERS_FILE, memoryCache.deletedOrders);
   }
 
-  // Remove slip from usedSlips registry so that slip can be reused if the order was deleted
+  // 2. Remove from local memory and file
+  if (Array.isArray(memoryCache.orders)) {
+    const idx = memoryCache.orders.findIndex(o => o.id === orderId);
+    if (idx !== -1) {
+      memoryCache.orders.splice(idx, 1);
+      writeJson(ORDERS_FILE, memoryCache.orders);
+    }
+  }
+
+  // 3. Remove slip from usedSlips registry so that slip can be reused if the order was deleted
   if (Array.isArray(memoryCache.usedSlips)) {
     const beforeLen = memoryCache.usedSlips.length;
     memoryCache.usedSlips = memoryCache.usedSlips.filter(s => s.orderId !== orderId);
@@ -894,6 +1101,12 @@ async function deleteOrderAsync(orderId) {
   if (supabase) {
     try {
       await supabase.from('orders').delete().eq('id', orderId);
+      await syncOrdersVaultToSupabase();
+      await supabase.from('settings').upsert({
+        id: 'deleted_orders_registry',
+        data: memoryCache.deletedOrders,
+        updatedAt: new Date().toISOString()
+      });
     } catch (e) {
       console.error(`[Supabase Exception] Delete single order ${orderId}:`, e.message);
     }
