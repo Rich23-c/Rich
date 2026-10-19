@@ -210,6 +210,29 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (window.lucide) lucide.createIcons();
   trackVisitorPresence();
 
+  // Handle URL query parameters to purge device order history (e.g. ?clear=1, ?clear_history=1, ?reset=1)
+  try {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.has('clear_history') || urlParams.has('clear') || urlParams.has('reset')) {
+      clearDeviceOrderHistory(true);
+      const cleanUrl = window.location.pathname + (window.location.hash || '');
+      window.history.replaceState({}, document.title, cleanUrl);
+      setTimeout(() => {
+        if (window.Swal) {
+          Swal.fire({
+            icon: 'success',
+            title: 'ลบประวัติการสั่งซื้อเรียบร้อยแล้ว 🗑️',
+            text: 'ล้างข้อมูลและประวัติการสั่งซื้อบนอุปกรณ์นี้ทั้งหมดแล้วครับ',
+            timer: 2000,
+            showConfirmButton: false
+          });
+        }
+      }, 400);
+    }
+  } catch (e) {
+    console.error('URL parameter reset error:', e);
+  }
+
   // One-time self-healing cleanup for iPad/tablets that never placed an order
   if (isIPadOrTablet() && !localStorage.getItem(LOCAL_STORAGE_SUBMITTED_KEY)) {
     localStorage.removeItem('snack_maew_customer_name');
@@ -2078,6 +2101,15 @@ async function loadOrderHistory(searchQuery = '') {
 
   try {
     const localIds = getLocalOrderIds();
+    const hasSubmitted = localStorage.getItem(LOCAL_STORAGE_SUBMITTED_KEY);
+
+    // If no search query and no orders recorded on this device, immediately render empty state
+    if (!searchQuery && localIds.length === 0 && !hasSubmitted) {
+      renderEmptyOrderHistory('ยังไม่มีประวัติการสั่งซื้อบนอุปกรณ์นี้');
+      if (countText) countText.innerText = 'มีทั้งหมด 0 รายการ';
+      return;
+    }
+
     const deviceId = getDeviceId();
     const savedPhone = localStorage.getItem('snack_maew_customer_phone');
 
@@ -2139,31 +2171,94 @@ function renderEmptyOrderHistory(customMsg = null) {
 }
 
 // Clear order history stored on this device
-function clearDeviceOrderHistory() {
+function clearDeviceOrderHistory(silent = false) {
   localStorage.removeItem(LOCAL_STORAGE_ORDERS_KEY);
   localStorage.removeItem(LOCAL_STORAGE_SUBMITTED_KEY);
   localStorage.removeItem('snack_maew_customer_name');
   localStorage.removeItem('snack_maew_customer_phone');
   localStorage.removeItem('snack_maew_device_id');
+  sessionStorage.clear();
   document.cookie = 'snack_maew_device_id=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+  
+  latestActiveDeviceOrder = null;
   updateHistoryBadge();
+
   const banner = document.getElementById('deviceActiveOrdersBanner');
   if (banner) banner.classList.add('hidden');
+
   const nameInput = document.getElementById('customerName');
   const phoneInput = document.getElementById('customerPhone');
   if (nameInput) nameInput.value = '';
   if (phoneInput) phoneInput.value = '';
+
+  const searchInput = document.getElementById('historySearchInput');
+  if (searchInput) searchInput.value = '';
+
   renderEmptyOrderHistory('ล้างข้อมูลบนอุปกรณ์นี้เรียบร้อยแล้ว');
   const countText = document.getElementById('orderHistoryCountText');
   if (countText) countText.innerText = 'มีทั้งหมด 0 รายการ';
 
-  if (window.Swal) {
+  if (!silent && window.Swal) {
     Swal.fire({
       icon: 'success',
-      title: 'ล้างข้อมูลบนเครื่องนี้เรียบร้อยแล้ว 🗑️',
-      timer: 1400,
+      title: 'ลบประวัติการสั่งซื้อเรียบร้อยแล้ว 🗑️',
+      text: 'ล้างข้อมูลและประวัติบนอุปกรณ์นี้ทั้งหมดแล้วครับ',
+      timer: 1600,
       showConfirmButton: false
     });
+  }
+}
+
+// Confirmation modal before clearing device history
+async function confirmClearDeviceOrderHistory() {
+  const ask = await Swal.fire({
+    icon: 'warning',
+    title: 'ลบประวัติการสั่งซื้อ?',
+    text: 'คุณต้องการล้างประวัติคำสั่งซื้อทั้งหมดที่บันทึกไว้บนอุปกรณ์นี้ใช่หรือไม่?',
+    showCancelButton: true,
+    confirmButtonText: '🗑️ ยืนยันลบประวัติ',
+    cancelButtonText: 'ยกเลิก',
+    confirmButtonColor: '#ef4444',
+    cancelButtonColor: '#78716c'
+  });
+
+  if (ask.isConfirmed) {
+    clearDeviceOrderHistory();
+  }
+}
+
+// Remove single order from device history
+function removeSingleOrderFromHistory(orderId) {
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_ORDERS_KEY);
+    let ids = raw ? JSON.parse(raw) : [];
+    ids = ids.filter(id => id !== orderId);
+    if (ids.length > 0) {
+      localStorage.setItem(LOCAL_STORAGE_ORDERS_KEY, JSON.stringify(ids));
+    } else {
+      localStorage.removeItem(LOCAL_STORAGE_ORDERS_KEY);
+      localStorage.removeItem(LOCAL_STORAGE_SUBMITTED_KEY);
+    }
+
+    if (latestActiveDeviceOrder && latestActiveDeviceOrder.id === orderId) {
+      latestActiveDeviceOrder = null;
+      const banner = document.getElementById('deviceActiveOrdersBanner');
+      if (banner) banner.classList.add('hidden');
+    }
+
+    updateHistoryBadge();
+    loadOrderHistory();
+    syncDeviceOrdersFromCloud();
+
+    Swal.fire({
+      icon: 'success',
+      title: 'ลบรายการนี้แล้ว',
+      text: `ลบออเดอร์ ${orderId} ออกจากประวัติบนเครื่องนี้เรียบร้อยครับ`,
+      timer: 1500,
+      showConfirmButton: false
+    });
+  } catch (e) {
+    console.error('Error removing single order:', e);
   }
 }
 
@@ -2227,8 +2322,17 @@ function renderOrderHistoryList(orders) {
         </p>
       </div>
 
-      <!-- Action Button -->
-      <div class="pt-1 flex justify-end">
+      <!-- Action Buttons -->
+      <div class="pt-1 flex items-center justify-end gap-2">
+        <button
+          type="button"
+          onclick="removeSingleOrderFromHistory('${order.id}')"
+          class="bg-white hover:bg-red-50 text-stone-500 hover:text-red-600 px-2.5 py-1.5 rounded-lg text-xs font-medium transition border border-stone-200 hover:border-red-200 flex items-center gap-1 cursor-pointer"
+          title="ลบรายการนี้ออกจากประวัติบนเครื่องนี้"
+        >
+          <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+          <span>ลบ</span>
+        </button>
         <button
           type="button"
           onclick="viewOrderDetailFromHistory('${order.id}')"

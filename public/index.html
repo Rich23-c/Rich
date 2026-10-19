@@ -180,14 +180,25 @@
             </p>
           </div>
         </div>
-        <button
-          type="button"
-          onclick="openActiveOrderFromBanner()"
-          class="bg-stone-900 hover:bg-stone-800 text-white font-medium text-xs px-3.5 py-2 rounded-xl transition shadow-2xs flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer self-start sm:self-auto shrink-0"
-        >
-          <i data-lucide="eye" class="w-3.5 h-3.5 text-stone-300"></i>
-          <span>ดูสถานะออเดอร์</span>
-        </button>
+        <div class="flex items-center gap-2 self-start sm:self-auto shrink-0">
+          <button
+            type="button"
+            onclick="openActiveOrderFromBanner()"
+            class="bg-stone-900 hover:bg-stone-800 text-white font-medium text-xs px-3.5 py-2 rounded-xl transition shadow-2xs flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer"
+          >
+            <i data-lucide="eye" class="w-3.5 h-3.5 text-stone-300"></i>
+            <span>ดูสถานะ</span>
+          </button>
+          <button
+            type="button"
+            onclick="confirmClearDeviceOrderHistory()"
+            class="bg-stone-100 hover:bg-red-50 text-stone-600 hover:text-red-600 font-medium text-xs px-3 py-2 rounded-xl transition border border-stone-200 hover:border-red-200 flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer"
+            title="ล้างประวัติออเดอร์นี้บนเครื่องนี้"
+          >
+            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+            <span>ลบประวัติ</span>
+          </button>
+        </div>
       </div>
     </div>
 
@@ -823,22 +834,24 @@
       </div>
 
       <!-- Modal Footer -->
-      <div class="pt-3 border-t border-stone-100 flex items-center justify-between text-xs text-stone-500 shrink-0">
-        <div class="flex items-center gap-3">
-          <span id="orderHistoryCountText">มีทั้งหมด 0 รายการ</span>
+      <div class="pt-3 border-t border-stone-100 flex flex-wrap items-center justify-between gap-2 text-xs text-stone-500 shrink-0">
+        <div class="flex items-center gap-2.5">
+          <span id="orderHistoryCountText" class="font-medium text-stone-700">มีทั้งหมด 0 รายการ</span>
           <button
             type="button"
-            onclick="clearDeviceOrderHistory()"
-            class="text-[11px] text-stone-400 hover:text-stone-700 underline transition cursor-pointer"
-            title="ล้างประวัติคำสั่งซื้อที่จำไว้บนเครื่องนี้"
+            id="clearHistoryModalBtn"
+            onclick="confirmClearDeviceOrderHistory()"
+            class="text-xs text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 px-2.5 py-1.5 rounded-lg border border-red-200 transition inline-flex items-center gap-1 cursor-pointer font-medium"
+            title="ลบประวัติการสั่งซื้อทั้งหมดที่บันทึกไว้บนอุปกรณ์นี้"
           >
-            ล้างประวัติบนเครื่องนี้
+            <i data-lucide="trash-2" class="w-3.5 h-3.5 text-red-500"></i>
+            <span>ลบประวัติทั้งหมด</span>
           </button>
         </div>
         <button
           type="button"
           onclick="closeOrderHistoryModal()"
-          class="px-3.5 py-1.5 bg-stone-100 hover:bg-stone-200 text-stone-700 font-medium rounded-lg transition cursor-pointer"
+          class="px-4 py-1.5 bg-stone-100 hover:bg-stone-200 text-stone-700 font-medium rounded-lg transition cursor-pointer"
         >
           ปิด
         </button>
