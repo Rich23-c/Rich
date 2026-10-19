@@ -1724,14 +1724,16 @@ let latestActiveDeviceOrder = null;
 
 // Synchronize device orders from cloud (Mobile memory across browser close)
 async function syncDeviceOrdersFromCloud() {
+  const banner = document.getElementById('deviceActiveOrdersBanner');
+  if (!banner) return;
+
   try {
     const localIds = getLocalOrderIds();
     const hasSubmitted = localStorage.getItem(LOCAL_STORAGE_SUBMITTED_KEY);
 
     // If device has no local IDs and never submitted an order on this device, it is a completely clean device
     if (localIds.length === 0 && !hasSubmitted) {
-      const banner = document.getElementById('deviceActiveOrdersBanner');
-      if (banner) banner.classList.add('hidden');
+      banner.classList.add('hidden');
       latestActiveDeviceOrder = null;
       return;
     }
@@ -2079,18 +2081,23 @@ function closeReceiptModal() {
 
 // Open Order History Modal
 function openOrderHistoryModal() {
-  document.getElementById('orderHistoryModal').classList.remove('hidden');
-  loadOrderHistory();
-  if (window.lucide) lucide.createIcons();
+  const modal = document.getElementById('orderHistoryModal');
+  if (modal) {
+    modal.classList.remove('hidden');
+    loadOrderHistory();
+    if (window.lucide) lucide.createIcons();
+  }
 }
 
 function closeOrderHistoryModal() {
-  document.getElementById('orderHistoryModal').classList.add('hidden');
+  const modal = document.getElementById('orderHistoryModal');
+  if (modal) modal.classList.add('hidden');
 }
 
 // Load customer order history
 async function loadOrderHistory(searchQuery = '') {
   const container = document.getElementById('orderHistoryList');
+  if (!container) return;
   const countText = document.getElementById('orderHistoryCountText');
   container.innerHTML = `
     <div class="py-12 text-center text-stone-400 space-y-2">

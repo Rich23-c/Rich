@@ -97,19 +97,6 @@
       </div>
 
       <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
-        <!-- Order History Button -->
-        <button
-          type="button"
-          onclick="openOrderHistoryModal()"
-          class="flex items-center gap-1.5 bg-white hover:bg-stone-50 text-stone-700 px-3 py-2 rounded-xl text-xs sm:text-sm font-medium transition border border-stone-200 cursor-pointer shadow-2xs active:scale-95"
-          title="ดูประวัติการสั่งซื้อและติดตามสถานะ"
-        >
-          <i data-lucide="clock" class="w-3.5 h-3.5 text-stone-500"></i>
-          <span class="hidden sm:inline">ประวัติสั่งซื้อ</span>
-          <span class="sm:hidden text-xs">ประวัติ</span>
-          <span id="headerHistoryCountBadge" class="hidden bg-stone-900 text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold">0</span>
-        </button>
-
         <!-- Floating Cart Trigger -->
         <a href="#summarySection" class="relative flex items-center gap-1.5 bg-stone-900 hover:bg-stone-800 text-white px-3 sm:px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium transition shadow-2xs active:scale-95">
           <i data-lucide="shopping-bag" class="w-3.5 h-3.5 text-stone-300"></i>
@@ -157,48 +144,7 @@
         </p>
       </div>
       <div class="text-[11px] text-stone-400 pt-1">
-        💡 คุณยังสามารถดูรายการขนมและตรวจดูประวัติการสั่งซื้อได้ตามปกติ
-      </div>
-    </div>
-
-    <!-- Active Orders Banner (Auto-recalled from Cloud for this mobile phone) -->
-    <div id="deviceActiveOrdersBanner" class="hidden bg-white border border-stone-200 rounded-2xl p-4 sm:p-5 shadow-xs space-y-2">
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-xl bg-stone-100 text-stone-800 flex items-center justify-center text-lg shrink-0 border border-stone-200">
-            🐾
-          </div>
-          <div>
-            <div class="flex items-center gap-2 flex-wrap">
-              <span class="font-medium text-stone-900 text-sm">คุณมีออเดอร์ในระบบค้างอยู่</span>
-              <span id="activeOrderBadgeStatus" class="bg-stone-100 text-stone-700 text-[10px] sm:text-xs font-medium px-2 py-0.5 rounded-full border border-stone-200">
-                🍰 เตรียมขนมเสร็จแล้ว
-              </span>
-            </div>
-            <p class="text-xs text-stone-500 mt-0.5">
-              ออเดอร์ล่าสุดของคุณ: <span id="activeOrderIdText" class="font-mono font-medium text-stone-800">-</span>
-            </p>
-          </div>
-        </div>
-        <div class="flex items-center gap-2 self-start sm:self-auto shrink-0">
-          <button
-            type="button"
-            onclick="openActiveOrderFromBanner()"
-            class="bg-stone-900 hover:bg-stone-800 text-white font-medium text-xs px-3.5 py-2 rounded-xl transition shadow-2xs flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer"
-          >
-            <i data-lucide="eye" class="w-3.5 h-3.5 text-stone-300"></i>
-            <span>ดูสถานะ</span>
-          </button>
-          <button
-            type="button"
-            onclick="confirmClearDeviceOrderHistory()"
-            class="bg-stone-100 hover:bg-red-50 text-stone-600 hover:text-red-600 font-medium text-xs px-3 py-2 rounded-xl transition border border-stone-200 hover:border-red-200 flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer"
-            title="ล้างประวัติออเดอร์นี้บนเครื่องนี้"
-          >
-            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
-            <span>ลบประวัติ</span>
-          </button>
-        </div>
+        💡 คุณยังสามารถดูรายการขนมของร้านได้ตามปกติ
       </div>
     </div>
 
@@ -734,16 +680,8 @@
       <div class="flex flex-col sm:flex-row gap-2.5">
         <button
           type="button"
-          onclick="openOrderHistoryModal(); closeReceiptModal();"
-          class="flex-1 bg-stone-100 hover:bg-stone-200 text-stone-800 py-2.5 rounded-xl font-medium text-xs sm:text-sm transition flex items-center justify-center gap-1.5 cursor-pointer"
-        >
-          <i data-lucide="clock" class="w-3.5 h-3.5"></i>
-          <span>ดูประวัติทั้งหมด</span>
-        </button>
-        <button
-          type="button"
           onclick="downloadOrderSlipOrReceipt()"
-          class="bg-white hover:bg-stone-50 text-stone-700 py-2.5 px-3 rounded-xl font-medium text-xs sm:text-sm transition border border-stone-200 flex items-center justify-center gap-1.5 cursor-pointer"
+          class="flex-1 bg-white hover:bg-stone-50 text-stone-700 py-2.5 px-3 rounded-xl font-medium text-xs sm:text-sm transition border border-stone-200 flex items-center justify-center gap-1.5 cursor-pointer"
           title="ดาวน์โหลดรูปสลิปหรือใบเสร็จออเดอร์นี้"
         >
           <i data-lucide="download" class="w-3.5 h-3.5"></i>
@@ -768,97 +706,6 @@
     </div>
   </div>
 
-  <!-- Order History & Status Modal -->
-  <div id="orderHistoryModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 hidden flex items-center justify-center p-3 sm:p-4">
-    <div class="bg-white rounded-2xl max-w-2xl w-full p-5 sm:p-7 space-y-4 shadow-xl max-h-[92vh] flex flex-col border border-stone-200">
-      <!-- Modal Header -->
-      <div class="flex items-center justify-between border-b border-stone-100 pb-3.5 shrink-0">
-        <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-xl bg-stone-100 text-stone-700 flex items-center justify-center text-lg border border-stone-200">
-            📋
-          </div>
-          <div>
-            <h3 class="text-base sm:text-lg font-semibold text-stone-900 font-heading">ประวัติและสถานะการสั่งซื้อ</h3>
-            <p class="text-xs text-stone-500">ติดตามสถานะขนมของร้านแบบเรียลไทม์</p>
-          </div>
-        </div>
-        <button
-          type="button"
-          onclick="closeOrderHistoryModal()"
-          class="w-8 h-8 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-500 hover:text-stone-800 flex items-center justify-center transition cursor-pointer"
-        >
-          <i data-lucide="x" class="w-4 h-4"></i>
-        </button>
-      </div>
-
-      <!-- Search & Sync Toolbar -->
-      <div class="bg-stone-50/80 p-3 rounded-xl border border-stone-200 space-y-2 shrink-0">
-        <div class="flex gap-2">
-          <div class="relative flex-1">
-            <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-stone-400">
-              <i data-lucide="search" class="w-3.5 h-3.5"></i>
-            </span>
-            <input
-              type="text"
-              id="historySearchInput"
-              placeholder="ค้นหาด้วยเบอร์โทรศัพท์ หรือ รหัสออเดอร์ (MW-...)"
-              class="w-full pl-9 pr-3 py-2 text-xs sm:text-sm bg-white rounded-lg border border-stone-200 focus:outline-none focus:ring-1 focus:ring-stone-900"
-              onkeydown="if(event.key==='Enter') searchOrderHistory()"
-            />
-          </div>
-          <button
-            type="button"
-            onclick="searchOrderHistory()"
-            class="bg-stone-900 hover:bg-stone-800 text-white px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition flex items-center gap-1.5 shrink-0 shadow-2xs cursor-pointer"
-          >
-            <span>ค้นหา</span>
-          </button>
-          <button
-            type="button"
-            onclick="loadOrderHistory()"
-            class="bg-white hover:bg-stone-100 text-stone-600 px-2.5 py-2 rounded-lg text-xs sm:text-sm font-medium border border-stone-200 transition flex items-center gap-1 shrink-0 cursor-pointer"
-            title="รีเฟรชสถานะล่าสุด"
-          >
-            <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
-          </button>
-        </div>
-        <p class="text-[11px] text-stone-500 flex items-center gap-1">
-          <i data-lucide="info" class="w-3 h-3 text-stone-400 shrink-0"></i>
-          <span>แสดงออเดอร์บนอุปกรณ์นี้อัตโนมัติ หรือค้นหาด้วยเบอร์โทรศัพท์ที่เคยสั่ง</span>
-        </p>
-      </div>
-
-      <!-- Orders List Container (Scrollable) -->
-      <div id="orderHistoryList" class="flex-1 overflow-y-auto space-y-3 pr-1 min-h-[220px]">
-        <!-- Injected via app.js -->
-      </div>
-
-      <!-- Modal Footer -->
-      <div class="pt-3 border-t border-stone-100 flex flex-wrap items-center justify-between gap-2 text-xs text-stone-500 shrink-0">
-        <div class="flex items-center gap-2.5">
-          <span id="orderHistoryCountText" class="font-medium text-stone-700">มีทั้งหมด 0 รายการ</span>
-          <button
-            type="button"
-            id="clearHistoryModalBtn"
-            onclick="confirmClearDeviceOrderHistory()"
-            class="text-xs text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 px-2.5 py-1.5 rounded-lg border border-red-200 transition inline-flex items-center gap-1 cursor-pointer font-medium"
-            title="ลบประวัติการสั่งซื้อทั้งหมดที่บันทึกไว้บนอุปกรณ์นี้"
-          >
-            <i data-lucide="trash-2" class="w-3.5 h-3.5 text-red-500"></i>
-            <span>ลบประวัติทั้งหมด</span>
-          </button>
-        </div>
-        <button
-          type="button"
-          onclick="closeOrderHistoryModal()"
-          class="px-4 py-1.5 bg-stone-100 hover:bg-stone-200 text-stone-700 font-medium rounded-lg transition cursor-pointer"
-        >
-          ปิด
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <script src="/js/app.js?v=2.9.4"></script>
+  <script src="/js/app.js?v=2.9.5"></script>
 </body>
 </html>
