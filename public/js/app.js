@@ -29,6 +29,17 @@ let qrDebounceTimeout = null;
 const LOCAL_STORAGE_ORDERS_KEY = 'snack_maew_my_orders';
 const LOCAL_STORAGE_SUBMITTED_KEY = 'snack_maew_submitted_on_this_device';
 
+// Security: Robust XSS Sanitizer for rendering dynamic customer content
+function escapeHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // Comprehensive Tablet / iPad Detector (handles iPadOS desktop mode, touch screen, and screen resolution)
 function isIPadOrTablet() {
   const ua = navigator.userAgent || '';
@@ -660,22 +671,22 @@ function renderSnacksGrid() {
         <div class="relative w-full h-44 rounded-xl overflow-hidden mb-3 bg-stone-100 group">
           <img
             src="${imgSrc}"
-            alt="${snack.name}"
+            alt="${escapeHtml(snack.name)}"
             class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-102"
             onerror="this.src='https://images.unsplash.com/photo-1558961363-fa8fdf82db35?w=500&auto=format&fit=crop&q=80'"
           />
           <div class="absolute top-2.5 right-2.5 bg-stone-900/85 text-white backdrop-blur-md px-2.5 py-0.5 rounded-full text-xs font-medium">
-            ${snack.price} ฿ / ${snack.unit || 'ชิ้น'}
+            ${Number(snack.price) || 0} ฿ / ${escapeHtml(snack.unit || 'ชิ้น')}
           </div>
           ${overlayBadge}
         </div>
 
         <!-- Title & Description -->
         <h4 class="font-medium text-stone-900 text-base leading-snug font-heading mb-1">
-          ${snack.name}
+          ${escapeHtml(snack.name)}
         </h4>
         <p class="text-xs text-stone-500 line-clamp-2 mb-3 font-normal">
-          ${snack.description || 'ขนมโฮมเมดแสนอร่อย ปรุงสดใหม่จากเตา'}
+          ${escapeHtml(snack.description || 'ขนมโฮมเมดแสนอร่อย ปรุงสดใหม่จากเตา')}
         </p>
       </div>
 
@@ -829,8 +840,8 @@ function updateOrderSummary() {
         <div class="flex items-center gap-3">
           <img src="${item.image || 'https://images.unsplash.com/photo-1558961363-fa8fdf82db35?w=200'}" class="w-10 h-10 rounded-lg object-cover border border-stone-200" />
           <div>
-            <h5 class="font-medium text-stone-900 text-xs sm:text-sm">${item.name}</h5>
-            <span class="text-[11px] text-stone-500">${item.price} บาท × ${item.quantity} ${item.unit}</span>
+            <h5 class="font-medium text-stone-900 text-xs sm:text-sm">${escapeHtml(item.name)}</h5>
+            <span class="text-[11px] text-stone-500">${Number(item.price) || 0} บาท × ${Number(item.quantity) || 1} ${escapeHtml(item.unit)}</span>
           </div>
         </div>
         <div class="text-right">
@@ -2032,8 +2043,8 @@ function showReceiptModal(order) {
   const itemsListEl = document.getElementById('modalItemsList');
   itemsListEl.innerHTML = (order.items || []).map(item => `
     <div class="flex justify-between text-xs text-slate-700">
-      <span>${item.name} (${item.quantity} ${item.unit})</span>
-      <span class="font-bold">${item.subtotal.toLocaleString()} ฿</span>
+      <span>${escapeHtml(item.name)} (${Number(item.quantity) || 1} ${escapeHtml(item.unit)})</span>
+      <span class="font-bold">${Number(item.subtotal || 0).toLocaleString()} ฿</span>
     </div>
   `).join('');
 
@@ -2307,7 +2318,7 @@ function renderOrderHistoryList(orders) {
       minute: '2-digit'
     });
 
-    const itemsSummary = (order.items || []).map(i => `${i.name} × ${i.quantity}`).join(', ');
+    const itemsSummary = (order.items || []).map(i => `${escapeHtml(i.name)} × ${Number(i.quantity) || 1}`).join(', ');
 
     const card = document.createElement('div');
     card.className = 'bg-white p-4 rounded-xl border border-stone-200 shadow-2xs hover:border-stone-300 transition space-y-3';
@@ -2315,11 +2326,11 @@ function renderOrderHistoryList(orders) {
       <div class="flex flex-wrap items-center justify-between gap-2 border-b border-stone-100 pb-2.5">
         <div>
           <div class="font-mono font-semibold text-stone-900 text-xs flex items-center gap-1.5">
-            <span>${order.id}</span>
+            <span>${escapeHtml(order.id)}</span>
           </div>
           <div class="text-[11px] text-stone-400 flex items-center gap-1.5 mt-0.5">
-            <span>${dateFormatted}</span>
-            <span class="text-[10px] text-stone-600 bg-stone-100 px-1.5 py-0.2 rounded font-sans">📱 ${order.deviceModel || 'อุปกรณ์มือถือ'}</span>
+            <span>${escapeHtml(dateFormatted)}</span>
+            <span class="text-[10px] text-stone-600 bg-stone-100 px-1.5 py-0.2 rounded font-sans">📱 ${escapeHtml(order.deviceModel || 'อุปกรณ์มือถือ')}</span>
           </div>
         </div>
         <span class="px-2.5 py-0.5 rounded-full text-xs font-medium border ${statusInfo.badgeClass}">

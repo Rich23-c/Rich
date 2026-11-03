@@ -11,8 +11,8 @@ const orderCreateLimits = new Map();   // ip -> { count: number, resetAt: number
 const bannedIps = new Map();           // ip -> unbanTimestamp (24-hour malicious bot blacklist)
 const securityAuditLogs = [];          // Circular buffer: last 50 security events
 
-// Cryptographic Session Secret (Stable fallback across server reboots so admin sessions do not unexpectedly expire)
-const SESSION_SECRET = process.env.ADMIN_SESSION_SECRET || 'snack_by_maew_admin_secure_secret_2026_rich_key_99';
+// Cryptographic Session Secret (Loaded from environment, with runtime fallback)
+const SESSION_SECRET = process.env.ADMIN_SESSION_SECRET || crypto.randomBytes(32).toString('hex');
 const SESSION_MAX_AGE_MS = 12 * 60 * 60 * 1000; // 12 hours valid session
 
 // Configuration Constants
@@ -280,7 +280,7 @@ function recordLoginSuccess(req) {
 }
 
 // ==========================================
-// 5. CONSTANT-TIME TIMING-SAFE COMPARISON
+// 5. CONSTANT-TIME TIMING-SAFE COMPARISON & PASSWORD HASHING (SCRYPT + SALT)
 // ==========================================
 function safeComparePin(candidate, secret) {
   if (typeof candidate !== 'string' || typeof secret !== 'string') return false;
@@ -298,6 +298,39 @@ function safeComparePin(candidate, secret) {
   }
 
   return crypto.timingSafeEqual(candBuf, secBuf);
+}
+
+/**
+ * Hash PIN using Scrypt with a random 16-byte salt (OWASP recommended standard)
+ * Output format: scrypt$<salt_hex>$<derived_key_hex>
+ */
+function hashPin(pin) {
+  if (!pin || typeof pin !== 'string') return '';
+  const salt = crypto.randomBytes(16).toString('hex');
+  const derived = crypto.scryptSync(pin.trim(), salt, 64);
+  return `scrypt$${salt}$${derived.toString('hex')}`;
+}
+
+/**
+ * Verify candidate PIN against stored Scrypt salted hash or legacy plaintext string
+ */
+function verifyPinHash(candidatePin, storedHashOrPlain) {
+  if (!candidatePin || !storedHashOrPlain) return false;
+  const cand = String(candidatePin).trim();
+  const stored = String(storedHashOrPlain).trim();
+
+  if (stored.startsWith('scrypt$')) {
+    const parts = stored.split('$');
+    if (parts.length !== 3) return false;
+    const [, salt, expectedHex] = parts;
+    const expectedBuf = Buffer.from(expectedHex, 'hex');
+    const derivedBuf = crypto.scryptSync(cand, salt, expectedBuf.length);
+    if (expectedBuf.length !== derivedBuf.length) return false;
+    return crypto.timingSafeEqual(expectedBuf, derivedBuf);
+  }
+
+  // Backward compatibility fallback: constant-time comparison
+  return safeComparePin(cand, stored);
 }
 
 // ==========================================
@@ -389,7 +422,7 @@ function sanitizeOrderInput(orderData) {
 // ==========================================
 const CSP_HEADER = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com https://unpkg.com https://cdn.jsdelivr.net",
+  "script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://unpkg.com https://cdn.jsdelivr.net",
   "style-src 'self' 'unsafe-inline' blob: https://fonts.googleapis.com https://cdn.jsdelivr.net",
   "font-src 'self' https://fonts.gstatic.com data:",
   "img-src 'self' data: blob: https:",
@@ -554,6 +587,109 @@ function sanitizeOrderForCustomer(order) {
   return safeOrder;
 }
 
+// ==========================================
+// 14. COOKIE PARSER MIDDLEWARE (ZERO DEPENDENCIES)
+// ==========================================
+function cookieParserMiddleware(req, res, next) {
+  req.cookies = {};
+  const cookieHeader = req.headers.cookie;
+  if (cookieHeader) {
+    const pairs = cookieHeader.split(';');
+    for (const pair of pairs) {
+      const idx = pair.indexOf('=');
+      if (idx !== -1) {
+        const key = pair.slice(0, idx).trim();
+        const val = pair.slice(idx + 1).trim();
+        try {
+          req.cookies[key] = decodeURIComponent(val);
+        } catch {
+          req.cookies[key] = val;
+        }
+      }
+    }
+  }
+  next();
+}
+
+// ==========================================
+// 15. STRICT CORS CONFIGURATION (NO WILDCARD WITH CREDENTIALS)
+// ==========================================
+function getCorsOptions() {
+  const customOrigins = (process.env.ALLOWED_ORIGINS || '')
+    .split(',')
+    .map(o => o.trim())
+    .filter(Boolean);
+
+  const renderExternal = process.env.RENDER_EXTERNAL_URL ? process.env.RENDER_EXTERNAL_URL.trim() : null;
+
+  return {
+    origin: function (origin, callback) {
+      // Allow requests with no origin (e.g. mobile native app, server-to-server, curl, same-origin)
+      if (!origin) return callback(null, true);
+
+      // Local development origins
+      if (/^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+)(:\d+)?$/.test(origin)) {
+        return callback(null, true);
+      }
+
+      // Render deployment domains
+      if (/^https:\/\/([a-zA-Z0-9-]+\.)*onrender\.com$/.test(origin)) {
+        return callback(null, true);
+      }
+
+      if (renderExternal && origin === renderExternal) {
+        return callback(null, true);
+      }
+
+      if (customOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      const err = new Error('คำขอถูกระงับโดยนโยบายความปลอดภัย CORS (Origin ไม่อยู่ในรายการที่อนุญาต)');
+      err.status = 403;
+      return callback(err);
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Admin-Token', 'X-Device-Id', 'X-Order-Ids', 'Cache-Control', 'Pragma']
+  };
+}
+
+// ==========================================
+// 16. IDOR (INSECURE DIRECT OBJECT REFERENCE) ACCESS CHECK
+// Ensures regular customer can only view or interact with their own device orders
+// ==========================================
+function canAccessOrder(order, req) {
+  if (!order) return { allowed: false, isAdmin: false };
+
+  // 1. Admin session check (via HttpOnly cookie or Authorization header)
+  const tokenFromCookie = req.cookies && req.cookies.snack_admin_session;
+  const authHeader = req.headers.authorization;
+  const tokenFromHeader = (authHeader && authHeader.startsWith('Bearer '))
+    ? authHeader.slice(7).trim()
+    : req.headers['x-admin-token'];
+
+  if ((tokenFromCookie && verifyAdminSessionToken(tokenFromCookie)) ||
+      (tokenFromHeader && verifyAdminSessionToken(tokenFromHeader))) {
+    return { allowed: true, isAdmin: true };
+  }
+
+  // 2. Customer device matching (Strict device ID check)
+  const clientDeviceId = (req.headers['x-device-id'] || (req.cookies && req.cookies.snack_maew_device_id) || req.query.deviceId || '').trim();
+  if (order.deviceId && clientDeviceId && order.deviceId === clientDeviceId) {
+    return { allowed: true, isAdmin: false };
+  }
+
+  // 3. Customer order list matching (Order IDs verified on this device)
+  const rawIds = req.headers['x-order-ids'] || req.query.clientOrderIds || '';
+  const clientOrderIds = rawIds.split(',').map(s => s.trim()).filter(Boolean);
+  if (clientOrderIds.includes(order.id)) {
+    return { allowed: true, isAdmin: false };
+  }
+
+  return { allowed: false, isAdmin: false };
+}
+
 module.exports = {
   getClientIp,
   intrusionDetectionMiddleware,
@@ -564,6 +700,11 @@ module.exports = {
   recordLoginFailure,
   recordLoginSuccess,
   safeComparePin,
+  hashPin,
+  verifyPinHash,
+  cookieParserMiddleware,
+  getCorsOptions,
+  canAccessOrder,
   slipVerifyRateLimit,
   orderCreateRateLimit,
   isHoneypotTriggered,

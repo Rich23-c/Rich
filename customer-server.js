@@ -27,7 +27,10 @@ const {
   generateSlipVerificationToken,
   verifySlipVerificationToken,
   verifyAdminSessionToken,
-  sanitizeOrderForCustomer
+  sanitizeOrderForCustomer,
+  cookieParserMiddleware,
+  getCorsOptions,
+  canAccessOrder
 } = require('./services/security');
 
 const app = express();
@@ -42,6 +45,9 @@ app.use(intrusionDetectionMiddleware);
 // Security 3: Enforce strict HTTP security headers & CSP (nosniff, SAMEORIGIN, HSTS, XSS)
 app.use(securityHeadersMiddleware);
 
+// Security 4: Cookie Parser (HttpOnly Session & Device ID)
+app.use(cookieParserMiddleware);
+
 // Gzip & Brotli HTTP Compression (reduces payload size by 75-80% for 10x higher concurrent throughput)
 app.use(compression({
   threshold: 1024,
@@ -51,12 +57,12 @@ app.use(compression({
   }
 }));
 
-// Middleware
-app.use(cors());
+// Security 5: Strict CORS Configuration (Whitelisted origins only, with credentials)
+app.use(cors(getCorsOptions()));
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 
-// Security 4: Prototype Pollution Guard (Rejects malicious payloads with __proto__ or constructor injection)
+// Security 6: Prototype Pollution Guard (Rejects malicious payloads with __proto__ or constructor injection)
 app.use(prototypePollutionGuard);
 
 // Ensure upload directories exist
@@ -228,7 +234,7 @@ app.get('/admin', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
 
-// Mount Admin APIs (protected by PIN 0958174540)
+// Mount Admin APIs (protected by Scrypt-hashed PIN and HttpOnly Session Cookies)
 const adminRouter = require('./admin-router');
 app.use(adminRouter);
 
@@ -288,23 +294,36 @@ app.post('/api/track-visit', (req, res) => {
   }
 });
 
-// Get shop settings (sanitized, no admin pin, no secret api keys or tokens)
+// Get shop settings (Strict WHITELIST: Never exposes admin pin, hashes, API keys, or secret tokens)
 app.get('/api/settings', (req, res) => {
   try {
     const settings = db.getSettings();
-    const {
-      adminPin,
-      geminiApiKeys,
-      geminiApiKey,
-      emailPassword,
-      lineToken,
-      lineNotifyToken,
-      ...publicSettings
-    } = settings;
+    const publicSettings = {
+      shopName: settings.shopName || 'ร้านขนมแม้ว 🐾 (Snack by Maew)',
+      shopSubtitle: settings.shopSubtitle || 'ของหวาน ของอร่อย เมืองเพชรบุรี',
+      promptpayId: settings.promptpayId || '140540',
+      promptpayName: settings.promptpayName || 'พัชญ์ชามญชุ์ กฤติณัฐธนชัย',
+      bankName: settings.bankName || 'Thai QR Payment (พร้อมเพย์)',
+      bankAccountNumber: settings.bankAccountNumber || 'สแกน Thai QR พร้อมเพย์',
+      promptpayQrImage: settings.promptpayQrImage || '/images/shop-qr.png',
+      contactPhone: settings.contactPhone || '080-924-9673',
+      contactLine: settings.contactLine || '@snackbymaew',
+      address: settings.address || '',
+      shopAnnouncement: settings.shopAnnouncement || '',
+      isOpen: settings.isOpen !== false,
+      closedMessage: settings.closedMessage || 'ขณะนี้ร้านแม้วปิดรับออเดอร์ชั่วคราว แล้วพบกันใหม่รอบหน้านะจ๊ะ 🐱',
+      laptopBannerEnabled: settings.laptopBannerEnabled !== false,
+      laptopBannerTitle: settings.laptopBannerTitle || '',
+      laptopBannerText: settings.laptopBannerText || '',
+      laptopBannerContact: settings.laptopBannerContact || '',
+      laptopBannerImage: settings.laptopBannerImage || '',
+      laptopBannerLink: settings.laptopBannerLink || ''
+    };
     res.setHeader('Cache-Control', 'public, max-age=15, stale-while-revalidate=60');
     res.json({ success: true, data: publicSettings });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error('Settings endpoint error:', err);
+    res.status(500).json({ success: false, error: 'เกิดข้อผิดพลาดในการดึงข้อมูลร้าน' });
   }
 });
 
@@ -771,7 +790,7 @@ app.get('/api/orders-history', (req, res) => {
   }
 });
 
-// Customer track single order (Protected with IDOR Privacy Filter & Admin Authentication)
+// Customer track single order (Strict IDOR protection: verified owner or authenticated admin only)
 app.get('/api/orders/:id', (req, res) => {
   try {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
@@ -780,24 +799,43 @@ app.get('/api/orders/:id', (req, res) => {
       return res.status(404).json({ success: false, error: 'ไม่พบหมายเลขคำสั่งซื้อนี้' });
     }
 
-    // Check if requester is Admin (via session token or PIN)
-    const adminToken = req.headers['x-admin-token'] || (req.headers.authorization && req.headers.authorization.replace('Bearer ', ''));
-    const adminPin = req.headers['x-admin-pin'] || req.query.pin;
-    const isAdmin = (adminToken && verifyAdminSessionToken(adminToken)) || (adminPin && db.verifyAdminPin(adminPin));
+    // IDOR Access Check
+    const access = canAccessOrder(order, req);
+    if (!access.allowed) {
+      return res.status(403).json({
+        success: false,
+        error: 'คุณไม่มีสิทธิ์เข้าถึงข้อมูลคำสั่งซื้อนี้ (สามารถตรวจสอบได้เฉพาะคำสั่งซื้อบนอุปกรณ์ของคุณเท่านั้น)'
+      });
+    }
 
-    if (isAdmin) {
+    if (access.isAdmin) {
       return res.json({ success: true, order });
     }
 
     res.json({ success: true, order: sanitizeOrderForCustomer(order) });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error('Order query error:', err);
+    res.status(500).json({ success: false, error: 'เกิดข้อผิดพลาดในการดึงข้อมูลคำสั่งซื้อ' });
   }
 });
 
 // Root serves customer storefront
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Centralized Production Error Handler (Prevents stack trace & internal path leaks)
+app.use((err, req, res, next) => {
+  console.error(`[Unhandled Error] ${req.method} ${req.originalUrl}:`, err.message || err);
+  if (res.headersSent) return next(err);
+
+  const status = err.status || err.statusCode || 500;
+  const isClientError = status >= 400 && status < 500;
+
+  res.status(status).json({
+    success: false,
+    error: isClientError ? (err.message || 'คำขอไม่ถูกต้อง') : 'เกิดข้อผิดพลาดภายในระบบ กรุณาลองใหม่อีกครั้ง'
+  });
 });
 
 // Start Customer Server

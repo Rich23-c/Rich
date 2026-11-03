@@ -5,17 +5,42 @@ const path = require('path');
 const os = require('os');
 
 const adminRouter = require('./admin-router');
+const {
+  securityHeadersMiddleware,
+  intrusionDetectionMiddleware,
+  prototypePollutionGuard,
+  cookieParserMiddleware,
+  getCorsOptions
+} = require('./services/security');
+const { resolveSlipImage } = require('./services/slipImageService');
+const db = require('./services/database');
 
 const app = express();
 const PORT = process.env.ADMIN_PORT || 3001;
 
-// Middleware
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Security 1: Disable Express fingerprinting
+app.disable('x-powered-by');
+
+// Security 2: Intrusion Detection System
+app.use(intrusionDetectionMiddleware);
+
+// Security 3: Enforce strict HTTP security headers & CSP
+app.use(securityHeadersMiddleware);
+
+// Security 4: Cookie Parser (HttpOnly Admin Session Cookie)
+app.use(cookieParserMiddleware);
+
+// Security 5: Strict CORS Configuration
+app.use(cors(getCorsOptions()));
+app.use(express.json({ limit: '5mb' }));
+app.use(express.urlencoded({ extended: true, limit: '5mb' }));
+
+// Security 6: Prototype Pollution Guard
+app.use(prototypePollutionGuard);
 
 // Serve Admin Portal on root
 app.get('/', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
 app.get('/admin', (req, res) => {
@@ -27,8 +52,6 @@ app.get('/index.html', (req, res) => {
 
 // Serve static assets (CSS, JS, images) without defaulting to index.html
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
-const { resolveSlipImage } = require('./services/slipImageService');
-const db = require('./services/database');
 
 // Smart Self-Healing Slip Image Endpoint (Survives Cloud Container Restarts)
 app.get('/uploads/slips/:filename', (req, res, next) => {
@@ -48,10 +71,28 @@ app.get('/uploads/slips/:filename', (req, res, next) => {
   next();
 });
 
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/uploads', (req, res, next) => {
+  res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox");
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  next();
+}, express.static(path.join(__dirname, 'uploads')));
 
 // Mount Admin APIs
 app.use(adminRouter);
+
+// Centralized Production Error Handler (Prevents stack trace & internal path leaks)
+app.use((err, req, res, next) => {
+  console.error(`[Admin Server Error] ${req.method} ${req.originalUrl}:`, err.message || err);
+  if (res.headersSent) return next(err);
+
+  const status = err.status || err.statusCode || 500;
+  const isClientError = status >= 400 && status < 500;
+
+  res.status(status).json({
+    success: false,
+    error: isClientError ? (err.message || 'คำขอไม่ถูกต้อง') : 'เกิดข้อผิดพลาดภายในระบบ กรุณาลองใหม่อีกครั้ง'
+  });
+});
 
 // Start Admin Server
 app.listen(PORT, '0.0.0.0', () => {
@@ -66,6 +107,5 @@ app.listen(PORT, '0.0.0.0', () => {
       }
     });
   });
-  console.log(`🔑 รหัส PIN แอดมิน: 0958174540`);
   console.log(`====================================================`);
 });

@@ -67,6 +67,21 @@ function initLocalCache() {
   if (!memoryCache.settings) {
     memoryCache.settings = { ...getDefaultSettings(), ...readJson(SETTINGS_FILE, getDefaultSettings()) };
   }
+  // Auto-migrate legacy plaintext adminPin to salted Scrypt hash
+  try {
+    const { hashPin } = require('./security');
+    if (memoryCache.settings.adminPin) {
+      if (!memoryCache.settings.adminPinHash) {
+        memoryCache.settings.adminPinHash = hashPin(memoryCache.settings.adminPin);
+      }
+      delete memoryCache.settings.adminPin;
+      writeJson(SETTINGS_FILE, memoryCache.settings);
+    } else if (!memoryCache.settings.adminPinHash) {
+      const fallbackPin = process.env.ADMIN_PIN || '0958174540';
+      memoryCache.settings.adminPinHash = hashPin(fallbackPin);
+      writeJson(SETTINGS_FILE, memoryCache.settings);
+    }
+  } catch (e) {}
   if (!memoryCache.usedSlips) {
     memoryCache.usedSlips = readJson(USED_SLIPS_FILE, []);
     // Auto-migrate any historical slips from orders into usedSlips registry
@@ -116,7 +131,7 @@ function getDefaultSettings() {
     bankName: "Thai QR Payment (พร้อมเพย์)",
     bankAccountNumber: "สแกน Thai QR พร้อมเพย์",
     promptpayQrImage: "/images/shop-qr.png",
-    adminPin: "0958174540",
+    adminPinHash: process.env.ADMIN_PIN_HASH || null,
     isOpen: true,
     closedMessage: "ขณะนี้ร้านแม้วปิดรับออเดอร์ชั่วคราว แล้วพบกันใหม่รอบหน้านะจ๊ะ 🐱",
     laptopBannerEnabled: true,
@@ -907,11 +922,19 @@ function findOrders({ query, phone, name, ids, deviceId } = {}) {
   if (query && query.trim()) {
     const q = query.trim().toLowerCase();
     const cleanQPhone = q.replace(/[\s\-]/g, '');
+    // Prevent broad enumeration attacks (must be at least 4 characters and not generic prefixes like 'mw', 'mw-')
+    if (q.length < 4 || q === 'mw' || q === 'mw-') {
+      return [];
+    }
     return allOrders.filter(o => {
-      // Match by Order ID (e.g. MW-...)
-      if (o.id && o.id.toLowerCase().includes(q)) return true;
-      // Match by Customer Phone (require at least 6 digits to prevent matching everything)
-      if (cleanQPhone.length >= 6) {
+      // Match by Order ID (exact match or at least 6 characters of order id)
+      if (o.id) {
+        const orderIdLower = o.id.toLowerCase();
+        if (orderIdLower === q) return true;
+        if (q.length >= 6 && orderIdLower.includes(q)) return true;
+      }
+      // Match by Customer Phone (require at least 8 digits to prevent enumeration)
+      if (cleanQPhone.length >= 8) {
         const orderPhone = (o.customerPhone || '').replace(/[\s\-]/g, '');
         if (orderPhone.includes(cleanQPhone)) return true;
       }
@@ -1143,7 +1166,20 @@ function updateSettings(updates) {
   if (cleanedUpdates.bankName && /\?{2,}/.test(cleanedUpdates.bankName)) delete cleanedUpdates.bankName;
   if (cleanedUpdates.promptpayId && /\?{2,}/.test(cleanedUpdates.promptpayId)) delete cleanedUpdates.promptpayId;
 
+  // Hash new PIN if provided and remove plaintext adminPin
+  if (cleanedUpdates.adminPin !== undefined) {
+    const { hashPin } = require('./security');
+    const newPin = String(cleanedUpdates.adminPin).trim();
+    if (newPin) {
+      cleanedUpdates.adminPinHash = hashPin(newPin);
+    }
+    delete cleanedUpdates.adminPin;
+  }
+
   const updated = sanitizeShopSettings({ ...current, ...cleanedUpdates, updatedAt: new Date().toISOString() });
+  // Ensure plaintext adminPin is never retained
+  delete updated.adminPin;
+
   memoryCache.settings = updated;
   writeJson(SETTINGS_FILE, updated);
 
@@ -1159,13 +1195,23 @@ function updateSettings(updates) {
 }
 
 function verifyAdminPin(pin) {
-  const settings = getSettings();
-  const secret = String(settings.adminPin || '0958174540');
+  initLocalCache();
+  const settings = memoryCache.settings || getSettings();
+  const stored = settings.adminPinHash || settings.adminPin || process.env.ADMIN_PIN_HASH || process.env.ADMIN_PIN || '0958174540';
   try {
-    const { safeComparePin } = require('./security');
-    return safeComparePin(String(pin || ''), secret);
+    const { verifyPinHash, hashPin } = require('./security');
+    const isValid = verifyPinHash(String(pin || ''), stored);
+
+    // Auto-migrate if verified against legacy plaintext
+    if (isValid && (!settings.adminPinHash || !String(settings.adminPinHash).startsWith('scrypt$'))) {
+      const newHash = hashPin(String(pin).trim());
+      updateSettings({ adminPinHash: newHash, adminPin: undefined });
+    }
+
+    return isValid;
   } catch (e) {
-    return secret === String(pin || '').trim();
+    const { safeComparePin } = require('./security');
+    return safeComparePin(String(pin || ''), String(stored || ''));
   }
 }
 

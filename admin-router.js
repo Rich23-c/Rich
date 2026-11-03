@@ -45,30 +45,61 @@ const uploadQrImage = multer({
   limits: { fileSize: 10 * 1024 * 1024 }
 });
 
-// Middleware for Admin Authentication (Supports Cryptographic HMAC Session Tokens & Direct PIN)
+// Helper to check if request is served over HTTPS
+function isSecureConnection(req) {
+  return process.env.NODE_ENV === 'production' || req.secure || req.headers['x-forwarded-proto'] === 'https';
+}
+
+// Middleware for Admin Authentication (Strict HttpOnly Session Cookie & Bearer Token Check)
 function requireAdmin(req, res, next) {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
 
-  // 1. Verify Cryptographic HMAC Token
-  const token = req.headers['x-admin-token'] || (req.headers.authorization && req.headers.authorization.replace('Bearer ', ''));
-  if (token && verifyAdminSessionToken(token)) {
+  // 1. Verify Cryptographic Session Token from HttpOnly Cookie (Primary & Secure)
+  const cookieToken = req.cookies && req.cookies.snack_admin_session;
+  if (cookieToken && verifyAdminSessionToken(cookieToken)) {
     return next();
   }
 
-  // 2. Fallback to PIN Header or Body
-  const pin = req.headers['x-admin-pin'] || (req.body && req.body.adminPin) || req.query.pin;
-  if (pin && db.verifyAdminPin(pin)) {
+  // 2. Fallback to Authorization Header (Bearer token for CLI / API clients)
+  const authHeader = req.headers.authorization;
+  const headerToken = (authHeader && authHeader.startsWith('Bearer '))
+    ? authHeader.slice(7).trim()
+    : req.headers['x-admin-token'];
+
+  if (headerToken && verifyAdminSessionToken(headerToken)) {
     return next();
   }
 
-  return res.status(401).json({ success: false, error: 'สิทธิ์การเข้าใช้งานไม่ถูกต้องหรือหมดอายุ กรุณาเข้าสู่ระบบใหม่' });
+  return res.status(401).json({
+    success: false,
+    error: 'สิทธิ์การเข้าใช้งานไม่ถูกต้องหรือหมดอายุ กรุณาเข้าสู่ระบบใหม่'
+  });
 }
 
 // ==========================================
 // ADMIN EXCLUSIVE APIs
 // ==========================================
 
-// Admin login verification with Brute-Force Rate Limiting, Lockout & Cryptographic Session Token
+// Admin session verification check (used by frontend on page load)
+router.get('/api/admin/auth-check', requireAdmin, (req, res) => {
+  res.json({ success: true, authenticated: true });
+});
+
+// Admin logout: clears HttpOnly session cookie
+router.post('/api/admin/logout', (req, res) => {
+  const isSecure = isSecureConnection(req);
+  res.clearCookie('snack_admin_session', {
+    httpOnly: true,
+    secure: isSecure,
+    sameSite: 'strict',
+    path: '/'
+  });
+  res.json({ success: true, message: 'ออกจากระบบเรียบร้อยแล้ว' });
+});
+
+// Admin login verification with Brute-Force Rate Limiting, Lockout & HttpOnly Cookie
 router.post('/api/admin/login', async (req, res) => {
   try {
     const rateCheck = checkLoginRateLimit(req);
@@ -77,15 +108,27 @@ router.post('/api/admin/login', async (req, res) => {
     }
 
     const { pin } = req.body || {};
+    if (!pin || typeof pin !== 'string') {
+      return res.status(400).json({ success: false, error: 'กรุณากรอกรหัสผ่าน PIN' });
+    }
+
     if (db.verifyAdminPin(pin)) {
       recordLoginSuccess(req);
       const clientIp = getClientIp(req);
       const token = generateAdminSessionToken(clientIp);
+
+      const isSecure = isSecureConnection(req);
+      res.cookie('snack_admin_session', token, {
+        httpOnly: true,
+        secure: isSecure,
+        sameSite: 'strict',
+        path: '/',
+        maxAge: 12 * 60 * 60 * 1000 // 12 hours
+      });
+
       return res.json({
         success: true,
-        message: 'เข้าสู่ระบบสำเร็จ',
-        token,
-        expiresIn: '8 hours'
+        message: 'เข้าสู่ระบบสำเร็จ'
       });
     }
 
@@ -93,25 +136,26 @@ router.post('/api/admin/login', async (req, res) => {
     if (failInfo.isLocked) {
       return res.status(429).json({
         success: false,
-        error: `🛑 คุณใส่รหัสผ่านผิดครบ 5 ครั้งแล้ว! ระบบระงับการล็อกอิน 15 นาที เพื่อป้องกันการแฮ็ก`
+        error: '🛑 มีการพยายามเข้าสู่ระบบผิดเกินกำหนด ระบบระงับการเข้าสู่ระบบ 15 นาที เพื่อความปลอดภัย'
       });
     }
 
+    // Neutral error message prevents username/PIN enumeration
     return res.status(401).json({
       success: false,
-      error: `รหัสผ่าน Admin ไม่ถูกต้อง (สามารถลองได้อีก ${failInfo.remainingAttempts} ครั้ง ก่อนระบบล็อก)`
+      error: 'ข้อมูลการเข้าสู่ระบบไม่ถูกต้อง กรุณาตรวจสอบและลองใหม่อีกครั้ง'
     });
   } catch (err) {
-    return res.status(500).json({ success: false, error: 'ระบบตรวจสอบรหัสผ่านขัดข้อง' });
+    console.error('Admin login exception:', err);
+    return res.status(500).json({ success: false, error: 'ระบบตรวจสอบรหัสผ่านขัดข้อง กรุณาลองใหม่อีกครั้ง' });
   }
 });
 
 // Admin change PIN
 router.post('/api/admin/change-pin', requireAdmin, (req, res) => {
   try {
-    const { currentPin, newPin } = req.body;
-    const sessionPin = req.headers['x-admin-pin'] || req.query.pin;
-    if (currentPin && !db.verifyAdminPin(currentPin) && !db.verifyAdminPin(sessionPin)) {
+    const { currentPin, newPin } = req.body || {};
+    if (!currentPin || !db.verifyAdminPin(currentPin)) {
       return res.status(400).json({ success: false, error: 'รหัส PIN เดิมไม่ถูกต้อง กรุณาตรวจสอบอีกครั้ง' });
     }
     const trimmedNewPin = String(newPin || '').trim();
@@ -119,9 +163,23 @@ router.post('/api/admin/change-pin', requireAdmin, (req, res) => {
       return res.status(400).json({ success: false, error: 'รหัส PIN ใหม่ต้องมีความยาวระหว่าง 4 ถึง 20 ตัวอักษรหรือตัวเลข' });
     }
     db.updateSettings({ adminPin: trimmedNewPin });
-    return res.json({ success: true, message: 'เปลี่ยนรหัส PIN เรียบร้อยแล้ว', newPin: trimmedNewPin });
+
+    // Issue refreshed session cookie
+    const clientIp = getClientIp(req);
+    const token = generateAdminSessionToken(clientIp);
+    const isSecure = isSecureConnection(req);
+    res.cookie('snack_admin_session', token, {
+      httpOnly: true,
+      secure: isSecure,
+      sameSite: 'strict',
+      path: '/',
+      maxAge: 12 * 60 * 60 * 1000
+    });
+
+    return res.json({ success: true, message: 'เปลี่ยนรหัส PIN เรียบร้อยแล้ว' });
   } catch (err) {
-    return res.status(500).json({ success: false, error: err.message });
+    console.error('Change PIN exception:', err);
+    return res.status(500).json({ success: false, error: 'เกิดข้อผิดพลาดในการเปลี่ยนรหัส PIN' });
   }
 });
 
@@ -372,9 +430,13 @@ router.post('/api/admin/test-line', requireAdmin, async (req, res) => {
 router.get('/api/admin/settings', requireAdmin, (req, res) => {
   try {
     const settings = db.getSettings();
-    res.json({ success: true, data: settings });
+    const safeSettings = { ...settings };
+    delete safeSettings.adminPin;
+    delete safeSettings.adminPinHash;
+    res.json({ success: true, data: safeSettings });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error('Get settings exception:', err);
+    res.status(500).json({ success: false, error: 'เกิดข้อผิดพลาดในการดึงข้อมูลการตั้งค่า' });
   }
 });
 
@@ -386,9 +448,13 @@ router.put('/api/admin/settings', requireAdmin, (req, res) => {
       updates.isOpen = (updates.isOpen === true || updates.isOpen === 'true');
     }
     const updated = db.updateSettings(updates);
-    res.json({ success: true, data: updated });
+    const safeSettings = { ...updated };
+    delete safeSettings.adminPin;
+    delete safeSettings.adminPinHash;
+    res.json({ success: true, data: safeSettings });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error('Update settings exception:', err);
+    res.status(500).json({ success: false, error: 'เกิดข้อผิดพลาดในการบันทึกการตั้งค่า' });
   }
 });
 

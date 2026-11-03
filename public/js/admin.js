@@ -1,9 +1,13 @@
-// State (Stored in sessionStorage for active tab session so refresh does not drop session)
-let adminPin = '';
-let adminSessionToken = '';
+// State (Session authentication is verified securely via HttpOnly Cookies)
+let isAdminLoggedIn = false;
+
+// Proactively clear any legacy sensitive keys from localStorage / sessionStorage
 try {
-  adminPin = sessionStorage.getItem('snack_admin_pin') || localStorage.getItem('snack_admin_pin') || '';
-  adminSessionToken = sessionStorage.getItem('snack_admin_token') || localStorage.getItem('snack_admin_token') || '';
+  localStorage.removeItem('snack_admin_pin');
+  localStorage.removeItem('snack_admin_token');
+  localStorage.removeItem('cached_gemini_api_keys');
+  sessionStorage.removeItem('snack_admin_pin');
+  sessionStorage.removeItem('snack_admin_token');
 } catch (e) {}
 
 let currentTab = 'snacks';
@@ -16,10 +20,10 @@ let idleTimer = null;
 const IDLE_TIMEOUT_MS = 15 * 60 * 1000;
 
 function resetIdleTimer() {
-  if (!adminPin && !adminSessionToken) return;
+  if (!isAdminLoggedIn) return;
   clearTimeout(idleTimer);
   idleTimer = setTimeout(() => {
-    logoutAdmin();
+    logoutAdmin(true);
     Swal.fire({
       icon: 'info',
       title: 'เซสชันหมดอายุอัตโนมัติ 🔒',
@@ -45,25 +49,39 @@ function escapeHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
-// Initialize on DOM Ready: Auto-restore session if active in sessionStorage
+// Initialize on DOM Ready: Verify active HttpOnly session via server
 document.addEventListener('DOMContentLoaded', async () => {
   if (window.lucide) lucide.createIcons();
 
-  if (adminPin || adminSessionToken) {
-    hideLoginOverlay();
-    resetIdleTimer();
-    await loadInitialData();
-  } else {
-    showLoginOverlay();
-  }
+  await checkAdminSession();
 
   // Auto-refresh orders every 5 seconds when authenticated
   setInterval(() => {
-    if (adminPin || adminSessionToken) {
+    if (isAdminLoggedIn) {
       loadAdminOrders(false);
     }
   }, 5000);
 });
+
+// Verify active session with server
+async function checkAdminSession() {
+  try {
+    const res = await fetch('/api/admin/auth-check', {
+      credentials: 'same-origin',
+      cache: 'no-store'
+    });
+    if (res.ok) {
+      isAdminLoggedIn = true;
+      hideLoginOverlay();
+      resetIdleTimer();
+      await loadInitialData();
+      return true;
+    }
+  } catch (e) {}
+  isAdminLoggedIn = false;
+  showLoginOverlay();
+  return false;
+}
 
 async function verifyPinWithServer(pin) {
   try {
@@ -157,16 +175,17 @@ async function submitAdminPin() {
   if (btn) btn.disabled = true;
 
   try {
-    const loginResult = await verifyPinWithServer(enteredPin);
+    const res = await fetch('/api/admin/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ pin: enteredPin })
+    });
+    const loginResult = await res.json();
+
     if (loginResult && loginResult.success) {
-      adminPin = enteredPin;
-      adminSessionToken = loginResult.token || '';
-      try {
-        sessionStorage.setItem('snack_admin_pin', enteredPin);
-        sessionStorage.setItem('snack_admin_token', adminSessionToken);
-        localStorage.setItem('snack_admin_pin', enteredPin);
-        localStorage.setItem('snack_admin_token', adminSessionToken);
-      } catch (e) {}
+      isAdminLoggedIn = true;
+      if (input) input.value = ''; // Wipe PIN from input element immediately
       resetIdleTimer();
       hideLoginOverlay();
       await loadInitialData();
@@ -178,7 +197,7 @@ async function submitAdminPin() {
         showConfirmButton: false
       });
     } else {
-      const errMsg = (loginResult && loginResult.error) ? loginResult.error : '❌ รหัสผ่าน PIN ไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง';
+      const errMsg = (loginResult && loginResult.error) ? loginResult.error : '❌ ข้อมูลการเข้าสู่ระบบไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง';
       if (err) {
         err.innerText = errMsg;
         err.classList.remove('hidden');
@@ -191,41 +210,50 @@ async function submitAdminPin() {
     }
   } catch (e) {
     console.error('Login error:', e);
+    if (err) {
+      err.innerText = 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้';
+      err.classList.remove('hidden');
+    }
   } finally {
     if (btn) btn.disabled = false;
   }
 }
 
-function logoutAdmin() {
-  adminPin = '';
-  adminSessionToken = '';
+async function logoutAdmin(notifyServer = true) {
+  isAdminLoggedIn = false;
+  if (notifyServer) {
+    try {
+      await fetch('/api/admin/logout', {
+        method: 'POST',
+        credentials: 'same-origin'
+      });
+    } catch (e) {}
+  }
   try {
-    sessionStorage.removeItem('snack_admin_pin');
-    sessionStorage.removeItem('snack_admin_token');
     localStorage.removeItem('snack_admin_pin');
     localStorage.removeItem('snack_admin_token');
+    localStorage.removeItem('cached_gemini_api_keys');
+    sessionStorage.removeItem('snack_admin_pin');
+    sessionStorage.removeItem('snack_admin_token');
   } catch (e) {}
   clearTimeout(idleTimer);
   showLoginOverlay();
 }
 
-// Helper for authenticated requests (Uses Cryptographic Session Token + PIN Fallback)
+// Helper for authenticated requests (Uses Secure HttpOnly Session Cookies automatically)
 async function adminFetch(url, options = {}) {
   const headers = options.headers || {};
-  if (adminSessionToken) {
-    headers['x-admin-token'] = adminSessionToken;
-  }
-  headers['x-admin-pin'] = adminPin || '';
   headers['Cache-Control'] = 'no-cache, no-store, must-revalidate';
   headers['Pragma'] = 'no-cache';
   options.headers = headers;
   options.cache = 'no-store';
+  options.credentials = 'same-origin'; // Automatically transmits HttpOnly session cookie
 
   resetIdleTimer(); // Refresh idle timeout on active admin activity
 
   const res = await fetch(url, options);
   if (res.status === 401) {
-    logoutAdmin();
+    logoutAdmin(false);
     Swal.fire({
       icon: 'warning',
       title: 'เซสชันหมดอายุ',
@@ -506,7 +534,7 @@ function renderAdminSnacks() {
         </div>
 
         <button
-          onclick="deleteSnack('${snack.id}', '${snack.name}')"
+          onclick="deleteSnack('${snack.id}')"
           class="text-slate-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-xl transition cursor-pointer"
           title="ลบเมนูนี้"
         >
@@ -789,7 +817,9 @@ async function toggleSnackAvailability(snackId, newStatus) {
   }
 }
 
-async function deleteSnack(snackId, snackName) {
+async function deleteSnack(snackId) {
+  const target = (allSnacks || []).find(s => s.id === snackId);
+  const snackName = target ? target.name : 'เมนูนี้';
   const confirm = await Swal.fire({
     icon: 'warning',
     title: `ลบเมนู "${snackName}"?`,
@@ -1152,7 +1182,7 @@ function renderOrdersTable() {
     // Items list preview
     const itemsHtml = (order.items || []).map(i => `
       <div class="text-[11px] leading-tight">
-        &bull; <b>${i.name}</b> × ${i.quantity} ${i.unit} (${i.subtotal}฿)
+        &bull; <b>${escapeHtml(i.name)}</b> × ${Number(i.quantity) || 1} ${escapeHtml(i.unit)} (${Number(i.subtotal) || 0}฿)
       </div>
     `).join('');
 
@@ -1712,9 +1742,7 @@ async function resetMockOrders() {
 
   try {
     const res = await adminFetch('/api/admin/reset-mock-orders', { 
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ adminPin: adminPin || '' })
+      method: 'POST'
     });
     const data = await res.json();
     if (data.success) {
@@ -1856,26 +1884,9 @@ async function loadAdminSettings() {
       updateLaptopBannerBadge(s.laptopBannerEnabled !== false);
       updateAdminBannerPreview();
 
-      // Gemini AI Slip Verification keys (Dual-Layer Persistence)
+      // Gemini AI Slip Verification keys
       const geminiEl = document.getElementById('settingGeminiKeys');
-      let effectiveKeys = s.geminiApiKeys || s.geminiApiKey || '';
-
-      if (effectiveKeys) {
-        try { localStorage.setItem('cached_gemini_api_keys', effectiveKeys); } catch (e) {}
-      } else {
-        try {
-          const cached = localStorage.getItem('cached_gemini_api_keys');
-          if (cached) {
-            effectiveKeys = cached;
-            adminFetch('/api/admin/save-gemini-keys', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ geminiApiKeys: cached })
-            }).catch(() => {});
-          }
-        } catch (e) {}
-      }
-
+      const effectiveKeys = s.geminiApiKeys || s.geminiApiKey || '';
       if (geminiEl) geminiEl.value = effectiveKeys;
       updateGeminiKeyBadge(effectiveKeys);
 
@@ -2067,10 +2078,6 @@ async function saveShopSettings() {
       const el = document.getElementById('settingGeminiKeys');
       const val = el ? el.value.trim() : '';
       if (val) return val;
-      try {
-        const cached = localStorage.getItem('cached_gemini_api_keys');
-        if (cached) return cached;
-      } catch (e) {}
       return (currentAdminSettings && currentAdminSettings.geminiApiKeys) || '';
     })()
   };
@@ -2086,7 +2093,6 @@ async function saveShopSettings() {
     if (data.success) {
       if (data.data) currentAdminSettings = data.data;
       if (updates.geminiApiKeys) {
-        try { localStorage.setItem('cached_gemini_api_keys', updates.geminiApiKeys); } catch (e) {}
         updateGeminiKeyBadge(updates.geminiApiKeys);
       }
       Swal.fire({
@@ -2773,7 +2779,13 @@ async function handleChangeAdminPin() {
   const confirmPin = confirmPinInput ? confirmPinInput.value.trim() : '';
 
   if (!currentPin) {
-    currentPin = adminPin || '0958174540';
+    Swal.fire({
+      icon: 'warning',
+      title: 'กรุณากรอกรหัส PIN เดิม',
+      text: 'ต้องระบุรหัส PIN เดิมเพื่อยืนยันตัวตนก่อนเปลี่ยนรหัส',
+      confirmButtonColor: '#ea580c'
+    });
+    return;
   }
 
   if (!newPin) {
@@ -2830,9 +2842,6 @@ async function handleChangeAdminPin() {
     const data = await res.json();
 
     if (data.success) {
-      // Update local memory PIN so the active session is uninterrupted
-      adminPin = newPin;
-
       // Clear input fields
       if (currentPinInput) currentPinInput.value = '';
       if (newPinInput) newPinInput.value = '';
@@ -2841,7 +2850,7 @@ async function handleChangeAdminPin() {
       Swal.fire({
         icon: 'success',
         title: 'เปลี่ยนรหัส PIN สำเร็จ 🎉',
-        html: `รหัส PIN ใหม่ของคุณคือ: <b class="text-emerald-700 font-mono text-lg">${newPin}</b><br><p class="text-xs text-slate-500 mt-2">ระบบบันทึกรหัสใหม่ลงฐานข้อมูลเรียบร้อยแล้ว ในการเข้าใช้งานครั้งถัดไปให้ใช้รหัสใหม่นี้ครับ</p>`,
+        html: `รหัส PIN ใหม่ของคุณคือ: <b class="text-emerald-700 font-mono text-lg">${escapeHtml(newPin)}</b><br><p class="text-xs text-slate-500 mt-2">ระบบบันทึกรหัสใหม่ลงฐานข้อมูลเรียบร้อยแล้ว ในการเข้าใช้งานครั้งถัดไปให้ใช้รหัสใหม่นี้ครับ</p>`,
         confirmButtonColor: '#10b981'
       });
     } else {
@@ -2911,7 +2920,6 @@ async function testGeminiApiKey() {
     const data = await res.json();
 
     if (data.success) {
-      try { localStorage.setItem('cached_gemini_api_keys', apiKey); } catch (e) {}
       updateGeminiKeyBadge(apiKey);
 
       Swal.fire({
@@ -2973,13 +2981,12 @@ async function saveGeminiApiKeysOnly() {
     const data = await res.json();
 
     if (data.success) {
-      try { localStorage.setItem('cached_gemini_api_keys', geminiApiKeys); } catch (e) {}
       updateGeminiKeyBadge(geminiApiKeys);
 
       Swal.fire({
         icon: 'success',
         title: 'บันทึกคีย์ AI สำเร็จ 🎉',
-        text: 'ระบบได้จดจำคีย์ Gemini API ลงฐานข้อมูลและเบราว์เซอร์เรียบร้อยแล้ว ไม่ลืมแน่นอนครับ',
+        text: 'ระบบได้บันทึกคีย์ Gemini API ลงฐานข้อมูลเรียบร้อยแล้ว ปลอดภัยและพร้อมใช้งานทันทีครับ',
         confirmButtonColor: '#10b981'
       });
     } else {
