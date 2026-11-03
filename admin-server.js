@@ -10,7 +10,8 @@ const {
   intrusionDetectionMiddleware,
   prototypePollutionGuard,
   cookieParserMiddleware,
-  getCorsOptions
+  getCorsOptions,
+  protectStaticFilesMiddleware
 } = require('./services/security');
 const { resolveSlipImage } = require('./services/slipImageService');
 const db = require('./services/database');
@@ -38,9 +39,14 @@ app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 // Security 6: Prototype Pollution Guard
 app.use(prototypePollutionGuard);
 
-// Serve Admin Portal on root
+// Security: Block sensitive file extensions (.map, .env, .json, .bak) before static handler
+app.use(protectStaticFilesMiddleware);
+
+// Serve Admin Portal on root with strict no-cache
 app.get('/', (req, res) => {
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
 app.get('/admin', (req, res) => {
@@ -50,8 +56,20 @@ app.get('/index.html', (req, res) => {
   res.redirect('/');
 });
 
-// Serve static assets (CSS, JS, images) without defaulting to index.html
-app.use(express.static(path.join(__dirname, 'public'), { index: false }));
+// Serve static assets (CSS, JS, images) with denied dotfiles
+app.use(express.static(path.join(__dirname, 'public'), {
+  index: false,
+  dotfiles: 'deny',
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    } else if (filePath.endsWith('.js')) {
+      res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+    }
+  }
+}));
 
 // Smart Self-Healing Slip Image Endpoint (Survives Cloud Container Restarts)
 app.get('/uploads/slips/:filename', (req, res, next) => {
@@ -75,7 +93,7 @@ app.use('/uploads', (req, res, next) => {
   res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox");
   res.setHeader('X-Content-Type-Options', 'nosniff');
   next();
-}, express.static(path.join(__dirname, 'uploads')));
+}, express.static(path.join(__dirname, 'uploads'), { dotfiles: 'deny' }));
 
 // Mount Admin APIs
 app.use(adminRouter);

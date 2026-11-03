@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const path = require('path');
 
 // ==========================================
 // 🛡️ SECURITY FORTRESS MODULE (ENTERPRISE GRADE)
@@ -8,6 +9,10 @@ const crypto = require('crypto');
 const loginAttempts = new Map();       // ip -> { count: number, lockedUntil: number, lastAttempt: number }
 const slipVerifyLimits = new Map();    // ip -> { count: number, resetAt: number }
 const orderCreateLimits = new Map();   // ip -> { count: number, resetAt: number }
+const visitorTrackLimits = new Map();  // ip -> { count: number, resetAt: number }
+const promptPayQrLimits = new Map();   // ip -> { count: number, resetAt: number }
+const orderHistoryLimits = new Map();  // ip -> { count: number, resetAt: number }
+const publicApiLimits = new Map();     // ip -> { count: number, resetAt: number }
 const bannedIps = new Map();           // ip -> unbanTimestamp (24-hour malicious bot blacklist)
 const securityAuditLogs = [];          // Circular buffer: last 50 security events
 
@@ -23,6 +28,10 @@ const BAN_DURATION_MS = 24 * 60 * 60 * 1000;  // 24 hours auto-ban for active at
 
 const SLIP_VERIFY_LIMIT = 20;   // 20 verifications per 5 minutes per IP
 const ORDER_CREATE_LIMIT = 25;  // 25 orders per 5 minutes per IP
+const VISITOR_TRACK_LIMIT = 80; // 80 visits per 5 minutes per IP
+const PROMPTPAY_QR_LIMIT = 40;  // 40 QR renders per 5 minutes per IP
+const ORDER_HISTORY_LIMIT = 50; // 50 searches per 5 minutes per IP
+const PUBLIC_API_LIMIT = 120;   // 120 requests per 1 minute per IP
 const RATE_WINDOW_MS = 5 * 60 * 1000;
 
 // Known Scanner & Exploit Signatures (Hacker Bots Target Patterns)
@@ -80,6 +89,18 @@ setInterval(() => {
   }
   for (const [ip, data] of orderCreateLimits.entries()) {
     if (now > data.resetAt) orderCreateLimits.delete(ip);
+  }
+  for (const [ip, data] of visitorTrackLimits.entries()) {
+    if (now > data.resetAt) visitorTrackLimits.delete(ip);
+  }
+  for (const [ip, data] of promptPayQrLimits.entries()) {
+    if (now > data.resetAt) promptPayQrLimits.delete(ip);
+  }
+  for (const [ip, data] of orderHistoryLimits.entries()) {
+    if (now > data.resetAt) orderHistoryLimits.delete(ip);
+  }
+  for (const [ip, data] of publicApiLimits.entries()) {
+    if (now > data.resetAt) publicApiLimits.delete(ip);
   }
 }, 10 * 60 * 1000).unref();
 
@@ -376,8 +397,36 @@ const orderCreateRateLimit = createRateLimiter(
   'คำขอสร้างออเดอร์ถี่เกินกำหนด กรุณารอสักครู่แล้วลองใหม่อีกครั้งครับ'
 );
 
+const visitorTrackRateLimit = createRateLimiter(
+  visitorTrackLimits,
+  VISITOR_TRACK_LIMIT,
+  RATE_WINDOW_MS,
+  'คำขอส่งข้อมูลสถิติผู้เข้าชมถี่เกินไป กรุณารอสักครู่ครับ'
+);
+
+const promptPayQrRateLimit = createRateLimiter(
+  promptPayQrLimits,
+  PROMPTPAY_QR_LIMIT,
+  RATE_WINDOW_MS,
+  'คำขอสร้างพร้อมเพย์ QR Code ถี่เกินไป กรุณารอสักครู่ครับ'
+);
+
+const orderHistoryRateLimit = createRateLimiter(
+  orderHistoryLimits,
+  ORDER_HISTORY_LIMIT,
+  RATE_WINDOW_MS,
+  'คำขอค้นหาประวัติคำสั่งซื้อถี่เกินไป กรุณารอสักครู่ครับ'
+);
+
+const publicApiRateLimit = createRateLimiter(
+  publicApiLimits,
+  PUBLIC_API_LIMIT,
+  60 * 1000,
+  'คุณส่งคำขอมายังระบบถี่เกินกำหนด กรุณารอสักครู่แล้วลองใหม่อีกครั้งครับ'
+);
+
 // ==========================================
-// 7. HONEYPOT ANTI-SPAM BOT CHECK
+// 7. HONEYPOT & BOT ABUSE PREVENTION
 // ==========================================
 function isHoneypotTriggered(req, fieldName = 'customer_website_hp') {
   if (!req.body || typeof req.body !== 'object') return false;
@@ -393,17 +442,80 @@ function isHoneypotTriggered(req, fieldName = 'customer_website_hp') {
   return false;
 }
 
+// Bot Detection: Form submitted too quickly after page load (< 1.2s)
+function isBotSubmissionSpeed(req, minElapsedMs = 1200) {
+  if (!req.body || typeof req.body !== 'object') return false;
+  const loadTime = Number(req.body.formLoadTime);
+  if (loadTime && !isNaN(loadTime)) {
+    const elapsed = Date.now() - loadTime;
+    if (elapsed > 0 && elapsed < minElapsedMs) {
+      recordSecurityEvent('BOT_RAPID_SUBMISSION', {
+        ip: getClientIp(req),
+        elapsedMs: elapsed
+      });
+      return true;
+    }
+  }
+  return false;
+}
+
 // ==========================================
-// 8. XSS INPUT SANITIZATION
+// 8. INPUT SANITIZATION & STRICT VALIDATION
 // ==========================================
 function sanitizeText(input, maxLength = 500) {
   if (!input) return '';
   return String(input)
     .replace(/\0/g, '') // remove null bytes
+    .replace(/[\x01-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '') // strip invisible control characters
     .replace(/<[^>]*>/g, '') // strip HTML tags
     .replace(/[<>'"]/g, '') // remove script brackets & quotes
     .trim()
     .slice(0, maxLength);
+}
+
+function validateCustomerName(name) {
+  if (name === null || name === undefined || typeof name !== 'string') {
+    return { valid: false, error: 'กรุณากรอกชื่อลูกค้า' };
+  }
+  const clean = sanitizeText(name, 80);
+  if (!clean || clean.length < 1) {
+    return { valid: false, error: 'กรุณากรอกชื่อลูกค้า' };
+  }
+  if (clean.length > 80) {
+    return { valid: false, error: 'ชื่อลูกค้าต้องมีความยาวไม่เกิน 80 ตัวอักษร' };
+  }
+  // Must contain at least one meaningful character (letters, Thai consonants/vowels, numbers)
+  if (!/[a-zA-Z0-9\u0E00-\u0E7F]/.test(clean)) {
+    return { valid: false, error: 'ชื่อลูกค้าต้องมีตัวอักษรหรือตัวเลขที่ถูกต้อง' };
+  }
+  return { valid: true, sanitized: clean };
+}
+
+function validateCustomerPhone(phone, required = false) {
+  if (!phone || typeof phone !== 'string') {
+    if (required) return { valid: false, error: 'กรุณากรอกเบอร์โทรศัพท์ติดต่อ' };
+    return { valid: true, sanitized: '' };
+  }
+  const raw = String(phone).trim();
+  if (!raw) {
+    if (required) return { valid: false, error: 'กรุณากรอกเบอร์โทรศัพท์ติดต่อ' };
+    return { valid: true, sanitized: '' };
+  }
+  const cleanDigits = raw.replace(/[\s\-\(\)\.]/g, '');
+  if (!/^\+?[0-9]{8,15}$/.test(cleanDigits)) {
+    return { valid: false, error: 'รูปแบบเบอร์โทรศัพท์ไม่ถูกต้อง (กรุณากรอกตัวเลข 8-15 หลัก)' };
+  }
+  return { valid: true, sanitized: sanitizeText(raw, 30) };
+}
+
+function validateCustomerNote(note, maxLength = 300) {
+  if (!note || typeof note !== 'string') return '';
+  return sanitizeText(note, maxLength);
+}
+
+function validateSearchQuery(query, maxLength = 100) {
+  if (!query || typeof query !== 'string') return '';
+  return sanitizeText(query, maxLength);
 }
 
 function sanitizeOrderInput(orderData) {
@@ -690,6 +802,52 @@ function canAccessOrder(order, req) {
   return { allowed: false, isAdmin: false };
 }
 
+// ==========================================
+// 17. STATIC ASSET PROTECTION & SOURCE MAP SHIELD
+// Blocks requests for .map source maps, configuration files, and backup files
+// ==========================================
+function protectStaticFilesMiddleware(req, res, next) {
+  const rawPath = (req.path || '').toLowerCase();
+
+  // 1. Block Source Maps (.map) - Prevent leakage of original client source codes / maps
+  if (/\.map$/i.test(rawPath)) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+    return res.status(404).json({ success: false, error: 'File not found' });
+  }
+
+  // 2. Block sensitive file extensions (except allowed public manifests)
+  if (/\.(json|yml|yaml|toml|sql|db|sqlite|log|bak|backup|old|swp|md|env|git|sh|bat|cmd|ps1|ts|tsx|vue|php)$/i.test(rawPath)) {
+    const filename = path.basename(rawPath);
+    if (filename !== 'manifest.json' && filename !== 'admin-manifest.json') {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+      res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+      return res.status(404).json({ success: false, error: 'File not found' });
+    }
+  }
+
+  // 3. Block dotfiles / hidden paths (e.g. /.env, /.git, /.ds_store)
+  if (/(^|\/)\.[^\/]/i.test(rawPath)) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+    return res.status(404).json({ success: false, error: 'File not found' });
+  }
+
+  // 4. Block path traversal attempts
+  if (/\.\.|\%2e\%2e/i.test(rawPath)) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    return res.status(403).json({ success: false, error: 'Forbidden' });
+  }
+
+  next();
+}
+
 module.exports = {
   getClientIp,
   intrusionDetectionMiddleware,
@@ -707,10 +865,20 @@ module.exports = {
   canAccessOrder,
   slipVerifyRateLimit,
   orderCreateRateLimit,
+  visitorTrackRateLimit,
+  promptPayQrRateLimit,
+  orderHistoryRateLimit,
+  publicApiRateLimit,
   isHoneypotTriggered,
+  isBotSubmissionSpeed,
   sanitizeText,
+  validateCustomerName,
+  validateCustomerPhone,
+  validateCustomerNote,
+  validateSearchQuery,
   sanitizeOrderInput,
   securityHeadersMiddleware,
+  protectStaticFilesMiddleware,
   slipFileFilter,
   getSecurityAuditLogs,
   bannedIps,

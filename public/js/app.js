@@ -218,6 +218,7 @@ async function trackVisitorPresence(forceUpdate = false) {
 
 // Initialize on DOM ready
 document.addEventListener('DOMContentLoaded', async () => {
+  window._formRenderTime = Date.now();
   if (window.lucide) lucide.createIcons();
   trackVisitorPresence();
 
@@ -1105,11 +1106,11 @@ async function confirmAndSaveOrder(forced = false) {
   const items = Object.values(selectedItems);
   const total = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
-  if (!customerName) {
+  if (!customerName || customerName.length > 80 || !/[a-zA-Z0-9\u0E00-\u0E7F]/.test(customerName)) {
     Swal.fire({
       icon: 'warning',
-      title: 'กรุณาระบุชื่อลูกค้า',
-      text: 'กรุณากรอกชื่อของคุณในข้อ 1 ด้านบนก่อนกดยืนยันการสั่งซื้อครับ 📝',
+      title: 'กรุณาระบุชื่อลูกค้าให้ถูกต้อง',
+      text: 'กรุณากรอกชื่อของคุณ (ความยาวไม่เกิน 80 ตัวอักษร) ในข้อ 1 ด้านบนก่อนกดยืนยันการสั่งซื้อครับ 📝',
       confirmButtonColor: '#f97316'
     }).then(() => {
       const step1 = document.getElementById('step1Section') || document.getElementById('customerInfoSection');
@@ -1117,6 +1118,19 @@ async function confirmAndSaveOrder(forced = false) {
       if (customerNameInput) customerNameInput.focus();
     });
     return;
+  }
+
+  if (customerPhone) {
+    const cleanDigits = customerPhone.replace(/[\s\-\(\)\.]/g, '');
+    if (!/^\+?[0-9]{8,15}$/.test(cleanDigits)) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'เบอร์โทรศัพท์ไม่ถูกต้อง',
+        text: 'กรุณาระบุเบอร์โทรศัพท์เป็นตัวเลข 8-12 หลัก (เช่น 0812345678) 📱',
+        confirmButtonColor: '#f97316'
+      });
+      return;
+    }
   }
 
   if (items.length === 0) {
@@ -1278,9 +1292,8 @@ async function confirmAndSaveOrder(forced = false) {
   formData.append('customerPhone', customerPhone);
   formData.append('items', JSON.stringify(items));
   const hpEl = document.getElementById('customer_website_hp');
-  if (hpEl && hpEl.value) {
-    formData.append('customer_website_hp', hpEl.value);
-  }
+  formData.append('customer_website_hp', hpEl ? hpEl.value : '');
+  formData.append('formLoadTime', String(window._formRenderTime || Date.now()));
 
   try {
     const res = await fetch('/api/orders', {

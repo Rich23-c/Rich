@@ -20,8 +20,17 @@ const {
   slipFileFilter,
   slipVerifyRateLimit,
   orderCreateRateLimit,
+  visitorTrackRateLimit,
+  promptPayQrRateLimit,
+  orderHistoryRateLimit,
+  publicApiRateLimit,
   isHoneypotTriggered,
+  isBotSubmissionSpeed,
   sanitizeText,
+  validateCustomerName,
+  validateCustomerPhone,
+  validateCustomerNote,
+  validateSearchQuery,
   acquireSlipLock,
   releaseSlipLock,
   generateSlipVerificationToken,
@@ -30,7 +39,8 @@ const {
   sanitizeOrderForCustomer,
   cookieParserMiddleware,
   getCorsOptions,
-  canAccessOrder
+  canAccessOrder,
+  protectStaticFilesMiddleware
 } = require('./services/security');
 
 const app = express();
@@ -142,18 +152,27 @@ function parseDeviceFromUserAgent(ua, clientInfo = {}) {
   };
 }
 
-// Serve static assets for Customer Storefront with CDN-optimized Cache-Control
+// Security: Block sensitive file extensions (.map, .env, .json, .bak) before static handler
+app.use(protectStaticFilesMiddleware);
+
+// Serve static assets for Customer Storefront with tuned Cache-Control & denied dotfiles
 app.use(express.static(path.join(__dirname, 'public'), {
+  dotfiles: 'deny',
   maxAge: '1d',
   setHeaders: (res, filePath) => {
-    if (filePath.endsWith('manifest.json')) {
+    if (filePath.endsWith('manifest.json') || filePath.endsWith('admin-manifest.json')) {
       res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
       res.setHeader('Cache-Control', 'no-cache, must-revalidate');
-    } else if (filePath.endsWith('.html') || filePath.endsWith('.js')) {
-      // HTML and JS scripts revalidate immediately to ensure instant code updates across all devices
+    } else if (filePath.endsWith('.html')) {
+      // HTML documents MUST NOT be stored in browser/proxy caches to prevent stale sensitive states
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    } else if (filePath.endsWith('.js')) {
+      // JavaScript files must revalidate with server to ensure code integrity
       res.setHeader('Cache-Control', 'no-cache, must-revalidate');
     } else {
-      // CSS, images, icons cached in browser for 1 day, and Cloudflare Edge CDN for 7 days
+      // Static assets (CSS, images, icons, fonts) cached in browser for 1 day, CDN for 7 days
       res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400');
     }
   }
@@ -185,6 +204,7 @@ app.use('/uploads', (req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   next();
 }, express.static(uploadDir, {
+  dotfiles: 'deny',
   maxAge: '7d',
   setHeaders: (res) => {
     res.setHeader('Cache-Control', 'public, max-age=604800, s-maxage=2592000, immutable');
@@ -271,8 +291,8 @@ app.get('/api/snacks', (req, res) => {
   }
 });
 
-// Track Storefront Visitor Presence
-app.post('/api/track-visit', (req, res) => {
+// Track Storefront Visitor Presence (Protected with Rate Limiter & Input Sanitization)
+app.post('/api/track-visit', visitorTrackRateLimit, (req, res) => {
   try {
     const { visitorId, visitorCode, path: pagePath, deviceSummary, customerName } = req.body || {};
     const userAgent = req.headers['user-agent'] || '';
@@ -281,10 +301,10 @@ app.post('/api/track-visit', (req, res) => {
     }
     const cleanCustomerName = customerName ? sanitizeText(customerName, 80) : '';
     const visitor = db.trackVisitor({
-      visitorId: sanitizeText(visitorId, 60),
+      visitorId: sanitizeText(visitorId, 64),
       visitorCode: sanitizeText(visitorCode, 20),
       userAgent: sanitizeText(userAgent, 200),
-      path: pagePath || '/',
+      path: sanitizeText(pagePath || '/', 100),
       deviceSummary: sanitizeText(deviceSummary, 100),
       customerName: cleanCustomerName
     });
@@ -327,15 +347,23 @@ app.get('/api/settings', (req, res) => {
   }
 });
 
-// Generate dynamic PromptPay QR code
-app.get('/api/promptpay-qr', async (req, res) => {
+// Generate dynamic PromptPay QR code (Protected with Rate Limiter & Strict Input Validation)
+app.get('/api/promptpay-qr', promptPayQrRateLimit, async (req, res) => {
   try {
     const settings = db.getSettings();
     if (settings.isOpen === false) {
       return res.status(400).json({ success: false, error: settings.closedMessage || 'ขณะนี้ร้านแม้วปิดรับออเดอร์ชั่วคราว' });
     }
     const promptpayId = settings.promptpayId || '0891234567';
-    const amount = parseFloat(req.query.amount) || 0;
+    const rawAmount = req.query.amount;
+    let amount = 0;
+    if (rawAmount !== undefined && rawAmount !== null && rawAmount !== '') {
+      amount = parseFloat(rawAmount);
+      if (isNaN(amount) || !isFinite(amount) || amount < 0 || amount > 1000000) {
+        return res.status(400).json({ success: false, error: 'จำนวนเงินไม่ถูกต้อง (ต้องเป็นตัวเลข 0 - 1,000,000)' });
+      }
+    }
+    amount = Math.round(amount * 100) / 100;
 
     const payload = generatePayload(promptpayId, { amount: amount > 0 ? amount : undefined });
     const qrDataUrl = await qrcode.toDataURL(payload, {
@@ -434,6 +462,26 @@ app.post('/api/orders', orderCreateRateLimit, uploadSlip.single('slip'), async (
       return res.status(400).json({ success: false, error: 'คำขอไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง' });
     }
 
+    // Security: Anti-Spam Bot Timing Check (Submissions under 1.2s from page render)
+    if (isBotSubmissionSpeed(req)) {
+      return res.status(400).json({ success: false, error: 'การส่งคำขอเร็วเกินปกติ กรุณารอสักครู่แล้วลองใหม่อีกครั้ง' });
+    }
+
+    // Customer Name Validation (Sanitization & Symbol Guard)
+    const nameValidation = validateCustomerName(body.customerName);
+    if (!nameValidation.valid) {
+      return res.status(400).json({ success: false, error: nameValidation.error });
+    }
+    const cleanCustomerName = nameValidation.sanitized;
+
+    // Customer Phone Validation (Optional, but if provided must be a valid phone number)
+    const phoneValidation = validateCustomerPhone(body.customerPhone, false);
+    if (!phoneValidation.valid) {
+      return res.status(400).json({ success: false, error: phoneValidation.error });
+    }
+    const cleanCustomerPhone = phoneValidation.sanitized;
+    const cleanCustomerNote = validateCustomerNote(body.customerNote || '', 300);
+
     let rawItems = [];
     try {
       rawItems = typeof body.items === 'string' ? JSON.parse(body.items) : (body.items || []);
@@ -443,10 +491,6 @@ app.post('/api/orders', orderCreateRateLimit, uploadSlip.single('slip'), async (
 
     if (!Array.isArray(rawItems) || !rawItems.length || rawItems.length > 50) {
       return res.status(400).json({ success: false, error: 'กรุณาเลือกขนมอย่างน้อย 1 รายการ (สูงสุด 50 รายการ)' });
-    }
-
-    if (!body.customerName || !body.customerName.trim()) {
-      return res.status(400).json({ success: false, error: 'กรุณาระบุชื่อลูกค้า' });
     }
 
     // ==========================================
@@ -718,9 +762,9 @@ app.post('/api/orders', orderCreateRateLimit, uploadSlip.single('slip'), async (
       deviceId: sanitizeText(deviceId, 60),
       deviceModel: sanitizeText(deviceModel, 100),
       deviceInfo,
-      customerName: sanitizeText(body.customerName, 80),
-      customerPhone: sanitizeText(body.customerPhone || '', 30),
-      customerNote: sanitizeText(body.customerNote || '', 300),
+      customerName: cleanCustomerName,
+      customerPhone: cleanCustomerPhone,
+      customerNote: cleanCustomerNote,
       items: verifiedItems,
       totalPrice: calculatedTotal,
       totalCost: totalOrderCost,      // Permanently locked cost snapshot
@@ -769,16 +813,25 @@ app.post('/api/orders', orderCreateRateLimit, uploadSlip.single('slip'), async (
   }
 });
 
-// Customer order history & search (Supports cloud recall by deviceId, phone, query, or IDs)
-app.get('/api/orders-history', (req, res) => {
+// Customer order history & search (Protected with Rate Limiter & Input Sanitization)
+app.get('/api/orders-history', orderHistoryRateLimit, (req, res) => {
   try {
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
     const { query, phone, name, ids, deviceId } = req.query;
+    const cleanQuery = validateSearchQuery(query, 80);
+    const cleanPhone = validateSearchQuery(phone, 30);
+    const cleanName = validateSearchQuery(name, 80);
+    const cleanDeviceId = validateSearchQuery(deviceId, 64);
+
     let idList = [];
     if (ids) {
-      idList = typeof ids === 'string' ? ids.split(',').map(s => s.trim()).filter(Boolean) : ids;
+      if (typeof ids === 'string') {
+        idList = ids.split(',').map(s => validateSearchQuery(s.trim(), 40)).filter(Boolean);
+      } else if (Array.isArray(ids)) {
+        idList = ids.map(s => validateSearchQuery(String(s), 40)).filter(Boolean);
+      }
     }
-    const orders = db.findOrders({ query, phone, name, ids: idList, deviceId });
+    const orders = db.findOrders({ query: cleanQuery, phone: cleanPhone, name: cleanName, ids: idList, deviceId: cleanDeviceId });
 
     // Sanitize cost and profit fields and mask personal data for customer privacy
     const sanitizedOrders = (orders || []).map(order => sanitizeOrderForCustomer(order));
@@ -793,8 +846,12 @@ app.get('/api/orders-history', (req, res) => {
 // Customer track single order (Strict IDOR protection: verified owner or authenticated admin only)
 app.get('/api/orders/:id', (req, res) => {
   try {
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
-    const order = db.getOrderById(req.params.id);
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    const orderId = sanitizeText(req.params.id, 50);
+    if (!orderId) {
+      return res.status(400).json({ success: false, error: 'รหัสคำสั่งซื้อไม่ถูกต้อง' });
+    }
+    const order = db.getOrderById(orderId);
     if (!order) {
       return res.status(404).json({ success: false, error: 'ไม่พบหมายเลขคำสั่งซื้อนี้' });
     }
