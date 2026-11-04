@@ -97,10 +97,15 @@
       </div>
 
       <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
-        <!-- Floating Cart Trigger -->
-        <a href="#summarySection" class="relative flex items-center gap-1.5 bg-stone-900 hover:bg-stone-800 text-white px-3 sm:px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium transition shadow-2xs active:scale-95">
-          <i data-lucide="shopping-bag" class="w-3.5 h-3.5 text-stone-300"></i>
-          <span class="hidden sm:inline">ยอดรวม</span>
+        <!-- Floating Cart Shortcut Trigger -->
+        <a
+          href="#summarySection"
+          id="headerCartShortcutBtn"
+          class="relative flex items-center gap-1.5 bg-stone-900 hover:bg-stone-800 active:bg-stone-950 text-white px-3 sm:px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium transition shadow-2xs active:scale-95 cursor-pointer"
+          title="ปุ่มลัดไปที่ตะกร้าและสรุปยอด"
+        >
+          <i data-lucide="shopping-bag" class="w-3.5 h-3.5 text-amber-400"></i>
+          <span class="inline font-semibold">ตะกร้า</span>
           <span id="headerTotalBadge" class="bg-stone-800 text-amber-300 text-[11px] sm:text-xs px-2 py-0.5 rounded-full font-bold">0 ฿</span>
         </a>
       </div>
