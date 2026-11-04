@@ -687,33 +687,37 @@ app.post('/api/orders', orderCreateRateLimit, uploadSlip.single('slip'), async (
     }
 
     // RULE 4: Mandatory QR Code verification ("ตรวจสอบสลิปจาก QR code เท่านั้น")
+    // ปิดช่องโหว่: ห้าม Bypass ด้วย forceSubmit โดยเด็ดขาด หากไม่มี QR Code หรือไม่ใช่สลิปจริง
     if (!slipVerification || !slipVerification.hasQrCode || slipVerification.status === 'NO_QR_CODE') {
-      if (body.forceSubmit !== 'true') {
-        return res.status(400).json({
-          success: false,
-          allowForceSubmit: true,
-          error: 'สลิปนี้ไม่มี QR Code หรือสแกน QR ไม่พบ (ระบบกำหนดให้ต้องตรวจสอบจาก QR Code บนสลิปเท่านั้น หากเป็นสลิปจริงสามารถกดยืนยันให้ร้านตรวจสอบได้ครับ)'
-        });
-      }
+      return res.status(400).json({
+        success: false,
+        error: 'สลิปนี้ไม่มี QR Code หรือสแกน QR ไม่พบ (ระบบกำหนดให้ต้องตรวจสอบจาก QR Code บนสลิปโอนเงินจริงเท่านั้น ไม่อนุญาตให้ข้ามขั้นตอนนี้)'
+      });
     }
 
-    // RULE 5: Date Freshness (Records warning for store owner to inspect without blocking customers)
+    // RULE 5: Date Freshness (อนุญาตให้ forceSubmit เฉพาะกรณีที่มีความคลาดเคลื่อนของวันที่โอน)
     let dateMismatchNote = '';
     if (slipVerification.isDateToday === false || slipVerification.status === 'DATE_MISMATCHED') {
       dateMismatchNote = `วันที่ในสลิป (${slipVerification.transferDate || 'ไม่ระบุ'}) ไม่ใช่วันนี้`;
       console.log(`[Order Notice] ${dateMismatchNote} - marked for admin review.`);
+      if (body.forceSubmit !== 'true') {
+        return res.status(400).json({
+          success: false,
+          allowForceSubmit: true,
+          error: `⚠️ วันที่ในสลิป (${slipVerification.transferDate || 'ไม่ระบุ'}) ไม่ใช่วันนี้ หากเป็นสลิปจริงของคุณสามารถกดยืนยันเพื่อให้ทางร้านตรวจสอบได้ครับ`
+        });
+      }
     }
 
-    // RULE: Enforce amount matching if amount is detected on slip
+    // RULE: Enforce amount matching if amount is detected on slip (ไม่อนุญาตให้โอนเงินขาด)
     if (slipVerification.detectedAmount !== null) {
       const diff = Math.round((slipVerification.detectedAmount - calculatedTotal) * 100) / 100;
-      if (diff < -0.05 && body.forceSubmit !== 'true') {
+      if (diff < -0.05) {
         const detectedAmt = Number(slipVerification.detectedAmount).toFixed(2);
         const targetAmt = Number(calculatedTotal).toFixed(2);
         return res.status(400).json({
           success: false,
-          allowForceSubmit: true,
-          error: `⚠️ ยอดเงินในสลิป (${detectedAmt} บาท) น้อยกว่ายอดสั่งซื้อ (${targetAmt} บาท) ขาดอีก ${Math.abs(diff).toFixed(2)} บาท กรุณาโอนเงินให้ครบหรือยืนยันเพื่อให้ร้านตรวจสอบครับ`
+          error: `⚠️ ยอดเงินในสลิป (${detectedAmt} บาท) น้อยกว่ายอดสั่งซื้อ (${targetAmt} บาท) ขาดอีก ${Math.abs(diff).toFixed(2)} บาท กรุณาโอนเงินให้ครบถ้วนก่อนส่งคำสั่งซื้อครับ`
         });
       }
     }
@@ -741,12 +745,12 @@ app.post('/api/orders', orderCreateRateLimit, uploadSlip.single('slip'), async (
       transactionRef: slipTxRef
     });
 
-    if (dupCheck.isDuplicate && body.forceSubmit !== 'true') {
+    // ปิดช่องโหว่: ห้าม Bypass ด้วย forceSubmit โดยเด็ดขาดสำหรับสลิปซ้ำ (Anti-Double-Spending)
+    if (dupCheck.isDuplicate) {
       return res.status(400).json({
         success: false,
         isDuplicate: true,
-        allowForceSubmit: true,
-        error: dupCheck.message || '🚨 ตรวจพบ QR Code ซ้ำในระบบ! สลิปนี้เคยถูกใช้งานสั่งซื้อไปแล้ว'
+        error: dupCheck.message || '🚨 ตรวจพบสลิปซ้ำในระบบ! สลิปนี้เคยถูกใช้งานสั่งซื้อไปแล้ว ไม่อนุญาตให้ใช้ซ้ำ'
       });
     }
 

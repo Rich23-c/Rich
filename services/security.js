@@ -16,8 +16,17 @@ const publicApiLimits = new Map();     // ip -> { count: number, resetAt: number
 const bannedIps = new Map();           // ip -> unbanTimestamp (24-hour malicious bot blacklist)
 const securityAuditLogs = [];          // Circular buffer: last 50 security events
 
-// Cryptographic Session Secret (Loaded from environment, with runtime fallback)
-const SESSION_SECRET = process.env.ADMIN_SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+// Cryptographic Session Secret (Loaded from environment, with runtime fallback & console warning)
+let SESSION_SECRET = process.env.ADMIN_SESSION_SECRET;
+if (!SESSION_SECRET) {
+  SESSION_SECRET = crypto.randomBytes(32).toString('hex');
+  console.warn('\x1b[33m%s\x1b[0m', '====================================================');
+  console.warn('\x1b[33m%s\x1b[0m', '⚠️  [SECURITY WARNING] ไม่พบค่า ADMIN_SESSION_SECRET ใน .env');
+  console.warn('\x1b[33m%s\x1b[0m', '🔄 กำลังใช้คีย์ Session Secret สุ่มชั่วคราว (crypto.randomBytes)');
+  console.warn('\x1b[33m%s\x1b[0m', '📌 ข้อควรระวัง: เมื่อรีสตาร์ตเซิร์ฟเวอร์ เซสชันแอดมินที่ล็อกอินอยู่จะหลุดทั้งหมด');
+  console.warn('\x1b[33m%s\x1b[0m', '👉 โปรดตั้งค่า ADMIN_SESSION_SECRET=<ความยาว 32+ ตัวอักษร> ใน .env ก่อนขึ้น Production!');
+  console.warn('\x1b[33m%s\x1b[0m', '====================================================');
+}
 const SESSION_MAX_AGE_MS = 12 * 60 * 60 * 1000; // 12 hours valid session
 
 // Configuration Constants

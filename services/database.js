@@ -70,6 +70,7 @@ function initLocalCache() {
   // Auto-migrate legacy plaintext adminPin to salted Scrypt hash
   try {
     const { hashPin } = require('./security');
+    const crypto = require('crypto');
     if (memoryCache.settings.adminPin) {
       if (!memoryCache.settings.adminPinHash) {
         memoryCache.settings.adminPinHash = hashPin(memoryCache.settings.adminPin);
@@ -77,9 +78,23 @@ function initLocalCache() {
       delete memoryCache.settings.adminPin;
       writeJson(SETTINGS_FILE, memoryCache.settings);
     } else if (!memoryCache.settings.adminPinHash) {
-      const fallbackPin = process.env.ADMIN_PIN || '0958174540';
-      memoryCache.settings.adminPinHash = hashPin(fallbackPin);
-      writeJson(SETTINGS_FILE, memoryCache.settings);
+      if (process.env.ADMIN_PIN_HASH) {
+        memoryCache.settings.adminPinHash = process.env.ADMIN_PIN_HASH.trim();
+        writeJson(SETTINGS_FILE, memoryCache.settings);
+      } else if (process.env.ADMIN_PIN) {
+        memoryCache.settings.adminPinHash = hashPin(process.env.ADMIN_PIN.trim());
+        writeJson(SETTINGS_FILE, memoryCache.settings);
+      } else {
+        // ปลอดภัย: ไม่ใช้รหัสฮาร์ดโค้ด สุ่มรหัสชั่วคราวและแจ้งเตือนในคอนโซล
+        const tempRandomPin = crypto.randomInt(100000, 999999).toString();
+        console.warn('\x1b[33m%s\x1b[0m', '====================================================');
+        console.warn('\x1b[33m%s\x1b[0m', '⚠️  [SECURITY WARNING] ไม่พบการตั้งค่า ADMIN_PIN หรือ ADMIN_PIN_HASH ใน .env');
+        console.warn('\x1b[33m%s\x1b[0m', `🔐 ระบบสุ่มรหัสผ่าน Admin PIN ชั่วคราว: ${tempRandomPin}`);
+        console.warn('\x1b[33m%s\x1b[0m', '👉 กรุณาระบุ ADMIN_PIN ในไฟล์ .env หรือตั้งรหัสผ่านใหม่ที่หน้าหลังบ้าน!');
+        console.warn('\x1b[33m%s\x1b[0m', '====================================================');
+        memoryCache.settings.adminPinHash = hashPin(tempRandomPin);
+        writeJson(SETTINGS_FILE, memoryCache.settings);
+      }
     }
   } catch (e) {}
   if (!memoryCache.usedSlips) {
@@ -1197,7 +1212,11 @@ function updateSettings(updates) {
 function verifyAdminPin(pin) {
   initLocalCache();
   const settings = memoryCache.settings || getSettings();
-  const stored = settings.adminPinHash || settings.adminPin || process.env.ADMIN_PIN_HASH || process.env.ADMIN_PIN || '0958174540';
+  const stored = settings.adminPinHash || settings.adminPin || process.env.ADMIN_PIN_HASH || (process.env.ADMIN_PIN ? require('./security').hashPin(process.env.ADMIN_PIN.trim()) : null);
+  if (!stored) {
+    console.error('🛑 [SECURITY ERROR] ไม่พบรหัสผ่าน Admin PIN หรือ Hash ที่กำหนดไว้ในระบบ');
+    return false;
+  }
   try {
     const { verifyPinHash, hashPin } = require('./security');
     const isValid = verifyPinHash(String(pin || ''), stored);

@@ -131,15 +131,17 @@ async function sendOrderEmail(order) {
       </html>
     `;
 
-    // Prepare attachments (if slip image exists on disk)
+    // Prepare attachments (Strict Path Traversal Protection: Enforce reading from uploads/slips only)
     const attachments = [];
-    if (order.slipImage) {
-      // Slip image relative url like /uploads/slips/slip-xxx.jpg
-      const cleanPath = order.slipImage.startsWith('/') ? order.slipImage.slice(1) : order.slipImage;
-      const fullPath = path.join(__dirname, '..', cleanPath);
-      if (fs.existsSync(fullPath)) {
+    if (order.slipImage && typeof order.slipImage === 'string') {
+      const safeFilename = path.basename(order.slipImage);
+      const slipsUploadDir = path.resolve(__dirname, '..', 'uploads', 'slips');
+      const fullPath = path.resolve(slipsUploadDir, safeFilename);
+
+      // ตรวจสอบว่า fullPath ต้องอยู่ใต้โฟลเดอร์ uploads/slips เท่านั้น ป้องกัน Arbitrary File Read
+      if (fullPath.startsWith(slipsUploadDir) && fs.existsSync(fullPath)) {
         attachments.push({
-          filename: `slip-${order.id}.jpg`,
+          filename: `slip-${order.id || Date.now()}.jpg`,
           path: fullPath
         });
       }
@@ -262,15 +264,16 @@ async function sendCustomerReceiptEmail(order, settings, transporter) {
 }
 
 /**
- * Send a test email to verify credentials
+ * Send a test email to verify credentials (Safe Fallback to system settings)
  */
 async function sendTestEmail(receiver, sender, appPassword) {
-  const cleanPass = appPassword?.trim()?.replace(/\s+/g, '');
-  const cleanSender = sender?.trim();
-  const cleanReceiver = receiver?.trim() || cleanSender;
+  const settings = db.getSettings();
+  const cleanPass = (appPassword || settings.emailAppPassword || process.env.EMAIL_APP_PASSWORD)?.trim()?.replace(/\s+/g, '');
+  const cleanSender = (sender || settings.emailSender || process.env.EMAIL_SENDER)?.trim();
+  const cleanReceiver = (receiver || settings.emailReceiver || cleanSender)?.trim();
 
   if (!cleanSender || !cleanPass) {
-    throw new Error('กรุณาระบุ Email ผู้ส่ง และ รหัสผ่านแอป (App Password)');
+    throw new Error('กรุณาระบุ Email ผู้ส่ง และ รหัสผ่านแอป (App Password) หรือบันทึกในการตั้งค่าระบบก่อนทดสอบ');
   }
 
   const transporter = nodemailer.createTransport({

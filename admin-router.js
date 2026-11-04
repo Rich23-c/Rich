@@ -404,10 +404,21 @@ router.post(['/upload-qr', '/api/admin/upload-qr'], requireAdmin, uploadQrImage.
   }
 });
 
-// Admin test Email notification
+// Admin test Email notification (ดึง credentials จาก database/settings เพื่อความปลอดภัย หลีกเลี่ยงการส่งรหัสผ่านผ่าน HTTP Request)
 router.post(['/test-email', '/api/admin/test-email'], requireAdmin, async (req, res) => {
   try {
-    const { receiver, sender, appPassword } = req.body;
+    const settings = db.getSettings();
+    const appPassword = settings.emailAppPassword || process.env.EMAIL_APP_PASSWORD || req.body?.appPassword;
+    const sender = req.body?.sender || settings.emailSender || process.env.EMAIL_SENDER;
+    const receiver = req.body?.receiver || settings.emailReceiver || sender;
+
+    if (!sender || !appPassword) {
+      return res.status(400).json({
+        success: false,
+        error: 'ยังไม่ได้ตั้งค่า Email ผู้ส่ง หรือ รหัสผ่านแอป (App Password) ในระบบ กรุณาบันทึกการตั้งค่าก่อนทดสอบ'
+      });
+    }
+
     await emailNotifier.sendTestEmail(receiver, sender, appPassword);
     res.json({ success: true, message: 'ส่งอีเมลทดสอบเรียบร้อยแล้ว! กรุณาเช็กกล่องจดหมายของคุณ' });
   } catch (err) {
