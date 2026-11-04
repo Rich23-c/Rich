@@ -1893,6 +1893,9 @@ async function loadAdminSettings() {
       // Update UI for store status in header and settings tab
       updateStoreStatusUi(s.isOpen);
 
+      // Two-Factor Authentication (2FA) status
+      updateTwoFaStatusUi(s.twoFactorEnabled === true);
+
     }
   } catch (err) {
     console.error('Failed to load settings:', err);
@@ -2875,6 +2878,213 @@ async function handleChangeAdminPin() {
 }
 
 // ==========================================
+// ==========================================
+// 2FA GOOGLE AUTHENTICATOR MANAGEMENT
+// ==========================================
+
+function updateTwoFaStatusUi(isEnabled) {
+  const badge = document.getElementById('twoFaStatusBadge');
+  const activeInfo = document.getElementById('twoFaActiveInfo');
+  const inactiveInfo = document.getElementById('twoFaInactiveInfo');
+  const disableBtn = document.getElementById('disableTwoFaBtn');
+  const btnLabel = document.getElementById('twoFaBtnLabel');
+
+  if (badge) {
+    if (isEnabled) {
+      badge.className = 'text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 self-start sm:self-auto';
+      badge.innerText = '🟢 เปิดใช้งานแล้ว (ปลอดภัยสูงสุด)';
+    } else {
+      badge.className = 'text-xs font-bold px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200 self-start sm:self-auto';
+      badge.innerText = '⚪ ยังไม่เปิดใช้งาน';
+    }
+  }
+
+  if (activeInfo) activeInfo.classList.toggle('hidden', !isEnabled);
+  if (inactiveInfo) inactiveInfo.classList.toggle('hidden', isEnabled);
+  if (disableBtn) disableBtn.classList.toggle('hidden', !isEnabled);
+  if (btnLabel) {
+    btnLabel.innerText = isEnabled ? 'ตั้งค่า / เปลี่ยนอุปกรณ์ 2FA 📲' : 'เปิดใช้งาน 2FA / สแกน QR Code 📲';
+  }
+}
+
+async function openTwoFaSetupModal() {
+  const modal = document.getElementById('twoFaSetupModal');
+  const qrLoading = document.getElementById('twoFaQrLoading');
+  const qrImg = document.getElementById('twoFaQrImage');
+  const keyBox = document.getElementById('twoFaManualKeyBox');
+  const secretKeyText = document.getElementById('twoFaSecretKeyText');
+  const confirmInput = document.getElementById('twoFaSetupConfirmCode');
+  const errorEl = document.getElementById('twoFaSetupError');
+  const confirmBtn = document.getElementById('confirmTwoFaSetupBtn');
+
+  if (errorEl) errorEl.innerText = '';
+  if (confirmInput) confirmInput.value = '';
+  if (qrLoading) qrLoading.classList.remove('hidden');
+  if (qrImg) {
+    qrImg.src = '';
+    qrImg.classList.add('hidden');
+  }
+  if (keyBox) keyBox.classList.add('hidden');
+  if (modal) modal.classList.remove('hidden');
+  if (confirmBtn) confirmBtn.disabled = false;
+
+  try {
+    const res = await adminFetch('/api/admin/2fa/setup');
+    const data = await res.json();
+    if (data.success) {
+      if (qrImg) {
+        qrImg.src = data.qrCodeDataUrl;
+        qrImg.classList.remove('hidden');
+      }
+      if (secretKeyText) secretKeyText.innerText = data.manualKey;
+      if (keyBox) keyBox.classList.remove('hidden');
+      if (qrLoading) qrLoading.classList.add('hidden');
+      if (confirmInput) setTimeout(() => confirmInput.focus(), 150);
+      if (window.lucide) lucide.createIcons();
+    } else {
+      if (errorEl) errorEl.innerText = data.error || 'ไม่สามารถสร้าง QR Code ได้';
+    }
+  } catch (err) {
+    if (errorEl) errorEl.innerText = 'เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์';
+  }
+}
+
+function closeTwoFaSetupModal() {
+  const modal = document.getElementById('twoFaSetupModal');
+  if (modal) modal.classList.add('hidden');
+}
+
+function copyTwoFaSecretKey() {
+  const textEl = document.getElementById('twoFaSecretKeyText');
+  const text = textEl ? textEl.innerText.trim() : '';
+  if (!text) return;
+  navigator.clipboard.writeText(text).then(() => {
+    Swal.fire({
+      toast: true,
+      position: 'top-end',
+      icon: 'success',
+      title: 'คัดลอก Secret Key เรียบร้อยแล้ว',
+      showConfirmButton: false,
+      timer: 2000
+    });
+  }).catch(() => {});
+}
+
+async function confirmTwoFaSetup() {
+  const input = document.getElementById('twoFaSetupConfirmCode');
+  const errorEl = document.getElementById('twoFaSetupError');
+  const btn = document.getElementById('confirmTwoFaSetupBtn');
+  const code = input ? input.value.trim() : '';
+
+  if (!code || code.length !== 6) {
+    if (errorEl) errorEl.innerText = 'กรุณากรอกรหัสยืนยัน 6 หลักจาก Google Authenticator';
+    if (input) input.focus();
+    return;
+  }
+
+  if (errorEl) errorEl.innerText = '';
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span><span>กำลังตรวจสอบ...</span>';
+  }
+
+  try {
+    const res = await adminFetch('/api/admin/2fa/verify-setup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code })
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      closeTwoFaSetupModal();
+      updateTwoFaStatusUi(true);
+      Swal.fire({
+        icon: 'success',
+        title: 'เปิดใช้งาน 2FA สำเร็จเรียบร้อย 🎉',
+        html: '<p class="text-sm text-slate-600">การเข้าสู่ระบบในครั้งต่อไปจะต้องใช้รหัส 6 หลักจาก Google Authenticator คู่กับรหัส PIN เพื่อความปลอดภัยสูงสุด</p>',
+        confirmButtonColor: '#10b981'
+      });
+    } else {
+      if (errorEl) errorEl.innerText = data.error || 'รหัส 6 หลักไม่ถูกต้อง กรุณาลองใหม่';
+      if (input) {
+        input.value = '';
+        input.focus();
+      }
+    }
+  } catch (err) {
+    if (errorEl) errorEl.innerText = 'ไม่สามารถติดต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่';
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<i data-lucide="shield-check" class="w-4 h-4"></i><span>ยืนยันและเปิดใช้งาน 2FA 🔒</span>';
+      if (window.lucide) lucide.createIcons();
+    }
+  }
+}
+
+async function disableTwoFactorAuth() {
+  const result = await Swal.fire({
+    title: 'ต้องการปิดใช้งาน 2FA หรือไม่?',
+    text: 'กรุณากรอกรหัสผ่าน Admin PIN เพื่อยืนยันการปิดใช้งานการยืนยันตัวตน 2 ขั้นตอน:',
+    input: 'password',
+    inputPlaceholder: 'กรอกรหัส Admin PIN ปัจจุบัน',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'ยืนยันปิดใช้งาน 2FA',
+    cancelButtonText: 'ยกเลิก',
+    confirmButtonColor: '#e11d48',
+    cancelButtonColor: '#94a3b8',
+    inputAttributes: {
+      autocapitalize: 'off',
+      autocorrect: 'off'
+    },
+    preConfirm: (pin) => {
+      if (!pin) {
+        Swal.showValidationMessage('กรุณากรอกรหัส PIN เพื่อยืนยัน');
+        return false;
+      }
+      return pin;
+    }
+  });
+
+  if (!result.isConfirmed || !result.value) return;
+
+  try {
+    const res = await adminFetch('/api/admin/2fa/disable', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: result.value })
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      updateTwoFaStatusUi(false);
+      Swal.fire({
+        icon: 'success',
+        title: 'ปิดใช้งาน 2FA แล้ว',
+        text: 'ระบบได้ปิดการใช้งานการยืนยันตัวตน 2 ขั้นตอนเรียบร้อยแล้ว',
+        confirmButtonColor: '#10b981'
+      });
+    } else {
+      Swal.fire({
+        icon: 'error',
+        title: 'ไม่สามารถปิดใช้งาน 2FA ได้',
+        text: data.error || 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง',
+        confirmButtonColor: '#ea580c'
+      });
+    }
+  } catch (err) {
+    Swal.fire({
+      icon: 'error',
+      title: 'ข้อผิดพลาด',
+      text: 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่อีกครั้ง',
+      confirmButtonColor: '#ea580c'
+    });
+  }
+}
+
+
 // GEMINI AI API KEY MANAGEMENT & TEST
 // ==========================================
 function updateGeminiKeyBadge(keys) {

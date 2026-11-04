@@ -14,9 +14,12 @@
 </head>
 <body class="bg-slate-900 min-h-screen text-slate-800 antialiased flex items-center justify-center p-4">
 
-  <div class="bg-white rounded-3xl max-w-sm w-full p-6 sm:p-7 shadow-2xl border border-amber-100 space-y-5 text-center my-auto">
-    <!-- Icon & Title -->
-    <div class="space-y-2">
+  <div class="bg-white rounded-3xl max-w-sm w-full p-6 sm:p-7 shadow-2xl border border-amber-100 space-y-5 text-center my-auto transition-all">
+    
+    <!-- ============================================== -->
+    <!-- STEP 1 HEADER: ADMIN PIN                       -->
+    <!-- ============================================== -->
+    <div id="step1Header" class="space-y-2">
       <img src="/images/admin-icon-192.png?v=3" alt="ร้านขนมแม้ว 🐾" class="w-16 h-16 rounded-3xl object-cover shadow-md mx-auto border-2 border-orange-200">
       <h2 class="text-xl font-extrabold text-slate-900 font-heading">
         ระบบหลังบ้านร้านขนมแม้ว 🐾
@@ -26,8 +29,25 @@
       </p>
     </div>
 
-    <!-- PIN Input Form -->
-    <form id="adminLoginForm" onsubmit="event.preventDefault(); submitLogin();" class="space-y-3">
+    <!-- ============================================== -->
+    <!-- STEP 2 HEADER: 2FA GOOGLE AUTHENTICATOR        -->
+    <!-- ============================================== -->
+    <div id="step2Header" class="space-y-2 hidden">
+      <div class="w-16 h-16 rounded-3xl bg-orange-100 border-2 border-orange-300 flex items-center justify-center mx-auto shadow-md text-orange-600">
+        <i data-lucide="shield-check" class="w-8 h-8"></i>
+      </div>
+      <h2 class="text-xl font-extrabold text-slate-900 font-heading">
+        ยืนยันตัวตน 2 ขั้นตอน 🛡️
+      </h2>
+      <p class="text-xs text-slate-500">
+        กรอกรหัส 6 หลักจาก Google Authenticator
+      </p>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- STEP 1 FORM: ADMIN PIN                         -->
+    <!-- ============================================== -->
+    <form id="loginStep1Form" onsubmit="event.preventDefault(); submitLogin();" class="space-y-3">
       <div class="relative">
         <input
           type="password"
@@ -81,6 +101,67 @@
       </button>
     </form>
 
+    <!-- ============================================== -->
+    <!-- STEP 2 FORM: 2FA 6-DIGIT CODE                  -->
+    <!-- ============================================== -->
+    <form id="loginStep2Form" onsubmit="event.preventDefault(); submit2FA();" class="space-y-3 hidden">
+      <div class="relative">
+        <input
+          type="text"
+          id="twoFaCodeInput"
+          name="twoFaCode"
+          maxlength="6"
+          inputmode="numeric"
+          pattern="[0-9]*"
+          autocomplete="one-time-code"
+          placeholder="000 000"
+          class="w-full text-center text-2xl font-black tracking-widest py-3 px-4 bg-orange-50/50 rounded-2xl border-2 border-orange-300 focus:border-orange-500 focus:bg-white focus:outline-none transition font-mono text-slate-900"
+          oninput="handle2FAInput(this)"
+          onkeydown="if(event.key==='Enter') submit2FA();"
+        />
+      </div>
+
+      <p id="twoFaErrorMessage" class="text-xs text-red-500 font-semibold min-h-[1rem]"></p>
+
+      <!-- Virtual Numeric Keypad for Mobile Touch Screens -->
+      <div class="grid grid-cols-3 gap-2 pt-1 select-none">
+        <button type="button" onclick="keypadPress('1')" class="py-3 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-800 font-bold text-lg rounded-xl transition">1</button>
+        <button type="button" onclick="keypadPress('2')" class="py-3 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-800 font-bold text-lg rounded-xl transition">2</button>
+        <button type="button" onclick="keypadPress('3')" class="py-3 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-800 font-bold text-lg rounded-xl transition">3</button>
+        <button type="button" onclick="keypadPress('4')" class="py-3 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-800 font-bold text-lg rounded-xl transition">4</button>
+        <button type="button" onclick="keypadPress('5')" class="py-3 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-800 font-bold text-lg rounded-xl transition">5</button>
+        <button type="button" onclick="keypadPress('6')" class="py-3 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-800 font-bold text-lg rounded-xl transition">6</button>
+        <button type="button" onclick="keypadPress('7')" class="py-3 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-800 font-bold text-lg rounded-xl transition">7</button>
+        <button type="button" onclick="keypadPress('8')" class="py-3 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-800 font-bold text-lg rounded-xl transition">8</button>
+        <button type="button" onclick="keypadPress('9')" class="py-3 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-800 font-bold text-lg rounded-xl transition">9</button>
+        <button type="button" onclick="keypadClear()" class="py-3 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-500 font-bold text-xs rounded-xl transition">ล้าง</button>
+        <button type="button" onclick="keypadPress('0')" class="py-3 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-800 font-bold text-lg rounded-xl transition">0</button>
+        <button type="button" onclick="keypadBackspace()" class="py-3 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-600 font-bold text-lg rounded-xl transition flex items-center justify-center">
+          <i data-lucide="delete" class="w-5 h-5 mx-auto"></i>
+        </button>
+      </div>
+
+      <!-- Submit 2FA Button -->
+      <button
+        type="submit"
+        id="twoFaSubmitBtn"
+        class="w-full bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-extrabold py-3.5 px-4 rounded-2xl shadow-lg transition active:scale-95 flex items-center justify-center gap-2 cursor-pointer mt-2"
+      >
+        <i data-lucide="shield-check" class="w-4 h-4"></i>
+        <span>ยืนยันรหัส 2FA 🚀</span>
+      </button>
+
+      <!-- Back to Step 1 Button -->
+      <button
+        type="button"
+        onclick="backToStep1()"
+        class="w-full text-xs text-slate-400 hover:text-orange-500 transition py-2 font-medium flex items-center justify-center gap-1"
+      >
+        <i data-lucide="arrow-left" class="w-3.5 h-3.5"></i>
+        <span>ย้อนกลับไปกรอกรหัส PIN</span>
+      </button>
+    </form>
+
     <div class="pt-2 text-center">
       <a href="/" class="text-xs text-slate-400 hover:text-orange-500 transition inline-flex items-center gap-1 font-medium">
         <span>← กลับไปหน้าร้านค้า</span>
@@ -90,6 +171,9 @@
 
   <script>
     if (window.lucide) lucide.createIcons();
+
+    let currentStep = 1;
+    let temp2faToken = null;
 
     // Check if already authenticated, immediately forward to /admin
     (async function() {
@@ -115,22 +199,72 @@
     }
 
     function keypadPress(val) {
-      const input = document.getElementById('adminPinInput');
-      if (input && input.value.length < 20) {
-        input.value += val;
+      if (currentStep === 1) {
+        const input = document.getElementById('adminPinInput');
+        if (input && input.value.length < 20) {
+          input.value += val;
+        }
+      } else {
+        const input = document.getElementById('twoFaCodeInput');
+        if (input && input.value.length < 6) {
+          input.value += val;
+          if (input.value.length === 6) {
+            submit2FA();
+          }
+        }
       }
     }
 
     function keypadClear() {
-      const input = document.getElementById('adminPinInput');
-      if (input) input.value = '';
+      if (currentStep === 1) {
+        const input = document.getElementById('adminPinInput');
+        if (input) input.value = '';
+      } else {
+        const input = document.getElementById('twoFaCodeInput');
+        if (input) input.value = '';
+      }
     }
 
     function keypadBackspace() {
-      const input = document.getElementById('adminPinInput');
-      if (input) input.value = input.value.slice(0, -1);
+      if (currentStep === 1) {
+        const input = document.getElementById('adminPinInput');
+        if (input) input.value = input.value.slice(0, -1);
+      } else {
+        const input = document.getElementById('twoFaCodeInput');
+        if (input) input.value = input.value.slice(0, -1);
+      }
     }
 
+    function handle2FAInput(el) {
+      el.value = el.value.replace(/\D/g, '').slice(0, 6);
+      if (el.value.length === 6) {
+        submit2FA();
+      }
+    }
+
+    function backToStep1() {
+      currentStep = 1;
+      temp2faToken = null;
+      document.getElementById('step2Header').classList.add('hidden');
+      document.getElementById('loginStep2Form').classList.add('hidden');
+      document.getElementById('step1Header').classList.remove('hidden');
+      document.getElementById('loginStep1Form').classList.remove('hidden');
+      
+      const pinInput = document.getElementById('adminPinInput');
+      if (pinInput) {
+        pinInput.value = '';
+        pinInput.focus();
+      }
+      const twoFaInput = document.getElementById('twoFaCodeInput');
+      if (twoFaInput) twoFaInput.value = '';
+      const twoFaError = document.getElementById('twoFaErrorMessage');
+      if (twoFaError) twoFaError.innerText = '';
+      if (window.lucide) lucide.createIcons();
+    }
+
+    // ==============================================
+    // STEP 1: SUBMIT ADMIN PIN
+    // ==============================================
     async function submitLogin() {
       const input = document.getElementById('adminPinInput');
       const errorMsg = document.getElementById('pinErrorMessage');
@@ -158,7 +292,25 @@
         const data = await res.json();
 
         if (data.success) {
-          window.location.replace('/admin');
+          if (data.require2FA) {
+            // Transition to Step 2: Google Authenticator TOTP
+            currentStep = 2;
+            temp2faToken = data.temp2faToken;
+            document.getElementById('step1Header').classList.add('hidden');
+            document.getElementById('loginStep1Form').classList.add('hidden');
+            document.getElementById('step2Header').classList.remove('hidden');
+            document.getElementById('loginStep2Form').classList.remove('hidden');
+
+            const twoFaInput = document.getElementById('twoFaCodeInput');
+            if (twoFaInput) {
+              twoFaInput.value = '';
+              setTimeout(() => twoFaInput.focus(), 150);
+            }
+            if (window.lucide) lucide.createIcons();
+          } else {
+            // Direct login success
+            window.location.replace('/admin');
+          }
         } else {
           if (errorMsg) errorMsg.innerText = data.error || 'รหัส PIN ไม่ถูกต้อง';
           if (input) {
@@ -172,6 +324,55 @@
         if (btn) {
           btn.disabled = false;
           btn.innerHTML = '<i data-lucide="unlock" class="w-4 h-4"></i><span>เข้าสู่ระบบหลังบ้าน 🔓</span>';
+          if (window.lucide) lucide.createIcons();
+        }
+      }
+    }
+
+    // ==============================================
+    // STEP 2: SUBMIT 2FA CODE (GOOGLE AUTHENTICATOR)
+    // ==============================================
+    async function submit2FA() {
+      const input = document.getElementById('twoFaCodeInput');
+      const errorMsg = document.getElementById('twoFaErrorMessage');
+      const btn = document.getElementById('twoFaSubmitBtn');
+      const code = input ? input.value.trim() : '';
+
+      if (!code || code.length !== 6) {
+        if (errorMsg) errorMsg.innerText = 'กรุณากรอกรหัส 6 หลักจาก Google Authenticator';
+        if (input) input.focus();
+        return;
+      }
+
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span><span>กำลังยืนยันรหัส 2FA...</span>';
+      }
+      if (errorMsg) errorMsg.innerText = '';
+
+      try {
+        const res = await fetch('/api/admin/login/verify-2fa', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ temp2faToken, code })
+        });
+        const data = await res.json();
+
+        if (data.success) {
+          window.location.replace('/admin');
+        } else {
+          if (errorMsg) errorMsg.innerText = data.error || 'รหัส 2FA ไม่ถูกต้อง กรุณาลองใหม่';
+          if (input) {
+            input.value = '';
+            input.focus();
+          }
+        }
+      } catch (err) {
+        if (errorMsg) errorMsg.innerText = 'ไม่สามารถติดต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่';
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = '<i data-lucide="shield-check" class="w-4 h-4"></i><span>ยืนยันรหัส 2FA 🚀</span>';
           if (window.lucide) lucide.createIcons();
         }
       }

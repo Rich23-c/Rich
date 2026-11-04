@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const path = require('path');
+const { generateSecret, generateURI, verifySync } = require('otplib');
 
 // ==========================================
 // 🛡️ SECURITY FORTRESS MODULE (ENTERPRISE GRADE)
@@ -7,6 +8,7 @@ const path = require('path');
 
 // Memory Stores
 const loginAttempts = new Map();       // ip -> { count: number, lockedUntil: number, lastAttempt: number }
+const twoFaAttempts = new Map();       // ip -> { count: number, lockedUntil: number, lastAttempt: number }
 const slipVerifyLimits = new Map();    // ip -> { count: number, resetAt: number }
 const orderCreateLimits = new Map();   // ip -> { count: number, resetAt: number }
 const visitorTrackLimits = new Map();  // ip -> { count: number, resetAt: number }
@@ -32,6 +34,8 @@ const SESSION_MAX_AGE_MS = 12 * 60 * 60 * 1000; // 12 hours valid session
 // Configuration Constants
 const MAX_LOGIN_ATTEMPTS = 5;
 const LOGIN_LOCKOUT_MS = 15 * 60 * 1000;      // Lock for 15 minutes after 5 failed attempts
+const MAX_2FA_ATTEMPTS = 5;                   // Lock for 15 minutes after 5 failed 2FA attempts
+const TWO_FA_LOCKOUT_MS = 15 * 60 * 1000;
 const LOGIN_ARTIFICIAL_DELAY_MS = 600;        // 600ms slow-down against high-speed bot cracking
 const BAN_DURATION_MS = 24 * 60 * 60 * 1000;  // 24 hours auto-ban for active attack attempts
 
@@ -90,6 +94,11 @@ setInterval(() => {
       loginAttempts.delete(ip);
     }
   }
+  for (const [ip, data] of twoFaAttempts.entries()) {
+    if (now > (data.lockedUntil || (data.lastAttempt + TWO_FA_LOCKOUT_MS))) {
+      twoFaAttempts.delete(ip);
+    }
+  }
   for (const [ip, unbanTime] of bannedIps.entries()) {
     if (now > unbanTime) bannedIps.delete(ip);
   }
@@ -136,7 +145,7 @@ function intrusionDetectionMiddleware(req, res, next) {
 
   // 1. Check if IP is currently in 24-hour Auto-Ban blacklist
   // (Exempt admin login so legitimate owner can always unban themselves with the PIN)
-  const isAuthRoute = req.path === '/api/admin/login' || req.path === '/admin';
+  const isAuthRoute = req.path === '/api/admin/login' || req.path === '/api/admin/login/verify-2fa' || req.path === '/admin';
   const unbanAt = bannedIps.get(ip);
   if (unbanAt && now < unbanAt && !isAuthRoute) {
     const remainingHrs = Math.ceil((unbanAt - now) / 3600000);
@@ -307,6 +316,141 @@ function recordLoginSuccess(req) {
     ip,
     userAgent: (req.headers['user-agent'] || '').slice(0, 100)
   });
+}
+
+// ==========================================
+// 4.1 TWO-FACTOR AUTHENTICATION (2FA TOTP & RATE LIMITING)
+// ==========================================
+
+/**
+ * Generate a new random Base32 TOTP secret key for Google Authenticator
+ */
+function generateTotpSecret() {
+  return generateSecret();
+}
+
+/**
+ * Build standard otpauth:// URI for QR code generation
+ */
+function generateTotpUri(secret, accountName = 'admin', issuer = 'Snack by Maew Admin') {
+  return generateURI({
+    secret,
+    label: accountName,
+    issuer
+  });
+}
+
+/**
+ * Verify a 6-digit TOTP code against secret with +/- 30s clock drift tolerance
+ */
+function verifyTotpCode(code, secret) {
+  if (!code || !secret) return false;
+  const token = String(code).replace(/\D/g, '').trim();
+  if (token.length !== 6) return false;
+  try {
+    const res = verifySync({
+      token,
+      secret: String(secret).trim(),
+      epochTolerance: 30
+    });
+    return !!(res && res.valid === true);
+  } catch (err) {
+    console.error('TOTP verification error:', err);
+    return false;
+  }
+}
+
+/**
+ * Generate a signed temporary 2FA exchange token after Step 1 PIN verification
+ * Valid for 5 minutes only. Cryptographically tied to client IP and SESSION_SECRET.
+ */
+function generateTemp2FAToken(clientIp = '127.0.0.1') {
+  const payload = JSON.stringify({
+    ip: clientIp,
+    purpose: '2fa_login',
+    exp: Date.now() + 5 * 60 * 1000 // 5 minutes validity
+  });
+  const b64 = Buffer.from(payload, 'utf8').toString('base64url');
+  const hmac = crypto.createHmac('sha256', SESSION_SECRET).update(b64).digest('base64url');
+  return `${b64}.${hmac}`;
+}
+
+/**
+ * Verify signed temporary 2FA exchange token
+ */
+function verifyTemp2FAToken(token, clientIp = null) {
+  if (!token || typeof token !== 'string') return false;
+  const parts = token.split('.');
+  if (parts.length !== 2) return false;
+  const [b64, signature] = parts;
+  const expectedHmac = crypto.createHmac('sha256', SESSION_SECRET).update(b64).digest('base64url');
+  if (signature.length !== expectedHmac.length) return false;
+  if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedHmac))) {
+    return false;
+  }
+  try {
+    const payload = JSON.parse(Buffer.from(b64, 'base64url').toString('utf8'));
+    if (!payload || payload.purpose !== '2fa_login') return false;
+    if (Date.now() > payload.exp) return false;
+    if (clientIp && payload.ip && payload.ip !== clientIp) return false;
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * Rate limiting check for Step 2 (2FA code verification)
+ */
+function check2FARateLimit(req) {
+  const ip = getClientIp(req);
+  const now = Date.now();
+  const record = twoFaAttempts.get(ip);
+  if (record && record.lockedUntil && now < record.lockedUntil) {
+    const remainingMinutes = Math.ceil((record.lockedUntil - now) / 60000);
+    return {
+      allowed: false,
+      error: `🛑 มีการยืนยันรหัส 2FA ผิดเกินกำหนด ระบบระงับการลองชั่วคราวอีก ${remainingMinutes} นาที เพื่อความปลอดภัย`
+    };
+  }
+  return { allowed: true };
+}
+
+/**
+ * Record a failed 2FA verification attempt
+ */
+function record2FAFailure(req) {
+  const ip = getClientIp(req);
+  const now = Date.now();
+  const record = twoFaAttempts.get(ip) || { count: 0, lockedUntil: null, lastAttempt: now };
+  record.count += 1;
+  record.lastAttempt = now;
+
+  recordSecurityEvent('FAILED_2FA_ATTEMPT', {
+    ip,
+    attemptNumber: record.count
+  });
+
+  if (record.count >= MAX_2FA_ATTEMPTS) {
+    record.lockedUntil = now + TWO_FA_LOCKOUT_MS;
+    recordSecurityEvent('2FA_LOCKOUT_TRIGGERED', { ip, lockedForMinutes: 15 });
+    console.warn(`[Security Alert] IP ${ip} exceeded maximum 2FA attempts (${record.count}). Locked for 15 minutes.`);
+  }
+
+  twoFaAttempts.set(ip, record);
+  return {
+    isLocked: !!record.lockedUntil,
+    remainingAttempts: Math.max(0, MAX_2FA_ATTEMPTS - record.count)
+  };
+}
+
+/**
+ * Reset 2FA verification attempts on success
+ */
+function record2FASuccess(req) {
+  const ip = getClientIp(req);
+  twoFaAttempts.delete(ip);
+  recordSecurityEvent('SUCCESSFUL_2FA_VERIFICATION', { ip });
 }
 
 // ==========================================
@@ -874,8 +1018,13 @@ function verifyAdminSessionMiddleware(req, res, next) {
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
 
-  // Allow public login endpoint to authenticate
-  if (req.path === '/login' || req.path === '/api/admin/login') {
+  // Allow public login and 2FA authentication endpoints to proceed without prior session
+  if (
+    req.path === '/login' ||
+    req.path === '/api/admin/login' ||
+    req.path === '/login/verify-2fa' ||
+    req.path === '/api/admin/login/verify-2fa'
+  ) {
     return next();
   }
 
@@ -955,6 +1104,14 @@ module.exports = {
   generateSlipVerificationToken,
   verifySlipVerificationToken,
   maskPhoneNumber,
-  sanitizeOrderForCustomer
+  sanitizeOrderForCustomer,
+  generateTotpSecret,
+  generateTotpUri,
+  verifyTotpCode,
+  generateTemp2FAToken,
+  verifyTemp2FAToken,
+  check2FARateLimit,
+  record2FAFailure,
+  record2FASuccess
 };
 

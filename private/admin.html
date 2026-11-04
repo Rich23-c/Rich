@@ -876,6 +876,66 @@
           </div>
         </form>
       </div>
+
+      <!-- 5. Two-Factor Authentication (2FA) with Google Authenticator -->
+      <div class="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200/80 shadow-xs max-w-2xl mx-auto space-y-5">
+        <div class="border-b border-slate-100 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h3 class="text-base sm:text-lg font-bold text-slate-900 font-heading flex items-center gap-2">
+              <span>🛡️ การยืนยันตัวตน 2 ขั้นตอน (2FA - Google Authenticator)</span>
+            </h3>
+            <p class="text-xs text-slate-500 mt-0.5">เพิ่มความปลอดภัยระดับสูง เมื่อเปิดใช้งานจะต้องกรอกรหัส 6 หลักจาก Google Authenticator ทุกครั้งที่เข้าสู่ระบบ</p>
+          </div>
+          <span id="twoFaStatusBadge" class="text-xs font-bold px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200 self-start sm:self-auto">
+            ⚪ ยังไม่เปิดใช้งาน
+          </span>
+        </div>
+
+        <div class="space-y-4 text-xs sm:text-sm">
+          <div class="p-4 rounded-2xl bg-amber-50/60 border border-amber-200 text-slate-700 space-y-2">
+            <div class="flex items-start gap-2">
+              <span class="text-base">💡</span>
+              <p class="leading-relaxed">
+                การเปิดใช้ 2FA จะช่วยป้องกันระบบหลังบ้านของคุณจากการถูกสุ่มรหัสผ่าน PIN ได้อย่างสมบูรณ์ รองรับแอปพลิเคชัน <b>Google Authenticator</b>, <b>Microsoft Authenticator</b>, หรือแอป TOTP ใดๆ บนมือถือ
+              </p>
+            </div>
+          </div>
+
+          <div class="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div id="twoFaActiveInfo" class="hidden text-xs text-emerald-700 font-medium flex items-center gap-1.5">
+              <i data-lucide="check-circle" class="w-4 h-4 text-emerald-600"></i>
+              <span>ระบบหลังบ้านได้รับการปกป้องด้วยรหัส TOTP 6 หลักแล้ว</span>
+            </div>
+            <div id="twoFaInactiveInfo" class="text-xs text-slate-400">
+              กดปุ่มเพื่อเริ่มสแกน QR Code และเปิดใช้งาน 2FA
+            </div>
+
+            <div class="flex items-center gap-2">
+              <!-- Enable / Setup Button -->
+              <button
+                type="button"
+                id="openTwoFaSetupBtn"
+                onclick="openTwoFaSetupModal()"
+                class="bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold px-5 py-2.5 rounded-xl shadow-md transition active:scale-95 cursor-pointer flex items-center justify-center gap-2 text-xs sm:text-sm"
+              >
+                <i data-lucide="qr-code" class="w-4 h-4"></i>
+                <span id="twoFaBtnLabel">เปิดใช้งาน 2FA / สแกน QR Code 📲</span>
+              </button>
+
+              <!-- Disable 2FA Button -->
+              <button
+                type="button"
+                id="disableTwoFaBtn"
+                onclick="disableTwoFactorAuth()"
+                class="hidden bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold px-4 py-2.5 rounded-xl transition active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 text-xs sm:text-sm"
+              >
+                <i data-lucide="shield-off" class="w-4 h-4"></i>
+                <span>ปิดใช้งาน 2FA</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- ============================================== -->
@@ -1354,6 +1414,106 @@
               </button>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2FA Setup Modal (Google Authenticator TOTP) -->
+  <div id="twoFaSetupModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl border border-slate-100 space-y-5 my-auto max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+        <div class="flex items-center gap-2">
+          <div class="w-9 h-9 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center">
+            <i data-lucide="shield-check" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h3 class="text-base sm:text-lg font-bold text-slate-900 font-heading">
+              ตั้งค่า 2FA Google Authenticator 📲
+            </h3>
+            <p class="text-xs text-slate-500">ผูกบัญชีเพื่อเพิ่มความปลอดภัยระดับสูงสุด</p>
+          </div>
+        </div>
+        <button type="button" onclick="closeTwoFaSetupModal()" class="text-slate-400 hover:text-slate-600 p-1.5 rounded-xl hover:bg-slate-100 transition cursor-pointer">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="space-y-4 text-xs sm:text-sm">
+        <!-- Step 1 instructions -->
+        <div class="space-y-2">
+          <div class="flex items-center gap-2 font-bold text-slate-800">
+            <span class="w-5 h-5 rounded-full bg-orange-500 text-white text-[11px] flex items-center justify-center font-bold">1</span>
+            <span>เปิดแอป Google Authenticator แล้วสแกน QR Code</span>
+          </div>
+          <p class="text-slate-500 text-[11px] pl-7">
+            เปิดแอป Google Authenticator หรือ TOTP บนมือถือ แล้วกดเครื่องหมาย + เพื่อสแกน QR Code ด้านล่างนี้:
+          </p>
+          
+          <!-- QR Code Display Box -->
+          <div class="bg-slate-50 p-4 rounded-2xl border-2 border-dashed border-orange-200 text-center space-y-2">
+            <div id="twoFaQrLoading" class="py-12 flex flex-col items-center justify-center gap-2">
+              <span class="inline-block w-6 h-6 border-2 border-orange-500 border-t-transparent rounded-full animate-spin"></span>
+              <span class="text-xs text-slate-400 font-medium">กำลังสร้างรหัส QR Code...</span>
+            </div>
+            <img id="twoFaQrImage" src="" alt="Google Authenticator QR Code" class="hidden mx-auto w-56 h-56 rounded-xl shadow-xs bg-white p-2 border border-slate-200 object-contain" />
+            
+            <div id="twoFaManualKeyBox" class="hidden pt-1">
+              <span class="text-[11px] text-slate-400 block mb-1">หรือกรอกรหัสลับด้วยตัวเอง (Secret Key):</span>
+              <div class="flex items-center justify-center gap-1.5">
+                <code id="twoFaSecretKeyText" class="font-mono text-xs font-bold text-orange-700 bg-white px-2.5 py-1.5 rounded-lg border border-orange-200 select-all tracking-wider"></code>
+                <button type="button" onclick="copyTwoFaSecretKey()" class="p-1.5 bg-white hover:bg-orange-50 text-slate-600 hover:text-orange-600 border border-slate-200 rounded-lg transition cursor-pointer" title="คัดลอก Secret Key">
+                  <i data-lucide="copy" class="w-4 h-4"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 2 instructions -->
+        <div class="space-y-2 pt-2 border-t border-slate-100">
+          <div class="flex items-center gap-2 font-bold text-slate-800">
+            <span class="w-5 h-5 rounded-full bg-orange-500 text-white text-[11px] flex items-center justify-center font-bold">2</span>
+            <span>กรอกรหัส 6 หลักจากแอป เพื่อยืนยัน</span>
+          </div>
+          <p class="text-slate-500 text-[11px] pl-7">
+            ใส่รหัส 6 หลักที่ปรากฏใน Google Authenticator เพื่อยืนยันว่าการจับคู่สำเร็จ:
+          </p>
+
+          <div class="pl-7 pt-1">
+            <input
+              type="text"
+              id="twoFaSetupConfirmCode"
+              maxlength="6"
+              inputmode="numeric"
+              pattern="[0-9]*"
+              placeholder="000 000"
+              class="w-full text-center text-xl font-bold tracking-widest py-2.5 px-4 bg-orange-50/50 rounded-xl border-2 border-orange-300 focus:border-orange-500 focus:bg-white focus:outline-none transition font-mono text-slate-900"
+              oninput="this.value = this.value.replace(/\D/g, '').slice(0, 6)"
+              onkeydown="if(event.key==='Enter') confirmTwoFaSetup();"
+            />
+            <p id="twoFaSetupError" class="text-xs text-red-500 font-semibold mt-1 min-h-[1rem]"></p>
+          </div>
+        </div>
+
+        <!-- Action buttons -->
+        <div class="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onclick="closeTwoFaSetupModal()"
+            class="px-4 py-2.5 rounded-xl text-slate-600 hover:bg-slate-100 font-semibold transition cursor-pointer text-xs sm:text-sm"
+          >
+            ยกเลิก
+          </button>
+          <button
+            type="button"
+            id="confirmTwoFaSetupBtn"
+            onclick="confirmTwoFaSetup()"
+            class="bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold px-5 py-2.5 rounded-xl shadow-md transition active:scale-95 cursor-pointer flex items-center gap-1.5 text-xs sm:text-sm"
+          >
+            <i data-lucide="shield-check" class="w-4 h-4"></i>
+            <span>ยืนยันและเปิดใช้งาน 2FA 🔒</span>
+          </button>
         </div>
       </div>
     </div>

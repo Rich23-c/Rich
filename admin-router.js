@@ -2,6 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const qrcode = require('qrcode');
 
 const db = require('./services/database');
 const emailNotifier = require('./services/emailNotifier');
@@ -14,7 +15,15 @@ const {
   verifyAdminSessionToken,
   getClientIp,
   getSecurityAuditLogs,
-  slipFileFilter
+  slipFileFilter,
+  generateTotpSecret,
+  generateTotpUri,
+  verifyTotpCode,
+  generateTemp2FAToken,
+  verifyTemp2FAToken,
+  check2FARateLimit,
+  record2FAFailure,
+  record2FASuccess
 } = require('./services/security');
 
 const router = express.Router();
@@ -115,8 +124,21 @@ router.post(['/login', '/api/admin/login'], async (req, res) => {
     if (db.verifyAdminPin(pin)) {
       recordLoginSuccess(req);
       const clientIp = getClientIp(req);
-      const token = generateAdminSessionToken(clientIp);
+      const settings = db.getSettings();
 
+      // Check if Two-Factor Authentication (2FA) is enabled
+      if (settings.twoFactorEnabled && settings.twoFactorSecret) {
+        const temp2faToken = generateTemp2FAToken(clientIp);
+        return res.json({
+          success: true,
+          require2FA: true,
+          message: 'กรุณากรอกรหัสยืนยัน 6 หลักจาก Google Authenticator',
+          temp2faToken
+        });
+      }
+
+      // Direct login when 2FA is not enabled
+      const token = generateAdminSessionToken(clientIp);
       const isSecure = isSecureConnection(req);
       res.cookie('snack_admin_session', token, {
         httpOnly: true,
@@ -148,6 +170,77 @@ router.post(['/login', '/api/admin/login'], async (req, res) => {
   } catch (err) {
     console.error('Admin login exception:', err);
     return res.status(500).json({ success: false, error: 'ระบบตรวจสอบรหัสผ่านขัดข้อง กรุณาลองใหม่อีกครั้ง' });
+  }
+});
+
+// Step 2: 2FA Google Authenticator TOTP Verification
+router.post(['/login/verify-2fa', '/api/admin/login/verify-2fa'], async (req, res) => {
+  try {
+    const rateCheck = check2FARateLimit(req);
+    if (!rateCheck.allowed) {
+      return res.status(429).json({ success: false, error: rateCheck.error });
+    }
+
+    const { temp2faToken, code } = req.body || {};
+    const clientIp = getClientIp(req);
+
+    if (!temp2faToken || !verifyTemp2FAToken(temp2faToken, clientIp)) {
+      return res.status(401).json({
+        success: false,
+        error: 'โทเค็นยืนยัน 2FA หมดอายุหรือคำขอไม่ถูกต้อง กรุณากรอกรหัส PIN ใหม่อีกครั้ง'
+      });
+    }
+
+    const cleanCode = String(code || '').replace(/\D/g, '').trim();
+    if (!cleanCode || cleanCode.length !== 6) {
+      return res.status(400).json({
+        success: false,
+        error: 'กรุณากรอกรหัสยืนยันเป็นตัวเลข 6 หลัก'
+      });
+    }
+
+    const settings = db.getSettings();
+    if (!settings.twoFactorEnabled || !settings.twoFactorSecret) {
+      return res.status(400).json({
+        success: false,
+        error: 'ระบบไม่ได้เปิดใช้งาน 2FA กรุณาเข้าสู่ระบบด้วยรหัส PIN ตามปกติ'
+      });
+    }
+
+    const isValid = verifyTotpCode(cleanCode, settings.twoFactorSecret);
+    if (!isValid) {
+      const failInfo = record2FAFailure(req);
+      if (failInfo.isLocked) {
+        return res.status(429).json({
+          success: false,
+          error: '🛑 ยืนยันรหัส 2FA ผิดเกินกำหนด ระบบระงับการเข้าสู่ระบบ 15 นาที เพื่อความปลอดภัย'
+        });
+      }
+      return res.status(401).json({
+        success: false,
+        error: 'รหัส 2FA ไม่ถูกต้อง กรุณาดูรหัส 6 หลักล่าสุดจากแอป Google Authenticator'
+      });
+    }
+
+    // 2FA Verified Successfully!
+    record2FASuccess(req);
+    const token = generateAdminSessionToken(clientIp);
+    const isSecure = isSecureConnection(req);
+    res.cookie('snack_admin_session', token, {
+      httpOnly: true,
+      secure: isSecure,
+      sameSite: 'strict',
+      path: '/',
+      maxAge: 12 * 60 * 60 * 1000 // 12 hours
+    });
+
+    return res.json({
+      success: true,
+      message: 'ยืนยันตัวตน 2FA สำเร็จ เข้าสู่ระบบเรียบร้อย'
+    });
+  } catch (err) {
+    console.error('2FA verification exception:', err);
+    return res.status(500).json({ success: false, error: 'ระบบตรวจสอบ 2FA ขัดข้อง กรุณาลองใหม่อีกครั้ง' });
   }
 });
 
@@ -444,6 +537,9 @@ router.get(['/settings', '/api/admin/settings'], requireAdmin, (req, res) => {
     const safeSettings = { ...settings };
     delete safeSettings.adminPin;
     delete safeSettings.adminPinHash;
+    delete safeSettings.twoFactorSecret;
+    delete safeSettings.twoFactorPendingSecret;
+    safeSettings.twoFactorEnabled = !!settings.twoFactorEnabled;
     res.json({ success: true, data: safeSettings });
   } catch (err) {
     console.error('Get settings exception:', err);
@@ -458,14 +554,150 @@ router.put(['/settings', '/api/admin/settings'], requireAdmin, (req, res) => {
     if (updates.isOpen !== undefined) {
       updates.isOpen = (updates.isOpen === true || updates.isOpen === 'true');
     }
+    // Prevent overriding 2FA secrets via generic settings endpoint
+    delete updates.twoFactorSecret;
+    delete updates.twoFactorPendingSecret;
+    delete updates.twoFactorEnabled;
+
     const updated = db.updateSettings(updates);
     const safeSettings = { ...updated };
     delete safeSettings.adminPin;
     delete safeSettings.adminPinHash;
+    delete safeSettings.twoFactorSecret;
+    delete safeSettings.twoFactorPendingSecret;
+    safeSettings.twoFactorEnabled = !!updated.twoFactorEnabled;
     res.json({ success: true, data: safeSettings });
   } catch (err) {
     console.error('Update settings exception:', err);
     res.status(500).json({ success: false, error: 'เกิดข้อผิดพลาดในการบันทึกการตั้งค่า' });
+  }
+});
+
+// ==========================================
+// 2FA GOOGLE AUTHENTICATOR MANAGEMENT APIs
+// ==========================================
+
+// Get 2FA Status
+router.get(['/2fa/status', '/api/admin/2fa/status'], requireAdmin, (req, res) => {
+  try {
+    const settings = db.getSettings();
+    res.json({
+      success: true,
+      twoFactorEnabled: !!settings.twoFactorEnabled
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Initiate 2FA Setup: Generates secret & QR code
+router.get(['/2fa/setup', '/api/admin/2fa/setup'], requireAdmin, async (req, res) => {
+  try {
+    const secret = generateTotpSecret();
+    const issuer = 'Snack by Maew Admin';
+    const account = 'admin';
+    const otpauthUri = generateTotpUri(secret, account, issuer);
+
+    // Render QR Code as PNG Data URL
+    const qrCodeDataUrl = await qrcode.toDataURL(otpauthUri, {
+      width: 280,
+      margin: 2,
+      color: {
+        dark: '#0f172a',
+        light: '#ffffff'
+      }
+    });
+
+    // Store pending secret until verified with first 6-digit code
+    db.updateSettings({ twoFactorPendingSecret: secret });
+
+    res.json({
+      success: true,
+      secret,
+      manualKey: secret,
+      issuer,
+      account,
+      otpauthUri,
+      qrCodeDataUrl,
+      message: 'สร้างคีย์ 2FA สำเร็จ กรุณาสแกน QR Code ด้วยแอป Google Authenticator'
+    });
+  } catch (err) {
+    console.error('2FA setup exception:', err);
+    res.status(500).json({ success: false, error: 'เกิดข้อผิดพลาดในการสร้างรหัส 2FA: ' + err.message });
+  }
+});
+
+// Confirm 2FA Setup with 6-digit code from Google Authenticator
+router.post(['/2fa/verify-setup', '/api/admin/2fa/verify-setup'], requireAdmin, (req, res) => {
+  try {
+    const { code } = req.body || {};
+    const cleanCode = String(code || '').replace(/\D/g, '').trim();
+
+    if (!cleanCode || cleanCode.length !== 6) {
+      return res.status(400).json({
+        success: false,
+        error: 'กรุณากรอกรหัสยืนยัน 6 หลักจาก Google Authenticator'
+      });
+    }
+
+    const settings = db.getSettings();
+    const pendingSecret = settings.twoFactorPendingSecret;
+    if (!pendingSecret) {
+      return res.status(400).json({
+        success: false,
+        error: 'ไม่พบคำขอตั้งค่า 2FA กรุณากดเริ่มการตั้งค่าใหม่อีกครั้ง'
+      });
+    }
+
+    const isValid = verifyTotpCode(cleanCode, pendingSecret);
+    if (!isValid) {
+      return res.status(400).json({
+        success: false,
+        error: 'รหัส 6 หลักไม่ถูกต้อง กรุณาตรวจสอบเวลาในโทรศัพท์และลองอีกครั้ง'
+      });
+    }
+
+    // Activate 2FA permanently in database
+    db.updateSettings({
+      twoFactorEnabled: true,
+      twoFactorSecret: pendingSecret,
+      twoFactorPendingSecret: null
+    });
+
+    res.json({
+      success: true,
+      message: 'เปิดใช้งานการยืนยันตัวตน 2 ขั้นตอน (2FA) สำเร็จเรียบร้อยแล้ว! 🔒'
+    });
+  } catch (err) {
+    console.error('2FA verify setup exception:', err);
+    res.status(500).json({ success: false, error: 'เกิดข้อผิดพลาดในการเปิดใช้งาน 2FA: ' + err.message });
+  }
+});
+
+// Disable 2FA: Requires Admin PIN verification
+router.post(['/2fa/disable', '/api/admin/2fa/disable'], requireAdmin, (req, res) => {
+  try {
+    const { pin } = req.body || {};
+    if (!pin || !db.verifyAdminPin(pin)) {
+      return res.status(400).json({
+        success: false,
+        error: 'รหัส PIN แอดมินไม่ถูกต้อง ไม่สามารถปิดใช้งาน 2FA ได้'
+      });
+    }
+
+    db.updateSettings({
+      twoFactorEnabled: false,
+      twoFactorSecret: null,
+      twoFactorPendingSecret: null
+    });
+
+    res.json({
+      success: true,
+      message: 'ปิดการใช้งานการยืนยันตัวตน 2 ขั้นตอน (2FA) เรียบร้อยแล้ว'
+    });
+  } catch (err) {
+    console.error('2FA disable exception:', err);
+    res.status(500).json({ success: false, error: 'เกิดข้อผิดพลาดในการปิดใช้งาน 2FA: ' + err.message });
   }
 });
 
