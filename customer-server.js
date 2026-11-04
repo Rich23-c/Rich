@@ -5,25 +5,32 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const crypto = require('crypto');
 const generatePayload = require('promptpay-qr');
 const qrcode = require('qrcode');
-
 const compression = require('compression');
 
 const db = require('./services/database');
 const { verifySlip } = require('./services/slipVerifier');
 const { compressSlipImage, resolveSlipImage } = require('./services/slipImageService');
+const { getFileHash } = require('./services/slipQrScanner');
+const { checkDuplicateSlip } = require('./services/slipDuplicateChecker');
 const {
   securityHeadersMiddleware,
   intrusionDetectionMiddleware,
   prototypePollutionGuard,
+  cookieParserMiddleware,
+  getCorsOptions,
+  protectStaticFilesMiddleware,
+  verifyAdminSessionMiddleware,
+  requireAdminWebAuth,
+  verifyAdminSessionToken,
   slipFileFilter,
-  slipVerifyRateLimit,
   orderCreateRateLimit,
+  slipVerifyRateLimit,
   visitorTrackRateLimit,
   promptPayQrRateLimit,
   orderHistoryRateLimit,
-  publicApiRateLimit,
   isHoneypotTriggered,
   isBotSubmissionSpeed,
   sanitizeText,
@@ -35,13 +42,11 @@ const {
   releaseSlipLock,
   generateSlipVerificationToken,
   verifySlipVerificationToken,
-  verifyAdminSessionToken,
-  sanitizeOrderForCustomer,
-  cookieParserMiddleware,
-  getCorsOptions,
   canAccessOrder,
-  protectStaticFilesMiddleware
+  sanitizeOrderForCustomer
 } = require('./services/security');
+
+const adminRouter = require('./admin-router');
 
 const app = express();
 const PORT = process.env.PORT || process.env.CUSTOMER_PORT || 3000;
@@ -69,8 +74,8 @@ app.use(compression({
 
 // Security 5: Strict CORS Configuration (Whitelisted origins only, with credentials)
 app.use(cors(getCorsOptions()));
-app.use(express.json({ limit: '2mb' }));
-app.use(express.urlencoded({ extended: true, limit: '2mb' }));
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
 // Security 6: Prototype Pollution Guard (Rejects malicious payloads with __proto__ or constructor injection)
 app.use(prototypePollutionGuard);
@@ -249,17 +254,38 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Route to Admin Dashboard (allows accessing admin from the main public tunnel URL /admin)
-app.get('/admin', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+// ==========================================
+// ADMIN WEB PORTAL & AUTHENTICATION
+// Protected with Broken Access Control Middleware & HttpOnly Session Cookie
+// ==========================================
+
+// GET /admin: Serves private admin dashboard only to authenticated sessions
+app.get('/admin', requireAdminWebAuth, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.sendFile(path.join(__dirname, 'private', 'admin.html'));
 });
 
-// Mount Admin APIs (protected by Scrypt-hashed PIN and HttpOnly Session Cookies)
-const adminRouter = require('./admin-router');
-app.use(adminRouter);
+// GET /admin/login: Admin login page (PIN entry; redirects to /admin if already authenticated)
+app.get('/admin/login', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  const cookieToken = req.cookies && req.cookies.snack_admin_session;
+  if (cookieToken && verifyAdminSessionToken(cookieToken)) {
+    return res.redirect('/admin');
+  }
+  res.sendFile(path.join(__dirname, 'private', 'admin-login.html'));
+});
+
+// Redirect /admin.html to /admin
+app.get('/admin.html', (req, res) => res.redirect(301, '/admin'));
+
+// Mount Admin APIs with explicit prefix and authentication middleware
+app.use('/api/admin', verifyAdminSessionMiddleware, adminRouter);
 
 // Multer Storage for Slips (Secured with strict whitelist and random file hashing)
-const crypto = require('crypto');
 const slipStorage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, slipsUploadDir),
   filename: (req, file, cb) => {
@@ -439,9 +465,6 @@ app.post('/api/verify-slip', slipVerifyRateLimit, uploadSlip.single('slip'), asy
     res.status(500).json({ success: false, error: err.message });
   }
 });
-
-const emailNotifier = require('./services/emailNotifier');
-const lineNotifier = require('./services/lineNotifier');
 
 // Submit customer order (Protected with Rate Limiter, Anti-Price-Tampering, Slip Mutex & Cryptographic HMAC Token)
 app.post('/api/orders', orderCreateRateLimit, uploadSlip.single('slip'), async (req, res) => {
@@ -699,7 +722,6 @@ app.post('/api/orders', orderCreateRateLimit, uploadSlip.single('slip'), async (
     // 🛡️ SECURITY LAYER 4: IN-FLIGHT SLIP MUTEX (ANTI-RACE CONDITION / ANTI-DOUBLE SPENDING)
     // Prevents automated bots from sending 10 requests at the exact same millisecond using one slip
     // ==========================================
-    const { getFileHash } = require('./services/slipQrScanner');
     const slipFileHash = (slipVerification && slipVerification.fileHash) || getFileHash(fullSlipPath);
     const slipQrData = ((slipVerification && slipVerification.qrData) || '').trim();
     const slipTxRef = ((slipVerification && slipVerification.transactionRef) || '').trim();
@@ -713,7 +735,6 @@ app.post('/api/orders', orderCreateRateLimit, uploadSlip.single('slip'), async (
     }
 
     // Check duplicate slip across completed orders and permanent registry
-    const { checkDuplicateSlip } = require('./services/slipDuplicateChecker');
     const dupCheck = checkDuplicateSlip({
       fileHash: slipFileHash,
       qrData: slipQrData,
@@ -881,17 +902,77 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Centralized Production Error Handler (Prevents stack trace & internal path leaks)
+// ==========================================
+// 404 NOT FOUND HANDLER
+// Catches all unmatched requests (prevents directory enumeration / information leaks)
+// ==========================================
+app.use((req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+
+  // If requesting an API endpoint or expects JSON, return a clean JSON response
+  if (req.path.startsWith('/api/') || (req.headers.accept && req.headers.accept.includes('application/json'))) {
+    return res.status(404).json({
+      success: false,
+      error: 'ไม่พบเส้นทาง API ที่เรียกใช้งาน (Endpoint Not Found)'
+    });
+  }
+
+  // If requesting web pages, redirect smoothly to customer storefront root
+  return res.status(404).redirect('/');
+});
+
+// ==========================================
+// CENTRALIZED GLOBAL ERROR HANDLER
+// Catches unhandled exceptions, Multer file limits, JSON syntax errors, and DoS payloads
+// Logs safely on server and returns generic neutral messages without leaking stack traces or internal paths
+// ==========================================
 app.use((err, req, res, next) => {
-  console.error(`[Unhandled Error] ${req.method} ${req.originalUrl}:`, err.message || err);
-  if (res.headersSent) return next(err);
+  // Safe server-side error logging (no sensitive credentials logged)
+  const errMessage = err ? (err.message || String(err)) : 'Unknown Error';
+  console.error(`[Unhandled Error] ${req.method} ${req.originalUrl || req.url}:`, errMessage);
 
-  const status = err.status || err.statusCode || 500;
-  const isClientError = status >= 400 && status < 500;
+  if (res.headersSent) {
+    return next(err);
+  }
 
-  res.status(status).json({
+  // Handle Payload Too Large (DoS protection: express.json limit or Multer fileSize limit)
+  if (err.type === 'entity.too.large' || err.code === 'LIMIT_FILE_SIZE' || err.status === 413) {
+    return res.status(413).json({
+      success: false,
+      error: 'ขนาดข้อมูลหรือไฟล์ที่ส่งมามีขนาดใหญ่เกินกำหนด (Payload / File Too Large)'
+    });
+  }
+
+  // Handle Multer upload errors
+  if (err.code === 'LIMIT_UNEXPECTED_FILE' || err.name === 'MulterError') {
+    return res.status(400).json({
+      success: false,
+      error: 'รูปแบบหรือฟิลด์ไฟล์ที่แนบมาไม่ถูกต้อง'
+    });
+  }
+
+  // Handle Malformed JSON payload
+  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+    return res.status(400).json({
+      success: false,
+      error: 'รูปแบบข้อมูล JSON ที่ส่งมาไม่ถูกต้อง (Malformed JSON Payload)'
+    });
+  }
+
+  // Generic neutral error message for any internal server error (No stack trace, DB error, or internal path leakage)
+  const statusCode = (typeof err.status === 'number' && err.status >= 400 && err.status < 600)
+    ? err.status
+    : ((typeof err.statusCode === 'number' && err.statusCode >= 400 && err.statusCode < 600) ? err.statusCode : 500);
+
+  const clientMessage = (statusCode >= 400 && statusCode < 500 && err.message)
+    ? err.message
+    : 'เกิดข้อผิดพลาดภายในระบบ กรุณาลองใหม่อีกครั้ง';
+
+  return res.status(statusCode).json({
     success: false,
-    error: isClientError ? (err.message || 'คำขอไม่ถูกต้อง') : 'เกิดข้อผิดพลาดภายในระบบ กรุณาลองใหม่อีกครั้ง'
+    error: clientMessage
   });
 });
 

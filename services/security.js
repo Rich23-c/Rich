@@ -839,13 +839,70 @@ function protectStaticFilesMiddleware(req, res, next) {
     return res.status(404).json({ success: false, error: 'File not found' });
   }
 
-  // 4. Block path traversal attempts
+  // 4. Block direct requests for admin.html or private files via static hosting
+  if (rawPath === '/admin.html' || rawPath.startsWith('/private/')) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+    return res.status(404).json({ success: false, error: 'File not found' });
+  }
+
+  // 5. Block path traversal attempts
   if (/\.\.|\%2e\%2e/i.test(rawPath)) {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
     return res.status(403).json({ success: false, error: 'Forbidden' });
   }
 
   next();
+}
+
+// ==========================================
+// 18. ADMIN ACCESS CONTROL MIDDLEWARES
+// ==========================================
+
+// Middleware for Admin API endpoints under /api/admin
+function verifyAdminSessionMiddleware(req, res, next) {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+
+  // Allow public login endpoint to authenticate
+  if (req.path === '/login' || req.path === '/api/admin/login') {
+    return next();
+  }
+
+  // 1. Verify Session Token from HttpOnly Cookie
+  const cookieToken = req.cookies && req.cookies.snack_admin_session;
+  if (cookieToken && verifyAdminSessionToken(cookieToken)) {
+    return next();
+  }
+
+  // 2. Fallback to Authorization Header (Bearer token)
+  const authHeader = req.headers.authorization;
+  const headerToken = (authHeader && authHeader.startsWith('Bearer '))
+    ? authHeader.slice(7).trim()
+    : req.headers['x-admin-token'];
+
+  if (headerToken && verifyAdminSessionToken(headerToken)) {
+    return next();
+  }
+
+  return res.status(401).json({
+    success: false,
+    error: 'สิทธิ์การเข้าใช้งานไม่ถูกต้องหรือหมดอายุ กรุณาเข้าสู่ระบบใหม่'
+  });
+}
+
+// Middleware for Admin Web Pages (/admin)
+function requireAdminWebAuth(req, res, next) {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+
+  const cookieToken = req.cookies && req.cookies.snack_admin_session;
+  if (cookieToken && verifyAdminSessionToken(cookieToken)) {
+    return next();
+  }
+  return res.redirect('/admin/login');
 }
 
 module.exports = {
@@ -879,6 +936,8 @@ module.exports = {
   sanitizeOrderInput,
   securityHeadersMiddleware,
   protectStaticFilesMiddleware,
+  verifyAdminSessionMiddleware,
+  requireAdminWebAuth,
   slipFileFilter,
   getSecurityAuditLogs,
   bannedIps,

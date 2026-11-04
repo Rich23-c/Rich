@@ -83,12 +83,12 @@ function requireAdmin(req, res, next) {
 // ==========================================
 
 // Admin session verification check (used by frontend on page load)
-router.get('/api/admin/auth-check', requireAdmin, (req, res) => {
+router.get(['/auth-check', '/api/admin/auth-check'], requireAdmin, (req, res) => {
   res.json({ success: true, authenticated: true });
 });
 
 // Admin logout: clears HttpOnly session cookie
-router.post('/api/admin/logout', (req, res) => {
+router.post(['/logout', '/api/admin/logout'], (req, res) => {
   const isSecure = isSecureConnection(req);
   res.clearCookie('snack_admin_session', {
     httpOnly: true,
@@ -100,7 +100,7 @@ router.post('/api/admin/logout', (req, res) => {
 });
 
 // Admin login verification with Brute-Force Rate Limiting, Lockout & HttpOnly Cookie
-router.post('/api/admin/login', async (req, res) => {
+router.post(['/login', '/api/admin/login'], async (req, res) => {
   try {
     const rateCheck = checkLoginRateLimit(req);
     if (!rateCheck.allowed) {
@@ -152,7 +152,7 @@ router.post('/api/admin/login', async (req, res) => {
 });
 
 // Admin change PIN
-router.post('/api/admin/change-pin', requireAdmin, (req, res) => {
+router.post(['/change-pin', '/api/admin/change-pin'], requireAdmin, (req, res) => {
   try {
     const { currentPin, newPin } = req.body || {};
     if (!currentPin || !db.verifyAdminPin(currentPin)) {
@@ -184,7 +184,7 @@ router.post('/api/admin/change-pin', requireAdmin, (req, res) => {
 });
 
 // Admin get all snacks
-router.get('/api/admin/snacks', requireAdmin, (req, res) => {
+router.get(['/snacks', '/api/admin/snacks'], requireAdmin, (req, res) => {
   try {
     const snacks = db.getSnacks(true);
     res.json({ success: true, data: snacks });
@@ -194,7 +194,7 @@ router.get('/api/admin/snacks', requireAdmin, (req, res) => {
 });
 
 // Admin add new snack (with image file or image URL)
-router.post('/api/admin/snacks', requireAdmin, uploadSnackImage.single('imageFile'), (req, res) => {
+router.post(['/snacks', '/api/admin/snacks'], requireAdmin, uploadSnackImage.single('imageFile'), (req, res) => {
   try {
     const name = String(req.body.name || '').trim();
     if (!name) {
@@ -229,7 +229,7 @@ router.post('/api/admin/snacks', requireAdmin, uploadSnackImage.single('imageFil
 });
 
 // Admin reorder snacks (เรียงลำดับขนม)
-router.put('/api/admin/snacks/reorder', requireAdmin, (req, res) => {
+router.put(['/snacks/reorder', '/api/admin/snacks/reorder'], requireAdmin, (req, res) => {
   try {
     const { orderedIds } = req.body;
     if (!orderedIds || !Array.isArray(orderedIds)) {
@@ -243,7 +243,7 @@ router.put('/api/admin/snacks/reorder', requireAdmin, (req, res) => {
 });
 
 // Admin update snack
-router.put('/api/admin/snacks/:id', requireAdmin, uploadSnackImage.single('imageFile'), (req, res) => {
+router.put(['/snacks/:id', '/api/admin/snacks/:id'], requireAdmin, uploadSnackImage.single('imageFile'), (req, res) => {
   try {
     let imageUrl = req.body.imageUrl;
     if (req.file) {
@@ -286,7 +286,7 @@ router.put('/api/admin/snacks/:id', requireAdmin, uploadSnackImage.single('image
 });
 
 // Admin delete snack
-router.delete('/api/admin/snacks/:id', requireAdmin, (req, res) => {
+router.delete(['/snacks/:id', '/api/admin/snacks/:id'], requireAdmin, (req, res) => {
   try {
     const success = db.deleteSnack(req.params.id);
     if (!success) {
@@ -299,7 +299,7 @@ router.delete('/api/admin/snacks/:id', requireAdmin, (req, res) => {
 });
 
 // Admin upload sponsor banner image
-router.post('/api/admin/upload-banner', requireAdmin, uploadSnackImage.single('bannerFile'), (req, res) => {
+router.post(['/upload-banner', '/api/admin/upload-banner'], requireAdmin, uploadSnackImage.single('bannerFile'), (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ success: false, error: 'กรุณาเลือกไฟล์รูปภาพแบนเนอร์' });
@@ -312,7 +312,7 @@ router.post('/api/admin/upload-banner', requireAdmin, uploadSnackImage.single('b
 });
 
 // Admin get all orders
-router.get('/api/admin/orders', requireAdmin, (req, res) => {
+router.get(['/orders', '/api/admin/orders'], requireAdmin, (req, res) => {
   try {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.setHeader('Pragma', 'no-cache');
@@ -327,7 +327,7 @@ router.get('/api/admin/orders', requireAdmin, (req, res) => {
 // Admin update order status
 const ALLOWED_ORDER_STATUSES = new Set(['pending', 'verified', 'preparing', 'prepared', 'delivered', 'cancelled']);
 
-router.patch('/api/admin/orders/:id/status', requireAdmin, (req, res) => {
+router.patch(['/orders/:id/status', '/api/admin/orders/:id/status'], requireAdmin, (req, res) => {
   try {
     const { status, adminNotes } = req.body;
     if (!status || !ALLOWED_ORDER_STATUSES.has(status)) {
@@ -344,7 +344,7 @@ router.patch('/api/admin/orders/:id/status', requireAdmin, (req, res) => {
 });
 
 // Admin reset all orders (Clear / Reset orders)
-router.post('/api/admin/reset-mock-orders', requireAdmin, async (req, res) => {
+router.post(['/reset-mock-orders', '/api/admin/reset-mock-orders'], requireAdmin, async (req, res) => {
   try {
     await db.resetOrders();
     res.json({ success: true, message: 'ล้างข้อมูลคำสั่งซื้อทั้งหมดเรียบร้อยแล้ว' });
@@ -354,7 +354,7 @@ router.post('/api/admin/reset-mock-orders', requireAdmin, async (req, res) => {
 });
 
 // Admin delete single order
-router.delete('/api/admin/orders/:id', requireAdmin, async (req, res) => {
+router.delete(['/orders/:id', '/api/admin/orders/:id'], requireAdmin, async (req, res) => {
   try {
     const success = await db.deleteOrder(req.params.id);
     if (!success) {
@@ -367,7 +367,7 @@ router.delete('/api/admin/orders/:id', requireAdmin, async (req, res) => {
 });
 
 // Admin delete all orders (alias)
-router.delete('/api/admin/orders', requireAdmin, async (req, res) => {
+router.delete(['/orders', '/api/admin/orders'], requireAdmin, async (req, res) => {
   try {
     await db.resetOrders();
     res.json({ success: true, message: 'ล้างข้อมูลคำสั่งซื้อทั้งหมดเรียบร้อยแล้ว' });
@@ -377,7 +377,7 @@ router.delete('/api/admin/orders', requireAdmin, async (req, res) => {
 });
 
 // Admin upload shop QR Code image
-router.post('/api/admin/upload-qr', requireAdmin, uploadQrImage.single('qrImage'), (req, res) => {
+router.post(['/upload-qr', '/api/admin/upload-qr'], requireAdmin, uploadQrImage.single('qrImage'), (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ success: false, error: 'กรุณาเลือกไฟล์รูปภาพ QR Code' });
@@ -405,7 +405,7 @@ router.post('/api/admin/upload-qr', requireAdmin, uploadQrImage.single('qrImage'
 });
 
 // Admin test Email notification
-router.post('/api/admin/test-email', requireAdmin, async (req, res) => {
+router.post(['/test-email', '/api/admin/test-email'], requireAdmin, async (req, res) => {
   try {
     const { receiver, sender, appPassword } = req.body;
     await emailNotifier.sendTestEmail(receiver, sender, appPassword);
@@ -416,7 +416,7 @@ router.post('/api/admin/test-email', requireAdmin, async (req, res) => {
 });
 
 // Admin test LINE notification
-router.post('/api/admin/test-line', requireAdmin, async (req, res) => {
+router.post(['/test-line', '/api/admin/test-line'], requireAdmin, async (req, res) => {
   try {
     const { token, targetId } = req.body;
     await lineNotifier.sendTestNotification(token, targetId);
@@ -427,7 +427,7 @@ router.post('/api/admin/test-line', requireAdmin, async (req, res) => {
 });
 
 // Admin get settings
-router.get('/api/admin/settings', requireAdmin, (req, res) => {
+router.get(['/settings', '/api/admin/settings'], requireAdmin, (req, res) => {
   try {
     const settings = db.getSettings();
     const safeSettings = { ...settings };
@@ -441,7 +441,7 @@ router.get('/api/admin/settings', requireAdmin, (req, res) => {
 });
 
 // Admin update settings
-router.put('/api/admin/settings', requireAdmin, (req, res) => {
+router.put(['/settings', '/api/admin/settings'], requireAdmin, (req, res) => {
   try {
     const updates = { ...req.body };
     if (updates.isOpen !== undefined) {
@@ -459,7 +459,7 @@ router.put('/api/admin/settings', requireAdmin, (req, res) => {
 });
 
 // Admin test Gemini API key
-router.post('/api/admin/test-gemini-key', requireAdmin, async (req, res) => {
+router.post(['/test-gemini-key', '/api/admin/test-gemini-key'], requireAdmin, async (req, res) => {
   try {
     const key = (req.body.apiKey || '').trim() || (db.getSettings().geminiApiKeys || '').split(',')[0].trim();
     if (!key) {
@@ -479,7 +479,7 @@ router.post('/api/admin/test-gemini-key', requireAdmin, async (req, res) => {
 });
 
 // Admin save Gemini API keys directly
-router.post('/api/admin/save-gemini-keys', requireAdmin, (req, res) => {
+router.post(['/save-gemini-keys', '/api/admin/save-gemini-keys'], requireAdmin, (req, res) => {
   try {
     const { geminiApiKeys } = req.body;
     const trimmed = (geminiApiKeys || '').trim();
@@ -494,7 +494,7 @@ router.post('/api/admin/save-gemini-keys', requireAdmin, (req, res) => {
 });
 
 // Admin quick toggle open/close
-router.post('/api/admin/toggle-open', requireAdmin, (req, res) => {
+router.post(['/toggle-open', '/api/admin/toggle-open'], requireAdmin, (req, res) => {
   try {
     const current = db.getSettings();
     const newStatus = req.body.isOpen !== undefined
@@ -508,7 +508,7 @@ router.post('/api/admin/toggle-open', requireAdmin, (req, res) => {
 });
 
 // Admin get database status & sync info
-router.get('/api/admin/database-status', requireAdmin, (req, res) => {
+router.get(['/database-status', '/api/admin/database-status'], requireAdmin, (req, res) => {
   try {
     const status = db.getDatabaseStatus();
     res.json({ success: true, data: status });
@@ -518,7 +518,7 @@ router.get('/api/admin/database-status', requireAdmin, (req, res) => {
 });
 
 // Admin get visitor analytics (daily counts, individual visitor visit history & codes)
-router.get('/api/admin/analytics/visitors', requireAdmin, (req, res) => {
+router.get(['/analytics/visitors', '/api/admin/analytics/visitors'], requireAdmin, (req, res) => {
   try {
     const analytics = db.getVisitorAnalytics();
     res.json({ success: true, data: analytics });
@@ -528,7 +528,7 @@ router.get('/api/admin/analytics/visitors', requireAdmin, (req, res) => {
 });
 
 // Admin reset visitor analytics
-router.delete('/api/admin/analytics/visitors', requireAdmin, (req, res) => {
+router.delete(['/analytics/visitors', '/api/admin/analytics/visitors'], requireAdmin, (req, res) => {
   try {
     const success = db.resetVisitorAnalytics();
     res.json({ success: true, message: 'รีเซ็ตข้อมูลสถิติผู้เข้าชมเรียบร้อยแล้ว' });
@@ -538,7 +538,7 @@ router.delete('/api/admin/analytics/visitors', requireAdmin, (req, res) => {
 });
 
 // Admin get live security audit logs (failed logins, blocked probes, banned IPs)
-router.get('/api/admin/security-logs', requireAdmin, (req, res) => {
+router.get(['/security-logs', '/api/admin/security-logs'], requireAdmin, (req, res) => {
   try {
     const logs = getSecurityAuditLogs();
     res.json({ success: true, count: logs.length, logs });

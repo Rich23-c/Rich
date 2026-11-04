@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>เข้าสู่ระบบหลังบ้าน 🐾 | ร้านขนมแม้ว</title>
+  <link rel="stylesheet" href="/css/tailwind.min.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <meta name="theme-color" content="#0f172a">
+  <link rel="shortcut icon" href="/admin-favicon.ico?v=3">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="bg-slate-900 min-h-screen text-slate-800 antialiased flex items-center justify-center p-4">
+
+  <div class="bg-white rounded-3xl max-w-sm w-full p-6 sm:p-7 shadow-2xl border border-amber-100 space-y-5 text-center my-auto">
+    <!-- Icon & Title -->
+    <div class="space-y-2">
+      <img src="/images/admin-icon-192.png?v=3" alt="ร้านขนมแม้ว 🐾" class="w-16 h-16 rounded-3xl object-cover shadow-md mx-auto border-2 border-orange-200">
+      <h2 class="text-xl font-extrabold text-slate-900 font-heading">
+        ระบบหลังบ้านร้านขนมแม้ว 🐾
+      </h2>
+      <p class="text-xs text-slate-500">
+        กรุณากรอกรหัสผ่านเพื่อเข้าสู่ระบบ (Admin PIN)
+      </p>
+    </div>
+
+    <!-- PIN Input Form -->
+    <form id="adminLoginForm" onsubmit="event.preventDefault(); submitLogin();" class="space-y-3">
+      <div class="relative">
+        <input
+          type="password"
+          id="adminPinInput"
+          name="pin"
+          maxlength="20"
+          autofocus
+          autocomplete="current-password"
+          placeholder="กรอกรหัส PIN หรือรหัสผ่าน"
+          class="w-full text-center text-xl font-bold tracking-wider py-3 px-10 bg-slate-50 rounded-2xl border-2 border-slate-200 focus:border-orange-500 focus:bg-white focus:outline-none transition font-mono text-slate-900"
+          onkeydown="if(event.key==='Enter') submitLogin();"
+        />
+        <button
+          type="button"
+          onclick="togglePinVisibility()"
+          class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+          title="แสดง/ซ่อนรหัส"
+        >
+          <i id="pinEyeIcon" data-lucide="eye" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <p id="pinErrorMessage" class="text-xs text-red-500 font-semibold min-h-[1rem]"></p>
+
+      <!-- Virtual Numeric Keypad for Mobile Touch Screens -->
+      <div class="grid grid-cols-3 gap-2 pt-1 select-none">
+        <button type="button" onclick="keypadPress('1')" class="py-3 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-800 font-bold text-lg rounded-xl transition">1</button>
+        <button type="button" onclick="keypadPress('2')" class="py-3 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-800 font-bold text-lg rounded-xl transition">2</button>
+        <button type="button" onclick="keypadPress('3')" class="py-3 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-800 font-bold text-lg rounded-xl transition">3</button>
+        <button type="button" onclick="keypadPress('4')" class="py-3 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-800 font-bold text-lg rounded-xl transition">4</button>
+        <button type="button" onclick="keypadPress('5')" class="py-3 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-800 font-bold text-lg rounded-xl transition">5</button>
+        <button type="button" onclick="keypadPress('6')" class="py-3 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-800 font-bold text-lg rounded-xl transition">6</button>
+        <button type="button" onclick="keypadPress('7')" class="py-3 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-800 font-bold text-lg rounded-xl transition">7</button>
+        <button type="button" onclick="keypadPress('8')" class="py-3 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-800 font-bold text-lg rounded-xl transition">8</button>
+        <button type="button" onclick="keypadPress('9')" class="py-3 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-800 font-bold text-lg rounded-xl transition">9</button>
+        <button type="button" onclick="keypadClear()" class="py-3 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-500 font-bold text-xs rounded-xl transition">ล้าง</button>
+        <button type="button" onclick="keypadPress('0')" class="py-3 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-800 font-bold text-lg rounded-xl transition">0</button>
+        <button type="button" onclick="keypadBackspace()" class="py-3 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-600 font-bold text-lg rounded-xl transition flex items-center justify-center">
+          <i data-lucide="delete" class="w-5 h-5 mx-auto"></i>
+        </button>
+      </div>
+
+      <!-- Submit Button -->
+      <button
+        type="submit"
+        id="loginSubmitBtn"
+        class="w-full bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-extrabold py-3.5 px-4 rounded-2xl shadow-lg transition active:scale-95 flex items-center justify-center gap-2 cursor-pointer mt-2"
+      >
+        <i data-lucide="unlock" class="w-4 h-4"></i>
+        <span>เข้าสู่ระบบหลังบ้าน 🔓</span>
+      </button>
+    </form>
+
+    <div class="pt-2 text-center">
+      <a href="/" class="text-xs text-slate-400 hover:text-orange-500 transition inline-flex items-center gap-1 font-medium">
+        <span>← กลับไปหน้าร้านค้า</span>
+      </a>
+    </div>
+  </div>
+
+  <script>
+    if (window.lucide) lucide.createIcons();
+
+    // Check if already authenticated, immediately forward to /admin
+    (async function() {
+      try {
+        const res = await fetch('/api/admin/auth-check', { cache: 'no-store' });
+        if (res.ok) {
+          window.location.replace('/admin');
+        }
+      } catch (e) {}
+    })();
+
+    function togglePinVisibility() {
+      const input = document.getElementById('adminPinInput');
+      const icon = document.getElementById('pinEyeIcon');
+      if (input.type === 'password') {
+        input.type = 'text';
+        if (icon) icon.setAttribute('data-lucide', 'eye-off');
+      } else {
+        input.type = 'password';
+        if (icon) icon.setAttribute('data-lucide', 'eye');
+      }
+      if (window.lucide) lucide.createIcons();
+    }
+
+    function keypadPress(val) {
+      const input = document.getElementById('adminPinInput');
+      if (input && input.value.length < 20) {
+        input.value += val;
+      }
+    }
+
+    function keypadClear() {
+      const input = document.getElementById('adminPinInput');
+      if (input) input.value = '';
+    }
+
+    function keypadBackspace() {
+      const input = document.getElementById('adminPinInput');
+      if (input) input.value = input.value.slice(0, -1);
+    }
+
+    async function submitLogin() {
+      const input = document.getElementById('adminPinInput');
+      const errorMsg = document.getElementById('pinErrorMessage');
+      const btn = document.getElementById('loginSubmitBtn');
+      const pin = input ? input.value.trim() : '';
+
+      if (!pin) {
+        if (errorMsg) errorMsg.innerText = 'กรุณากรอกรหัส PIN';
+        if (input) input.focus();
+        return;
+      }
+
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span><span>กำลังตรวจสอบ...</span>';
+      }
+      if (errorMsg) errorMsg.innerText = '';
+
+      try {
+        const res = await fetch('/api/admin/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pin })
+        });
+        const data = await res.json();
+
+        if (data.success) {
+          window.location.replace('/admin');
+        } else {
+          if (errorMsg) errorMsg.innerText = data.error || 'รหัส PIN ไม่ถูกต้อง';
+          if (input) {
+            input.value = '';
+            input.focus();
+          }
+        }
+      } catch (err) {
+        if (errorMsg) errorMsg.innerText = 'ไม่สามารถติดต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่';
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = '<i data-lucide="unlock" class="w-4 h-4"></i><span>เข้าสู่ระบบหลังบ้าน 🔓</span>';
+          if (window.lucide) lucide.createIcons();
+        }
+      }
+    }
+  </script>
+</body>
+</html>

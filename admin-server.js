@@ -11,7 +11,10 @@ const {
   prototypePollutionGuard,
   cookieParserMiddleware,
   getCorsOptions,
-  protectStaticFilesMiddleware
+  protectStaticFilesMiddleware,
+  verifyAdminSessionMiddleware,
+  requireAdminWebAuth,
+  verifyAdminSessionToken
 } = require('./services/security');
 const { resolveSlipImage } = require('./services/slipImageService');
 const db = require('./services/database');
@@ -33,8 +36,8 @@ app.use(cookieParserMiddleware);
 
 // Security 5: Strict CORS Configuration
 app.use(cors(getCorsOptions()));
-app.use(express.json({ limit: '5mb' }));
-app.use(express.urlencoded({ extended: true, limit: '5mb' }));
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
 // Security 6: Prototype Pollution Guard
 app.use(prototypePollutionGuard);
@@ -42,19 +45,27 @@ app.use(prototypePollutionGuard);
 // Security: Block sensitive file extensions (.map, .env, .json, .bak) before static handler
 app.use(protectStaticFilesMiddleware);
 
-// Serve Admin Portal on root with strict no-cache
-app.get('/', (req, res) => {
+// Serve Admin Portal on root with strict authentication check
+app.get('/', requireAdminWebAuth, (req, res) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
-  res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+  res.sendFile(path.join(__dirname, 'private', 'admin.html'));
 });
-app.get('/admin', (req, res) => {
-  res.redirect('/');
+app.get('/admin', (req, res) => res.redirect('/'));
+app.get('/admin/login', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  const cookieToken = req.cookies && req.cookies.snack_admin_session;
+  if (cookieToken && verifyAdminSessionToken(cookieToken)) {
+    return res.redirect('/');
+  }
+  res.sendFile(path.join(__dirname, 'private', 'admin-login.html'));
 });
-app.get('/index.html', (req, res) => {
-  res.redirect('/');
-});
+app.get('/login', (req, res) => res.redirect('/admin/login'));
+app.get('/index.html', (req, res) => res.redirect('/'));
+app.get('/admin.html', (req, res) => res.redirect('/'));
 
 // Serve static assets (CSS, JS, images) with denied dotfiles
 app.use(express.static(path.join(__dirname, 'public'), {
@@ -95,20 +106,61 @@ app.use('/uploads', (req, res, next) => {
   next();
 }, express.static(path.join(__dirname, 'uploads'), { dotfiles: 'deny' }));
 
-// Mount Admin APIs
+// Mount Admin APIs with prefix and auth middleware
+app.use('/api/admin', verifyAdminSessionMiddleware, adminRouter);
 app.use(adminRouter);
 
-// Centralized Production Error Handler (Prevents stack trace & internal path leaks)
+// 404 Not Found Handler
+app.use((req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+  if (req.path.startsWith('/api/') || (req.headers.accept && req.headers.accept.includes('application/json'))) {
+    return res.status(404).json({
+      success: false,
+      error: 'ไม่พบเส้นทาง API ที่เรียกใช้งาน (Endpoint Not Found)'
+    });
+  }
+  return res.status(404).redirect('/');
+});
+
+// Centralized Global Error Handler
 app.use((err, req, res, next) => {
-  console.error(`[Admin Server Error] ${req.method} ${req.originalUrl}:`, err.message || err);
+  const errMessage = err ? (err.message || String(err)) : 'Unknown Error';
+  console.error(`[Admin Server Error] ${req.method} ${req.originalUrl || req.url}:`, errMessage);
+
   if (res.headersSent) return next(err);
 
-  const status = err.status || err.statusCode || 500;
-  const isClientError = status >= 400 && status < 500;
+  if (err.type === 'entity.too.large' || err.code === 'LIMIT_FILE_SIZE' || err.status === 413) {
+    return res.status(413).json({
+      success: false,
+      error: 'ขนาดข้อมูลหรือไฟล์ที่ส่งมามีขนาดใหญ่เกินกำหนด (Payload / File Too Large)'
+    });
+  }
 
-  res.status(status).json({
+  if (err.code === 'LIMIT_UNEXPECTED_FILE' || err.name === 'MulterError') {
+    return res.status(400).json({
+      success: false,
+      error: 'รูปแบบหรือฟิลด์ไฟล์ที่แนบมาไม่ถูกต้อง'
+    });
+  }
+
+  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+    return res.status(400).json({
+      success: false,
+      error: 'รูปแบบข้อมูล JSON ที่ส่งมาไม่ถูกต้อง (Malformed JSON Payload)'
+    });
+  }
+
+  const statusCode = (typeof err.status === 'number' && err.status >= 400 && err.status < 600)
+    ? err.status
+    : ((typeof err.statusCode === 'number' && err.statusCode >= 400 && err.statusCode < 600) ? err.statusCode : 500);
+
+  const clientMessage = (statusCode >= 400 && statusCode < 500 && err.message)
+    ? err.message
+    : 'เกิดข้อผิดพลาดภายในระบบ กรุณาลองใหม่อีกครั้ง';
+
+  return res.status(statusCode).json({
     success: false,
-    error: isClientError ? (err.message || 'คำขอไม่ถูกต้อง') : 'เกิดข้อผิดพลาดภายในระบบ กรุณาลองใหม่อีกครั้ง'
+    error: clientMessage
   });
 });
 
