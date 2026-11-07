@@ -47,15 +47,16 @@
     <!-- ============================================== -->
     <!-- STEP 1 FORM: ADMIN PIN                         -->
     <!-- ============================================== -->
-    <form id="loginStep1Form" onsubmit="event.preventDefault(); submitLogin();" class="space-y-3">
+    <form id="loginStep1Form" onsubmit="event.preventDefault(); submitLogin();" class="space-y-3" autocomplete="off">
       <div class="relative">
         <input
           type="password"
           id="adminPinInput"
-          name="pin"
+          name="admin_secret_auth_pin"
           maxlength="20"
-          autofocus
-          autocomplete="current-password"
+          autocomplete="new-password"
+          data-lpignore="true"
+          data-form-type="other"
           placeholder="กรอกรหัส PIN หรือรหัสผ่าน"
           class="w-full text-center text-xl font-bold tracking-wider py-3 px-10 bg-slate-50 rounded-2xl border-2 border-slate-200 focus:border-orange-500 focus:bg-white focus:outline-none transition font-mono text-slate-900"
           onkeydown="if(event.key==='Enter') submitLogin();"
@@ -174,6 +175,25 @@
 
     let currentStep = 1;
     let temp2faToken = null;
+
+    function clearPinInput() {
+      const input = document.getElementById('adminPinInput');
+      if (input && currentStep === 1) {
+        input.value = '';
+      }
+    }
+
+    // Force clear any browser autofill on load and after slight delay
+    clearPinInput();
+    window.addEventListener('DOMContentLoaded', clearPinInput);
+    window.addEventListener('pageshow', clearPinInput);
+    window.addEventListener('load', () => {
+      clearPinInput();
+      setTimeout(clearPinInput, 50);
+      setTimeout(clearPinInput, 150);
+      setTimeout(clearPinInput, 300);
+      setTimeout(clearPinInput, 600);
+    });
 
     // Check if already authenticated, immediately forward to /admin
     (async function() {

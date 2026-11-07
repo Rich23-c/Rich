@@ -1896,6 +1896,11 @@ async function loadAdminSettings() {
       // Two-Factor Authentication (2FA) status
       updateTwoFaStatusUi(s.twoFactorEnabled === true);
 
+      // Clear any sensitive PIN inputs to prevent browser autofill
+      const currPin = document.getElementById('adminCurrentPinInput'); if (currPin) currPin.value = '';
+      const newPin = document.getElementById('adminNewPinInput'); if (newPin) newPin.value = '';
+      const confPin = document.getElementById('adminConfirmPinInput'); if (confPin) confPin.value = '';
+
     }
   } catch (err) {
     console.error('Failed to load settings:', err);
