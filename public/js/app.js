@@ -312,13 +312,16 @@ async function loadShopSettings() {
         document.getElementById('announcementText').innerText = shopSettings.shopAnnouncement;
       }
       if (shopSettings.bankName) {
-        document.getElementById('bankNameDisplay').innerText = shopSettings.bankName;
+        const el = document.getElementById('bankNameDisplay');
+        if (el) el.innerText = shopSettings.bankName;
       }
       if (shopSettings.bankAccountNumber) {
-        document.getElementById('bankAccDisplay').innerText = shopSettings.bankAccountNumber;
+        const el = document.getElementById('bankAccDisplay');
+        if (el) el.innerText = shopSettings.bankAccountNumber;
       }
       if (shopSettings.promptpayName) {
-        document.getElementById('bankAccNameDisplay').innerText = shopSettings.promptpayName;
+        const el = document.getElementById('bankAccNameDisplay');
+        if (el) el.innerText = shopSettings.promptpayName;
       }
       const pIdEl = document.getElementById('promptpayIdDisplay');
       if (shopSettings.promptpayId && pIdEl) {

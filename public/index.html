@@ -303,7 +303,7 @@
           <div class="md:col-span-5 bg-stone-50/70 p-5 rounded-2xl border border-stone-200 space-y-4 text-center">
             <div class="inline-flex items-center gap-1.5 bg-stone-900 text-white text-[11px] font-medium px-3 py-1 rounded-full shadow-2xs">
               <i data-lucide="qr-code" class="w-3.5 h-3.5"></i>
-              <span>Thai QR Payment / พร้อมเพย์</span>
+              <span>Thai QR Payment / สแกน QR โอนเงิน</span>
             </div>
 
             <!-- QR Code Image Box -->
@@ -320,45 +320,35 @@
               ยอดที่ต้องโอน: <span id="qrAmountDisplay" class="text-stone-900 text-lg font-semibold font-heading">0.00</span> บาท
             </div>
 
-            <!-- Mobile Action Buttons for Quick Transfer -->
-            <div class="grid grid-cols-2 gap-2">
+            <!-- Mobile Action Button to Save/Download QR -->
+            <div>
               <button
                 type="button"
                 onclick="downloadQrCode()"
-                class="bg-white hover:bg-stone-50 text-stone-700 border border-stone-200 hover:border-stone-300 font-medium py-2 px-2 rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition cursor-pointer"
+                class="w-full bg-white hover:bg-stone-50 text-stone-800 border border-stone-300 hover:border-stone-400 font-semibold py-2.5 px-4 rounded-xl text-xs sm:text-sm flex items-center justify-center gap-2 shadow-2xs active:scale-95 transition cursor-pointer"
                 title="บันทึกรูป QR ลงในอัลบั้มเพื่อเปิดในแอปธนาคาร"
               >
-                <i data-lucide="download" class="w-3.5 h-3.5 text-stone-600 shrink-0"></i>
-                <span>บันทึกรูป QR</span>
-              </button>
-              <button
-                type="button"
-                onclick="copyBankDetails()"
-                class="bg-white hover:bg-stone-50 text-stone-700 border border-stone-200 hover:border-stone-300 font-medium py-2 px-2 rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition cursor-pointer"
-                title="คัดลอกข้อมูลบัญชี/พร้อมเพย์"
-              >
-                <i data-lucide="copy" class="w-3.5 h-3.5 text-stone-600 shrink-0"></i>
-                <span>คัดลอกข้อมูล</span>
+                <i data-lucide="download" class="w-4 h-4 text-orange-600 shrink-0"></i>
+                <span>บันทึกรูป QR สำหรับสแกนจ่าย</span>
               </button>
             </div>
 
-            <!-- Bank Account Details Card -->
-            <div class="bg-white p-3.5 rounded-xl border border-stone-200 text-left text-xs space-y-2 shadow-2xs">
-              <div class="flex justify-between items-center text-stone-500">
-                <span>บัญชีรับเงิน:</span>
-                <span id="bankNameDisplay" class="font-medium text-stone-800">Thai QR (พร้อมเพย์)</span>
+            <!-- Scan Instruction Card (No bank account info shown) -->
+            <div class="bg-white p-3.5 rounded-xl border border-stone-200 text-xs space-y-2 shadow-2xs">
+              <div class="flex items-center justify-center gap-1.5 text-stone-800 font-semibold text-xs sm:text-sm">
+                <i data-lucide="scan-line" class="w-4 h-4 text-orange-600"></i>
+                <span>สแกนจ่ายผ่านแอปธนาคารได้ทุกธนาคาร</span>
               </div>
-              <div class="flex justify-between items-center text-stone-500">
-                <span>ชื่อบัญชี:</span>
-                <span id="bankAccNameDisplay" class="font-medium text-stone-900">พัชญ์ชามญชุ์ กฤติณัฐธนชัย</span>
+              <div class="text-[11px] text-stone-600 bg-stone-50 p-2.5 rounded-xl text-center border border-stone-200 leading-relaxed">
+                📱 <b>สั่งซื้อบนมือถือ?</b> กดปุ่ม <b>"บันทึกรูป QR"</b> ด้านบน<br/>แล้วเปิดแอปธนาคาร เลือก <i>"สแกน QR จากอัลบั้มภาพ"</i> จ่ายได้ทันที
               </div>
-              <div class="flex justify-between items-center text-stone-500">
-                <span>ประเภท:</span>
-                <span id="bankAccDisplay" class="font-normal text-stone-600 text-xs">สแกนได้ทุกแอปธนาคารไทย</span>
-              </div>
-              <div class="text-[11px] text-stone-600 bg-stone-50 p-2 rounded-xl text-center border border-stone-200 leading-relaxed">
-                📱 <b>สั่งบนมือถือ?</b> กด <b>"บันทึกรูป QR"</b> แล้วเปิดแอปธนาคาร เลือก <i>"สแกน QR จากอัลบั้มภาพ"</i> จ่ายได้ทันที
-              </div>
+            </div>
+
+            <!-- Hidden placeholders for backwards-compatibility -->
+            <div class="hidden" aria-hidden="true">
+              <span id="bankNameDisplay"></span>
+              <span id="bankAccNameDisplay"></span>
+              <span id="bankAccDisplay"></span>
             </div>
           </div>
 
@@ -738,6 +728,6 @@
     </div>
   </div>
 
-  <script src="/js/app.js?v=2.9.5"></script>
+  <script src="/js/app.js?v=2.9.6"></script>
 </body>
 </html>
