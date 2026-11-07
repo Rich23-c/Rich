@@ -593,7 +593,14 @@ router.get(['/2fa/status', '/api/admin/2fa/status'], requireAdmin, (req, res) =>
 // Initiate 2FA Setup: Generates secret & QR code
 router.get(['/2fa/setup', '/api/admin/2fa/setup'], requireAdmin, async (req, res) => {
   try {
-    const secret = generateTotpSecret();
+    const shouldRegenerate = req.query.regenerate === 'true';
+    const settings = db.getSettings();
+
+    // Preserve existing pending secret or active secret so reopening modal or refreshing does NOT break already-scanned codes
+    let secret = (!shouldRegenerate && (settings.twoFactorPendingSecret || settings.twoFactorSecret))
+      ? (settings.twoFactorPendingSecret || settings.twoFactorSecret)
+      : generateTotpSecret();
+
     const issuer = 'Snack by Maew Admin';
     const account = 'admin';
     const otpauthUri = generateTotpUri(secret, account, issuer);
@@ -619,6 +626,7 @@ router.get(['/2fa/setup', '/api/admin/2fa/setup'], requireAdmin, async (req, res
       account,
       otpauthUri,
       qrCodeDataUrl,
+      isRegenerated: shouldRegenerate,
       message: 'สร้างคีย์ 2FA สำเร็จ กรุณาสแกน QR Code ด้วยแอป Google Authenticator'
     });
   } catch (err) {
@@ -641,26 +649,26 @@ router.post(['/2fa/verify-setup', '/api/admin/2fa/verify-setup'], requireAdmin, 
     }
 
     const settings = db.getSettings();
-    const pendingSecret = settings.twoFactorPendingSecret;
-    if (!pendingSecret) {
+    const candidateSecret = settings.twoFactorPendingSecret || settings.twoFactorSecret;
+    if (!candidateSecret) {
       return res.status(400).json({
         success: false,
-        error: 'ไม่พบคำขอตั้งค่า 2FA กรุณากดเริ่มการตั้งค่าใหม่อีกครั้ง'
+        error: 'ไม่พบคำขอตั้งค่า 2FA กรุณากดเริ่มการตั้งค่าหรือสแกน QR Code ใหม่อีกครั้ง'
       });
     }
 
-    const isValid = verifyTotpCode(cleanCode, pendingSecret);
+    const isValid = verifyTotpCode(cleanCode, candidateSecret);
     if (!isValid) {
       return res.status(400).json({
         success: false,
-        error: 'รหัส 6 หลักไม่ถูกต้อง กรุณาตรวจสอบเวลาในโทรศัพท์และลองอีกครั้ง'
+        error: 'รหัส 6 หลักไม่ถูกต้อง กรุณาดูรหัส 6 หลักล่าสุดจาก Google Authenticator หรือตรวจสอบเวลาในโทรศัพท์'
       });
     }
 
     // Activate 2FA permanently in database
     db.updateSettings({
       twoFactorEnabled: true,
-      twoFactorSecret: pendingSecret,
+      twoFactorSecret: candidateSecret,
       twoFactorPendingSecret: null
     });
 

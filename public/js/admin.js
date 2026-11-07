@@ -2893,6 +2893,7 @@ function updateTwoFaStatusUi(isEnabled) {
   const inactiveInfo = document.getElementById('twoFaInactiveInfo');
   const disableBtn = document.getElementById('disableTwoFaBtn');
   const btnLabel = document.getElementById('twoFaBtnLabel');
+  const inlineBox = document.getElementById('inlineTwoFaBox');
 
   if (badge) {
     if (isEnabled) {
@@ -2907,12 +2908,78 @@ function updateTwoFaStatusUi(isEnabled) {
   if (activeInfo) activeInfo.classList.toggle('hidden', !isEnabled);
   if (inactiveInfo) inactiveInfo.classList.toggle('hidden', isEnabled);
   if (disableBtn) disableBtn.classList.toggle('hidden', !isEnabled);
+  if (inlineBox) inlineBox.classList.toggle('hidden', isEnabled);
   if (btnLabel) {
     btnLabel.innerText = isEnabled ? 'ตั้งค่า / เปลี่ยนอุปกรณ์ 2FA 📲' : 'เปิดใช้งาน 2FA / สแกน QR Code 📲';
   }
 }
 
-async function openTwoFaSetupModal() {
+async function confirmInlineTwoFaSetup() {
+  const input = document.getElementById('inlineTwoFaCodeInput');
+  const btn = document.getElementById('inlineTwoFaVerifyBtn');
+  const code = input ? input.value.trim() : '';
+
+  if (!code || code.length !== 6) {
+    Swal.fire({
+      icon: 'warning',
+      title: 'กรุณากรอกรหัส 6 หลัก',
+      text: 'กรุณากรอกรหัสยืนยันตัวเลข 6 หลักจากแอป Google Authenticator ให้ครบถ้วน',
+      confirmButtonColor: '#f97316'
+    });
+    if (input) input.focus();
+    return;
+  }
+
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="inline-block w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>';
+  }
+
+  try {
+    const res = await adminFetch('/api/admin/2fa/verify-setup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code })
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      if (input) input.value = '';
+      updateTwoFaStatusUi(true);
+      Swal.fire({
+        icon: 'success',
+        title: 'เปิดใช้งาน 2FA สำเร็จเรียบร้อย 🎉',
+        html: '<p class="text-sm text-slate-600">สถานะ 2FA เปลี่ยนเป็น <b>🟢 เปิดใช้งานแล้ว</b> เรียบร้อย!<br/>การเข้าสู่ระบบครั้งต่อไปจะต้องใช้รหัส 6 หลักจากแอปคู่กับ PIN เพื่อความปลอดภัยสูงสุด</p>',
+        confirmButtonColor: '#10b981'
+      });
+    } else {
+      Swal.fire({
+        icon: 'error',
+        title: 'รหัส 6 หลักไม่ถูกต้อง',
+        text: data.error || 'กรุณาตรวจสอบรหัส 6 หลักล่าสุดจากแอป หรือกดเปิดหน้าต่างสแกน QR Code ใหม่',
+        confirmButtonColor: '#f97316'
+      });
+      if (input) {
+        input.value = '';
+        input.focus();
+      }
+    }
+  } catch (err) {
+    Swal.fire({
+      icon: 'error',
+      title: 'ข้อผิดพลาด',
+      text: 'ไม่สามารถติดต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่อีกครั้ง'
+    });
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<i data-lucide="check" class="w-4 h-4"></i><span>ยืนยันเปิดใช้งาน 🚀</span>';
+      if (window.lucide) lucide.createIcons();
+    }
+  }
+}
+
+async function openTwoFaSetupModal(forceRegenerate = false) {
   const modal = document.getElementById('twoFaSetupModal');
   const qrLoading = document.getElementById('twoFaQrLoading');
   const qrImg = document.getElementById('twoFaQrImage');
@@ -2934,7 +3001,8 @@ async function openTwoFaSetupModal() {
   if (confirmBtn) confirmBtn.disabled = false;
 
   try {
-    const res = await adminFetch('/api/admin/2fa/setup');
+    const url = forceRegenerate ? '/api/admin/2fa/setup?regenerate=true' : '/api/admin/2fa/setup';
+    const res = await adminFetch(url);
     const data = await res.json();
     if (data.success) {
       if (qrImg) {

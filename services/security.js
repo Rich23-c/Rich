@@ -341,7 +341,7 @@ function generateTotpUri(secret, accountName = 'admin', issuer = 'Snack by Maew 
 }
 
 /**
- * Verify a 6-digit TOTP code against secret with +/- 30s clock drift tolerance
+ * Verify a 6-digit TOTP code against secret with +/- 90s clock drift tolerance
  */
 function verifyTotpCode(code, secret) {
   if (!code || !secret) return false;
@@ -351,7 +351,7 @@ function verifyTotpCode(code, secret) {
     const res = verifySync({
       token,
       secret: String(secret).trim(),
-      epochTolerance: 30
+      epochTolerance: 90
     });
     return !!(res && res.valid === true);
   } catch (err) {
